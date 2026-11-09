@@ -2,14 +2,17 @@
 //
 //   node tools/bird-probe.mjs
 //
-// - each place's birds (BIRDS_BY_PLACE): three gulls at the Rocky cove, a
-//   heron at the Koi pond, none anywhere else or for 'none';
-// - two minutes of the gulls: always low over the sea in the home view's sky
-//   (out past THROW_REACH from the eye, between 1.2 m and the frame's top),
-//   at a gull's speed, banked no more than 50°, never jumping between
-//   frames;
+// - each place's birds (BIRDS_BY_PLACE): some at every place, none for
+//   'none';
+// - four minutes of every place's flying birds (patrol, pass): always low
+//   over the water in the home view's sky (out past THROW_REACH from the
+//   eye, between 1.2 m and the frame's top), at their kind's speed, banked
+//   no more than 50°, never jumping between frames; the gulls glide and flap
+//   by turns; a passing flock crosses now and then, together;
 // - the heron stands wading at its spot: its feet on the bed, in the water,
 //   a few centimetres to a few tens deep, inside the pond;
+// - the Pool's geese stand on its lawn, past the deck, and a stone coming
+//   down near one puts both up, and both come back;
 // - a splash across the pond makes it look, not go; a stone coming down
 //   near it puts it up before it lands, and it climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
@@ -65,43 +68,55 @@ for (const place of Object.keys(PLACES)) {
   const birds = new BirdPopulation();
   birds.setPlace(place);
   const expected = (BIRDS_BY_PLACE[place] ?? []).reduce((sum, group) => sum + group.count, 0);
-  if (expected === 0) check(birds.birds.length === 0, `${place}: no birds`);
+  check(expected > 0 && birds.birds.length === expected, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
 }
 {
-  const cove = new BirdPopulation(); cove.setPlace('cove');
-  check(cove.birds.length === 3 && cove.birds.every((bird) => bird.kind === 'gull'), 'the Rocky cove: three gulls');
-  const koi = new BirdPopulation(); koi.setPlace('koi');
-  check(koi.birds.length === 1 && koi.birds[0].kind === 'heron', 'the Koi pond: a heron');
   const none = new BirdPopulation(); none.setPlace('none');
   check(none.birds.length === 0, "'none': no birds");
 }
 
-// The gulls over two minutes.
-{
-  const { frames } = run('cove', 120, 1 / 60);
+// Every place's flying birds over four minutes.
+for (const place of Object.keys(BIRDS_BY_PLACE)) {
+  const groups = BIRDS_BY_PLACE[place];
+  if (!groups.some((group) => group.habit === 'patrol' || group.habit === 'pass')) continue;
+  const { frames } = run(place, 240, 1 / 60);
+  const cruise = BIRD_KINDS[groups[0].kind].cruise;
   let nearest = Infinity, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, biggestJump = 0;
   for (let index = 1; index < frames.length; index++) {
-    frames[index].birds.forEach((gull, which) => {
+    frames[index].birds.forEach((bird, which) => {
       const before = frames[index - 1].birds[which];
-      const distance = Math.hypot(gull.x - EYE.x, gull.z - EYE.z);
+      if (!bird.shown) return;
+      const distance = Math.hypot(bird.x - EYE.x, bird.z - EYE.z);
       nearest = Math.min(nearest, distance);
-      lowest = Math.min(lowest, gull.y);
-      highestElevation = Math.max(highestElevation, Math.atan2(gull.y - EYE.y, distance));
-      const speed = Math.hypot(gull.x - before.x, gull.y - before.y, gull.z - before.z) * 60;
+      lowest = Math.min(lowest, bird.y);
+      highestElevation = Math.max(highestElevation, Math.atan2(bird.y - EYE.y, distance));
+      steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
+      if (!before.shown) return;
+      const speed = Math.hypot(bird.x - before.x, bird.y - before.y, bird.z - before.z) * 60;
       fastest = Math.max(fastest, speed); slowest = Math.min(slowest, speed);
-      steepestBank = Math.max(steepestBank, Math.abs(gull.bank));
-      biggestJump = Math.max(biggestJump, Math.abs(Math.atan2(Math.sin(gull.heading - before.heading), Math.cos(gull.heading - before.heading))));
+      biggestJump = Math.max(biggestJump, Math.abs(Math.atan2(Math.sin(bird.heading - before.heading), Math.cos(bird.heading - before.heading))));
     });
   }
-  const cruise = BIRD_KINDS.gull.cruise;
-  check(nearest > THROW_REACH, `the gulls keep out of reach: nearest ${nearest.toFixed(1)} m from the eye`);
-  check(lowest > 1.2, `the gulls stay over the water: lowest ${lowest.toFixed(2)} m`);
-  check(highestElevation < FRAME_TOP, `the gulls stay in the home view's sky: highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
-  check(slowest > 0.4 * cruise && fastest < 2.2 * cruise, `the gulls fly at a gull's speed: ${slowest.toFixed(1)} to ${fastest.toFixed(1)} m/s`);
-  check(steepestBank <= THREE.MathUtils.degToRad(50) + 1e-9, `banked at most 50°: ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
-  check(biggestJump < 0.05, `no gull's heading jumps between frames: ${biggestJump.toFixed(3)} rad at most`);
-  const flapping = frames.filter((frame) => frame.birds.some((gull) => gull.beat > 0.5)).length / frames.length;
-  check(flapping > 0.1 && flapping < 0.9, `the gulls glide and flap by turns: some beating in ${(flapping * 100).toFixed(0)}% of frames`);
+  check(nearest > THROW_REACH, `${place}: its birds keep out of reach: nearest ${nearest.toFixed(1)} m from the eye`);
+  check(lowest > 1.2, `${place}: they stay over the water: lowest ${lowest.toFixed(2)} m`);
+  check(highestElevation < FRAME_TOP, `${place}: they stay in the home view's sky: highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
+  check(slowest > 0.4 * cruise && fastest < 2.2 * cruise, `${place}: they fly at their speed: ${slowest.toFixed(1)} to ${fastest.toFixed(1)} m/s (cruising ${cruise})`);
+  check(steepestBank <= THREE.MathUtils.degToRad(50) + 1e-9, `${place}: banked at most 50°: ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
+  check(biggestJump < 0.05, `${place}: no bird's heading jumps between frames: ${biggestJump.toFixed(3)} rad at most`);
+  if (groups.some((group) => ['kelp', 'herring'].includes(group.kind))) {
+    const flapping = frames.filter((frame) => frame.birds.some((gull) => gull.beat > 0.5)).length / frames.length;
+    check(flapping > 0.1 && flapping < 0.9, `${place}: the gulls glide and flap by turns: some beating in ${(flapping * 100).toFixed(0)}% of frames`);
+  }
+  if (groups.some((group) => group.habit === 'pass')) {
+    const seen = frames.filter((frame) => frame.birds.some((bird) => bird.shown)).length / frames.length;
+    let crossings = 0;
+    for (let index = 1; index < frames.length; index++) if (frames[index].birds[0].shown && !frames[index - 1].birds[0].shown) crossings++;
+    check(crossings >= 3 && seen > 0.05 && seen < 0.6, `${place}: the flock crosses now and then: ${crossings} crossings in four minutes, in view ${(seen * 100).toFixed(0)}% of the time`);
+    // Together: while the first and the last of the flock are both crossing, they are a few spacings apart.
+    const last = frames[0].birds.length - 1;
+    const widest = frames.reduce((most, frame) => (frame.birds[0].shown && frame.birds[last].shown ? Math.max(most, Math.hypot(frame.birds[0].x - frame.birds[last].x, frame.birds[0].z - frame.birds[last].z)) : most), 0);
+    check(widest < 25, `${place}: its flock flies together: the last at most ${widest.toFixed(1)} m from the first`);
+  }
 }
 
 // The heron at rest.
@@ -158,6 +173,27 @@ const heronAt = (frame) => frame.birds[0];
   check(!busyBack || busyBack.time > 115, `it is not back while things are thrown near its spot (back at ${busyBack ? busyBack.time.toFixed(0) : 'not yet'} s)`);
 }
 
+// The Pool's geese: on the lawn, past the deck (src/pool.js: 3.9 m out from the pool's middle at (0, −1)); a stone
+// coming down near one puts both up, and both come back to where they stood.
+{
+  const geese = new BirdPopulation(); geese.setPlace('pool'); geese.setConditions(DAY); geese.showAt(0);
+  const onLawn = geese.birds.every(({ spot }) => Math.max(Math.abs(spot.x), Math.abs(spot.z + 1)) > 3.9 + 0.5 && spot.y === 0.1 && spot.surface === 0.1);
+  check(geese.birds.length === 2 && onLawn, 'the Pool: two geese standing on its lawn, past the deck');
+  check(geese.birds.map((bird) => bird.pose.posture).join() === 'stand,rest', 'one standing, one resting');
+  const spot = geese.birds[0].spot;
+  const landAt = 6;
+  const stone = (time) => {
+    const left = landAt - time;
+    if (left < 0 || left > 1.2) return [];
+    return [{ state: 'air', position: new THREE.Vector3(spot.x + 1 + left * 1.5, 0.15 + left * (6 - 4.9 * left), spot.z + left * 1.5), velocity: new THREE.Vector3(-1.5, -6 + 9.8 * left, -1.5) }];
+  };
+  const { frames } = run('pool', 120, 1 / 60, { things: stone });
+  const flushed = frames.find((frame) => frame.birds.some((bird) => bird.mode === 'flee'));
+  check(flushed && flushed.birds.every((bird) => bird.mode === 'flee') && flushed.time < landAt, `a stone coming down near one puts both up together (at ${flushed?.time.toFixed(2)} s)`);
+  const last = frames.at(-1).birds;
+  check(last.every((bird, index) => bird.mode === 'stand' && Math.hypot(bird.x - geese.birds[index].spot.x, bird.z - geese.birds[index].spot.z) < 1e-6), 'and both come back to where they stood');
+}
+
 // After dark: none.
 {
   const { frames } = run('cove', 5, 1 / 60, { conditions: NIGHT });
@@ -169,8 +205,9 @@ const heronAt = (frame) => frame.birds[0];
   const slow = run('koi', 60, 1 / 60, { things: () => [], splashes: [{ time: 3, x: -1.2, z: -4.3 }] });
   const fast = run('koi', 60, 1 / 144, { things: () => [], splashes: [{ time: 3, x: -1.2, z: -4.3 }] });
   const gullsSlow = run('cove', 30, 1 / 60), gullsFast = run('cove', 30, 1 / 144);
+  const flockSlow = run('harbour', 30, 1 / 60), flockFast = run('harbour', 30, 1 / 144);
   let worst = 0;
-  for (const [one, other] of [[slow, fast], [gullsSlow, gullsFast]]) {
+  for (const [one, other] of [[slow, fast], [gullsSlow, gullsFast], [flockSlow, flockFast]]) {
     for (const frame of one.frames) {
       if (Math.abs(frame.time - Math.round(frame.time)) > 1e-9) continue;
       const match = other.frames.find((candidate) => Math.abs(candidate.time - frame.time) < 1e-6);
@@ -183,7 +220,7 @@ const heronAt = (frame) => frame.birds[0];
 
 // The cost of a frame's posing.
 {
-  for (const place of ['cove', 'koi']) {
+  for (const place of Object.keys(BIRDS_BY_PLACE)) {
     const birds = new BirdPopulation(); birds.setPlace(place); birds.setConditions(DAY);
     const frames = 3000;
     const started = costClock();
