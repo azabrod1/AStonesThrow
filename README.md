@@ -601,9 +601,14 @@ each frame's time from closed forms, from their own seeded stream, so a
 seeded game goes alike at any frame rate. Each bird is a skinned mesh made
 in code (its skeleton posed on the CPU: wings beating with the hand lagging
 and flexing on the upstroke, folding on the back, the heron's neck and
-legs), its feathers drawn per pixel: overlapping contour feathers with
-relief, flight feathers with shafts, wing and tail edges cut into rounded
-feather tips, the heron's breast plumes as strands, the thin vanes glowing
+legs). Its flight and tail feathers are cards, as a game's birds are: one
+textured strip a feather (a feather texture drawn once at startup, alpha
+tested and mipmapped), the primaries fanned from the hand and parting into
+the heron's fingers, the secondaries along the arm, so the wing's outline is
+its feathers' tips; the standing heron's folded wing is cards along its
+side, the black primaries crossing over the tail. The rest is drawn per
+pixel: overlapping contour feathers with relief, the coverts' edge cut into
+feather tips, the heron's breast plumes as strands, the feathers glowing
 when backlit. The water mirrors them; the mirror image is drawn again only
 around a bird that moves in its view. The gulls cost 6 draw calls and the
 heron 3 (its legs in the water drawn in the under-water pass);
