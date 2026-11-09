@@ -1,4 +1,4 @@
-// The birds (src/main.js; drawn by src/birdMeshes.js): who flies over each
+// The birds (src/main.js; drawn by src/birdSprites.js): who flies over each
 // place, and how. They are scenery, as the fish are: nothing thrown meets
 // them, they touch neither the splash nor the water's waves, and they never
 // come within reach of a throw. A thing thrown near a heron puts it up.
@@ -29,7 +29,7 @@
 // their own seeded stream (seededRandom), never Math.random, so seeded
 // throws stay as they were.
 //
-// A pose (`pose`, which src/birdMeshes.js turns into its skeleton): where it
+// A pose (`pose`, from which src/birdSprites.js chooses its picture): where it
 // is (x, y, z: its body's middle, or for a bird standing its feet), its
 // heading, pitch and bank (rad), its wingbeat's phase and how hard it beats
 // (beat, 0 to 1), how far its wings are folded (fold, 1 folded on its back),
@@ -45,8 +45,8 @@ const NIGHT_SUN = THREE.MathUtils.degToRad(4);   // the sun this far below the h
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where the gulls' loops are laid out from
 
 // The kinds: their size (m: wingspan, bill to tail), their wingbeat (Hz; Pennycuick's gull about 3, a heron about 2),
-// their speed (m/s) and, for one that stands, how high its body's middle is over its feet (m; src/birdMeshes.js builds
-// its legs to it).
+// their speed (m/s) and, for one that stands, how high its body's middle is over its feet (m; where it takes off from
+// and lands at).
 export const BIRD_KINDS = {
   gull: { name: 'Herring gull', span: 1.4, length: 0.6, beat: 2.9, cruise: 8.5, stand: 0 },
   heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 5.5, stand: 0.62 },
@@ -243,12 +243,19 @@ export class BirdPopulation {
     }
   }
 
-  /** Put a heron up at `time`, away from (x, z) and from the eye, low over the garden behind it. */
+  /**
+   * Put a heron up at `time`: off along the bank, across the eye's view (to
+   * the side away from (x, z)) and a little away from the eye, low over the
+   * garden; across, as its pictures show it side on (src/birdSprites.js).
+   */
   flush(bird, time, x, z) {
     const { spot } = bird;
     const fromEyeX = spot.x - EYE.x, fromEyeZ = spot.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
-    const fromThingX = spot.x - x, fromThingZ = spot.z - z, fromThing = Math.hypot(fromThingX, fromThingZ) || 1;
-    let awayX = fromEyeX / fromEye + 0.6 * fromThingX / fromThing, awayZ = fromEyeZ / fromEye + 0.6 * fromThingZ / fromThing;
+    const fromThingX = spot.x - x, fromThingZ = spot.z - z;
+    let acrossX = -fromEyeZ / fromEye, acrossZ = fromEyeX / fromEye;
+    const thingSide = acrossX * fromThingX + acrossZ * fromThingZ;
+    if (thingSide < 0 || (thingSide === 0 && hashed(bird.seed, Math.floor(time * 10), 4) < 0.5)) { acrossX = -acrossX; acrossZ = -acrossZ; }
+    let awayX = acrossX + 0.45 * fromEyeX / fromEye, awayZ = acrossZ + 0.45 * fromEyeZ / fromEye;
     const length = Math.hypot(awayX, awayZ);
     awayX /= length; awayZ /= length;
     const { far, climb } = HERON.flush;
@@ -267,14 +274,15 @@ export class BirdPopulation {
     const { spot } = bird;
     const side = hashed(bird.seed, Math.floor(time * 10), 5) < 0.5 ? 1 : -1;
     const { from, high } = HERON.land;
-    // Out behind the far bank, off to one side; in along its heading for the last few metres, coming down.
+    // Out behind it along the bank, a little off to one side (so it crosses the eye's view, side on); in along its
+    // heading for the last few metres, coming down.
     const headingX = Math.cos(spot.heading), headingZ = -Math.sin(spot.heading);
-    const outX = -headingX * 0.4 + side * headingZ * 0.9, outZ = -headingZ * 0.4 - side * headingX * 0.9;
+    const outX = -headingX * 0.9 + side * headingZ * 0.35, outZ = -headingZ * 0.9 - side * headingX * 0.35;
     const length = Math.hypot(outX, outZ);
     const stand = BIRD_KINDS.heron.stand;
-    const start = [spot.x + (outX / length) * from, spot.y + stand + high, spot.z + (outZ / length) * from - from * 0.35];
+    const start = [spot.x + (outX / length) * from, spot.y + stand + high, spot.z + (outZ / length) * from - from * 0.15];
     bird.flight = {
-      points: [start, [spot.x + (outX / length) * from * 0.6, spot.y + stand + high * 0.7, spot.z + (outZ / length) * from * 0.6 - from * 0.2], [spot.x - headingX * 3.2, spot.y + stand + 0.7, spot.z - headingZ * 3.2], [spot.x, spot.y + stand, spot.z]],
+      points: [start, [spot.x + (outX / length) * from * 0.6, spot.y + stand + high * 0.7, spot.z + (outZ / length) * from * 0.6 - from * 0.1], [spot.x - headingX * 3.2, spot.y + stand + 0.7, spot.z - headingZ * 3.2], [spot.x, spot.y + stand, spot.z]],
     };
     bird.mode = 'land';
     bird.since = time;
