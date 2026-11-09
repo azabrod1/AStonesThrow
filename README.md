@@ -586,7 +586,7 @@ bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
 
-**Birds** (`src/birds.js`, drawn by `src/birdMeshes.js`). A few, done well:
+**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). A few, done well:
 three herring gulls work the water off the Rocky cove, low over the sea out
 past the rocks in long loose loops, gliding and banking into their turns,
 now and then a few wingbeats; and a grey heron wades in the shallows of the
@@ -598,20 +598,19 @@ flaring to land where it stood. None are about after dark. They are
 scenery, as the fish are: nothing thrown meets them, and they keep out of
 reach. Their state changes only in the physics steps and they are posed at
 each frame's time from closed forms, from their own seeded stream, so a
-seeded game goes alike at any frame rate. Each bird is a skinned mesh made
-in code (its skeleton posed on the CPU: wings beating with the hand lagging
-and flexing on the upstroke, folding on the back, the heron's neck and
-legs). Its flight and tail feathers are cards, as a game's birds are: one
-textured strip a feather (a feather texture drawn once at startup, alpha
-tested and mipmapped), the primaries fanned from the hand and parting into
-the heron's fingers, the secondaries along the arm, so the wing's outline is
-its feathers' tips; the standing heron's folded wing is cards along its
-side, the black primaries crossing over the tail. The rest is drawn per
-pixel: overlapping contour feathers with relief, the coverts' edge cut into
-feather tips, the heron's breast plumes as strands, the feathers glowing
-when backlit. The water mirrors them; the mirror image is drawn again only
-around a bird that moves in its view. The gulls cost 6 draw calls and the
-heron 3 (its legs in the water drawn in the under-water pass);
+seeded game goes alike at any frame rate. Each bird is a photograph of a
+real one: herons and herring gulls from Wikimedia Commons (CC BY; the
+credits are under the Birds setting and in `assets/birds/birds.json`), cut
+out of their sky or rocks and packed into one image by
+`tools/bird-sprites.py`, drawn as a picture that faces the camera, as a game
+draws a far bird. A picture cannot turn, so the birds are flown to be seen
+side on: the heron flushes along the bank and lands in along it. A gull
+glides, flaps between two frames and, flying at the eye, shows a head-on
+one; the heron stands in the water (its photo cut at mid-shin), and flies
+with its wings up, level or down by its wingbeat and its legs let down as it
+takes off and lands. The water mirrors them; the mirror image is drawn again only
+around a bird that moves in its view. Each bird costs 2 draw calls (its
+picture and its mirror image);
 `tools/bird-probe.mjs` checks where they fly, the heron's flush and return,
 the frame rate and the cost.
 
@@ -1870,6 +1869,15 @@ farther out, so it rises into the view rather than filling its corner.
   never kept): each photoscan's normal and the detail of its colour packed
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
+- `python3 tools/bird-sprites.py` writes the birds' pictures,
+  `assets/birds/birds.webp` and `birds.json`: eight Wikimedia Commons
+  photographs of grey herons and herring gulls (CC BY 2.0 and 4.0, cached in
+  the gitignored `tools/.bird-photos/`), each cut out of its sky (by its
+  distance from a smooth fit of the sky, or by blueness) or, the standing
+  heron, out of its rocks (OpenCV's GrabCut from an outline and a few
+  strokes), scaled to the bird's size in metres and packed into one 2048 by
+  1024 image (411 KB), fetched only when a place with birds is first shown.
+  Needs numpy, scipy, Pillow and opencv-python-headless.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
