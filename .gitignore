@@ -3,3 +3,4 @@ shots/
 _site/
 __pycache__/
 assets/sky/*_8k.hdr
+tools/.bird-photos/
