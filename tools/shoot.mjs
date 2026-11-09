@@ -70,6 +70,9 @@
 // --look=fish:n turns the view, after the pre-roll, to fish n
 // (__pond.fish's order); fish:n:side looks at it from beside it, under the
 // water, fish:n:behind from behind it.
+// --birds=none leaves every place without its birds (src/birds.js;
+// ?birds=none), and --look=bird:n turns the view, after the pre-roll, to bird
+// n (__pond.birds's order), from where the view stands.
 // --thing=name[:value] throws that (a key of THINGS in src/things.js: a
 // kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
 // slider value (a bowling ball's pounds, a basketball's size; a stone's
@@ -123,6 +126,7 @@ const touchArgument = arg('touch', '');
 const orbitArgument = arg('orbit', '');
 const [thingName, thingValue] = arg('thing', '').split(':');
 const fishArgument = arg('fish', '');
+const birdsArgument = arg('birds', '');
 const showPreview = arg('preview', '0') === '1';
 const readyGiven = arg('wait', null);   // how long the pond may take to be ready (s), if given: else patience's
 
@@ -162,7 +166,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${showPreview ? '' : '&preview=off'}${targets ? `&targets=${targets}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${birdsArgument ? `&birds=${birdsArgument}` : ''}${showPreview ? '' : '&preview=off'}${targets ? `&targets=${targets}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
@@ -195,7 +199,7 @@ if (orbitArgument) {
   }, orbitArgument);
 }
 if (fov) await page.evaluate((degrees) => window.__pond.setFov(Number(degrees)), fov);
-if (look && !look.startsWith('fish:')) await page.evaluate((point) => { const [x, y, z] = point.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
+if (look && !look.startsWith('fish:') && !look.startsWith('bird:')) await page.evaluate((point) => { const [x, y, z] = point.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
 if (thingValue) await page.evaluate((value) => window.__pond.setSize(value), Number(thingValue));
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 if (look.startsWith('fish:')) {
@@ -214,6 +218,16 @@ if (look.startsWith('fish:')) {
   // A frame drawn with the view turned: a thousandth of a second on (the fish moves a fraction of a millimetre).
   await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] fish', JSON.stringify(where));
+}
+if (look.startsWith('bird:')) {
+  const where = await page.evaluate((index) => {
+    const one = window.__pond.birds.birds[index];
+    if (one) window.__pond.lookAt(one.x, one.y + (one.flying === false ? 0.45 : 0), one.z);
+    return one;
+  }, Number(look.slice(5)));
+  if (fov) await page.evaluate((degrees) => window.__pond.setFov(Number(degrees)), fov);
+  await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
+  console.log('[shoot] bird', JSON.stringify(where));
 }
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: patience(180000) });
 console.log('[shoot] idle.png');

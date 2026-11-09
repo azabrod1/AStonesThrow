@@ -329,6 +329,8 @@ import { IceShadow } from './iceShadow.js';
 import { IceCracks } from './iceCracks.js';
 import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './fish.js';
 import { createFishView } from './fishMeshes.js';
+import { BirdPopulation } from './birds.js';
+import { createBirdView } from './birdMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
 import { compileOnly } from './precompile.js';
@@ -553,6 +555,7 @@ const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
 const FISH_STORAGE_KEY = 'stone-pond-fish';     // the Effects setting's fish, last chosen on this device ('off', or on)
+const BIRDS_STORAGE_KEY = 'stone-pond-birds';   // the Effects setting's birds, likewise
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's: a clarity, or frozen
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's: a place (PLACES)
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
@@ -1110,6 +1113,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishView.show(fishes);
   }
   applyFish();
+  // The birds (src/birds.js; drawn by src/birdMeshes.js): the place's, over its water or at its edge (applyBirds);
+  // ?birds=off or none, or the Effects setting's Off remembered on this device, leaves every place without (setBirds).
+  let birdsOn = !['none', 'off'].includes(pageParameters.get('birds') ?? storedChoice(BIRDS_STORAGE_KEY));
+  const birds = new BirdPopulation({ seed: Number(pageParameters.get('birdSeed') ?? 1) });
+  const birdView = createBirdView({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });
+  sceneMain.add(birdView.above, birdView.mirror);
+  sceneUnder.add(birdView.below);
+  /** The place's birds, as they start at `time` (the caller draws the mirror image whole again, with them or without). */
+  function applyBirds(time) {
+    birds.setPlace(birdsOn ? placeName : 'none');
+    birds.reset(time);
+    birds.setConditions({ sunDirection });
+    birds.showAt(time);
+    birdView.show(birds);
+  }
+  applyBirds(0);
   sceneMain.environment = environment.envTexture;
   sceneUnder.environment = environment.envTexture;
 
@@ -1295,6 +1314,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const splashRect = new THREE.Vector4();     // this frame's splash image in the reflection target (x, y, width, height; 0 wide: none)
   const mirroredRect = new THREE.Vector4();   // the last frame's
   const mirrorRegion = new THREE.Vector4();
+  const mirrorFrustum = new THREE.Frustum();   // what the mirror's camera sees (placeMirrorCamera): a bird outside it is not drawn again
+  const mirrorViewProjection = new THREE.Matrix4();
+  const birdBox = new THREE.Box3();
   const nothingMirrored = [];
   let viewChanged = true;      // the mirror image is stale
   // Under a gale the mirror is about the water's height under the latest
@@ -1327,6 +1349,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     mirrorCamera.updateMatrixWorld();
     mirrorCamera.projectionMatrix.copy(camera.projectionMatrix);
     mirrorCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+    mirrorFrustum.setFromProjectionMatrix(mirrorViewProjection.multiplyMatrices(mirrorCamera.projectionMatrix, mirrorCamera.matrixWorldInverse));
     reflectionMatrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
     reflectionMatrix.multiply(mirrorCamera.projectionMatrix).multiply(mirrorCamera.matrixWorldInverse);
   }
@@ -1371,12 +1394,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * held in the cached image),
    * into splashRect (0 wide when nowhere).
    */
-  function measureSplashImage(objects, floaters = [], visitorShown = false) {
+  function measureSplashImage(objects, floaters = [], visitorShown = false, birdsMoving = false) {
     splashRect.set(0, 0, 0, 0);
-    if (objects.length === 0 && floaters.length === 0 && !visitorShown) return;
+    if (objects.length === 0 && floaters.length === 0 && !visitorShown && !birdsMoving) return;
     if (objects.length > 0) splash.mirrorBounds(mirrorBox);
     else mirrorBox.makeEmpty();
     if (visitorShown) mirrorBox.union(visitor.bounds);   // whatever is out on the loch, as it is posed now (src/lochVisitor.js)
+    if (birdsMoving) birdView.mirrorBounds(mirrorBox, mirrorFrustum);   // the birds moving where the mirror sees them (src/birdMeshes.js)
     // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
     if (!mirrorBox.isEmpty() && galeWaves.on && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
     // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place: out to
@@ -1413,6 +1437,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Whatever is out on the loch moves while it shows: its image is drawn again each frame (and, once it has gone, the
     // last frame's region, mirroredRect, once more without it).
     const visitorShown = !skip.mirror && visitor.mirror.visible;
+    // A bird that moves where the mirror's camera sees it: drawn again each frame it moves (a heron standing still, not).
+    const birdsMoving = !skip.mirror && birdView.mirrorBounds(birdBox.makeEmpty(), mirrorFrustum) > 0;
     // A splash rises out of the water (a hole's open water, frozen: at 0); otherwise what lies on the ice meets its image.
     const iceTop = ice.on ? ice.top : 0;
     mirrorLevel.value = objects.length > 0 ? (galeWaves.on && lastImpact ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0) : iceTop;
@@ -1425,13 +1451,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       placeMirrorCamera();
       drawMirror(null, objects);
       viewChanged = false;
-      measureSplashImage(objects, floaters, visitorShown);
+      measureSplashImage(objects, floaters, visitorShown, birdsMoving);
       mirroredRect.copy(splashRect);
       for (const rock of rocks) if (rock.meshMirror) rock.mirroredAt = rock.meshMirror.visible ? rock.meshMirror.position.clone() : null;
       return;
     }
-    if (objects.length === 0 && floaters.length === 0 && !visitorShown && mirroredRect.z === 0) return;   // still water: the cached mirror stands
-    measureSplashImage(objects, floaters, visitorShown);
+    if (objects.length === 0 && floaters.length === 0 && !visitorShown && !birdsMoving && mirroredRect.z === 0) return;   // still water: the cached mirror stands
+    measureSplashImage(objects, floaters, visitorShown, birdsMoving);
     if (splashRect.z === 0) mirrorRegion.copy(mirroredRect);
     else if (mirroredRect.z === 0) mirrorRegion.copy(splashRect);
     else {
@@ -1584,6 +1610,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
+    birdView.setEnvironment(environment.envTexture);
+    birds.setConditions({ sunDirection });   // none about at night (src/birds.js)
     tropics.setEnvironment(environment.envTexture);
     visitor.setEnvironment(environment.envTexture);
     garden.setLight();
@@ -2626,6 +2654,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         if (impact && !impact.ripple) lastImpact = { x: impact.x, z: impact.z };
         // A splash (or a skip's touch) frightens the fish near it, the more widely the bigger the thing (src/fish.js).
         if (impact && !impact.ripple) fishes.startle(impact.x, 0, impact.z, FISH_ALARM.least + FISH_ALARM.perRadius * rock.radius);
+        // And a heron near it goes, or one in sight of it looks (src/birds.js).
+        if (impact && !impact.ripple) birds.startle(stepsTime, impact.x, impact.z);
       }
       // The ice's breaks and stars (src/ice.js events): its crack.
       for (const event of ice.events.splice(0)) sound.ice(event, seenAfter());
@@ -2652,11 +2682,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // Whatever is out on the loch (src/lochVisitor.js): it comes up when due, if the water is open and nothing thrown
       // is near its course, and goes down at once if something comes near.
       visitor.step(stepsTime, rocks, { open: !ice.on && !galeWaves.on, near: WEATHERS[weatherName].visibility < 200 });
+      // The birds (src/birds.js): a heron sees what is thrown coming down near it and goes, and comes back later.
+      birds.step(stepsTime, rocks);
       endStep(stepping);
     }
     advanceSplash(end);
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     visitor.showAt(end);   // whatever is out on the loch, posed at the frame's time (src/lochVisitor.js)
+    birds.showAt(end);   // the birds, posed at the frame's time (src/birds.js), their skeletons set (src/birdMeshes.js)
+    birdView.update(birds);
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
     for (const rock of rocks) {
@@ -2895,7 +2929,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3120,6 +3154,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     stepsTime = 0;
     fishes.resetClock();
     visitor.reset(0);   // nothing out on the loch; the first sighting from the start of its stream
+    birds.reset(0);   // a heron back where it stands
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
@@ -3155,6 +3190,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     visitor.setPlace(Boolean(next.visitor));
     visitor.reset(stepsTime);
     applyFish();
+    applyBirds(stepsTime);
     // Into the pool or out of it, the eye on the same view of the new kind (the pool's views are its own); to another
     // shore on the lake's water (the Koi pond's, the lagoon's), kept where it may stand there, its turn and zoom kept.
     if (poolChanges) {
@@ -3264,6 +3300,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
     }
     const fishWarmUp = everything || fishOn ? fishView.warmUp() : null;   // the fish's one program, whatever lives here (none in the Pool)
+    const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' three programs (above, below, mirror), whatever flies here
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
     buildPreview(everything ? 'pizza' : thingName);
@@ -3271,6 +3308,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     viewChanged = true;
     render();
     fishWarmUp?.done();
+    birdWarmUp?.done();
     if (everything) {
       buildPreview(DEFAULT_THING);
       if (preview.mesh) programKeepers.push(preview.mesh.material);
@@ -3450,6 +3488,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       try { window.localStorage.setItem(FISH_STORAGE_KEY, fishOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get fishOn() { return fishOn; },
+    /** The birds in or out of every place (the Effects setting): put in or taken out now (applyBirds), remembered on this device. */
+    setBirds(on) {
+      if (Boolean(on) !== birdsOn) {
+        birdsOn = Boolean(on);
+        applyBirds(stepsTime);
+        viewChanged = true;   // the mirror image drawn whole again, with them or without
+      }
+      try { window.localStorage.setItem(BIRDS_STORAGE_KEY, birdsOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get birdsOn() { return birdsOn; },
+    /** The birds (src/birds.js), as they are posed now: each one's kind, habit, mode and pose; and the draw calls they take. */
+    get birds() { return { drawCalls: birdView.drawCalls, birds: birds.report() }; },
+    /** Puts the place's heron up now, as a splash at (x, z) beside it would (tools/bird-probe.mjs). */
+    startleBirds(x, z) { birds.startle(stepsTime, x, z); },
     /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */
     get floaterRide() { return { reads: floaterRide.reads, requests: floaterRide.requests, working: floaterRide.working }; },
     /** How many sounds are playing now (tools/quality-probe.mjs). */
@@ -3630,11 +3682,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       this.setWater(DEFAULT_WATER);
       this.setSound(true);
       this.setFish(true);
+      this.setBirds(true);
       if (!automaticQuality) this.setQuality('auto');   // already Auto: its calibration keeps what it found
       chosenClock = null;
       const place = requestPlace(...placeAndHour(DEFAULT_PLACE), { remember: false });
       showView('shore');
-      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
+      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, BIRDS_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
         try { window.localStorage.removeItem(key); } catch { /* storage refused: nothing was kept */ }
       }
       return Promise.all([place, weather]).then(() => undefined);

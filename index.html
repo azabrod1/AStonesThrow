@@ -1110,7 +1110,7 @@
     </button>
     <button type="button" class="menu-tier" data-open="effects">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10c2.2-3.3 4.9-5 8-5 2.3 0 4.3 1.1 6 3.2L18 6.6v6.8l-1.5-1.6c-1.7 2.1-3.7 3.2-6 3.2-3.1 0-5.8-1.7-8-5z"></path><circle cx="6.4" cy="9.2" r="0.7"></circle></svg>
-      <span class="menu-tier-name"><b>Effects</b><small>Fish in the water</small></span>
+      <span class="menu-tier-name"><b>Effects</b><small>Fish in the water, birds about it</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <hr class="menu-rule">
@@ -1284,6 +1284,14 @@
         <button type="button" role="radio" data-value="off">Off</button>
       </div>
       <div class="menu-note" id="fish-note"></div>
+    </div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="birds-label">Birds</div>
+      <div class="menu-seg" id="birds" role="radiogroup" aria-labelledby="birds-label" aria-describedby="birds-note">
+        <button type="button" role="radio" data-value="on">On</button>
+        <button type="button" role="radio" data-value="off">Off</button>
+      </div>
+      <div class="menu-note" id="birds-note"></div>
     </div>
   </div>
   <div class="menu-page" data-page="quality" hidden>
@@ -1608,18 +1616,27 @@
       settings.setValue('sound', pond.sound ? 'On' : 'Off');
     }
     updateSound();
-    // The Effects page: the fish, in or out of every water (the pond remembers the choice).
+    // The Effects page: the fish, in or out of every water, and the birds, about every place that has them (the pond
+    // remembers each choice).
     const FISH_NOTES = {
       on: 'Each water has the fish such water holds: minnows, perch and a pike in the lake, trout in the mountains, koi in the Koi pond, reef fish in the Polynesian lagoon. A thing thrown frightens them, and what is edible is eaten.',
       off: 'The water is empty: nothing swims, and nothing is eaten.',
     };
+    const BIRD_NOTES = {
+      on: 'Gulls work the water off the Rocky cove, and a grey heron wades at the edge of the Koi pond: throw near it and it flies off, and comes back a minute later.',
+      off: 'No birds: the sky and the banks are empty.',
+    };
     const fishNote = document.getElementById('fish-note');
+    const birdsNote = document.getElementById('birds-note');
     const showFish = radioGroup(document.getElementById('fish'), (value) => { pond.setFish(value === 'on'); updateEffects(); });
+    const showBirds = radioGroup(document.getElementById('birds'), (value) => { pond.setBirds(value === 'on'); updateEffects(); });
     function updateEffects() {
-      const on = pond.fishOn;
-      showFish(on ? 'on' : 'off');
-      fishNote.textContent = FISH_NOTES[on ? 'on' : 'off'];
-      settings.setValue('effects', on ? 'Fish on' : 'Fish off');
+      const fishOn = pond.fishOn, birdsOn = pond.birdsOn;
+      showFish(fishOn ? 'on' : 'off');
+      showBirds(birdsOn ? 'on' : 'off');
+      fishNote.textContent = FISH_NOTES[fishOn ? 'on' : 'off'];
+      birdsNote.textContent = BIRD_NOTES[birdsOn ? 'on' : 'off'];
+      settings.setValue('effects', fishOn && birdsOn ? 'On' : fishOn ? 'Fish only' : birdsOn ? 'Birds only' : 'Off');
     }
     updateEffects();
     // The Full screen page (src/screen.js): On and Off where the browser lets a page have the whole screen, and the F
