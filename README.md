@@ -305,7 +305,9 @@ full screen, which only a press or a key may ask for):
 - Effects: Fish on (the default) or off. Off, every water is empty:
   nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
   the page, `--fish=none` for the harness; remembered on the device like
-  the other settings).
+  the other settings). Birds on (the default) or off, the same way
+  (`?birds=off`, `--birds=none`): gulls at the Rocky cove, a heron at the
+  Koi pond.
 - Full screen: On or Off, and the F key, where the browser lets a page take
   the whole screen (Android, an iPad, a desktop browser: the Fullscreen
   API, `src/screen.js`). Safari on an iPhone lets no page do that, so there
@@ -583,6 +585,30 @@ from above, its outline taking the water's colour; and a soft shadow on the
 bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
+
+**Birds** (`src/birds.js`, drawn by `src/birdMeshes.js`). A few, done well:
+three herring gulls work the water off the Rocky cove, low over the sea out
+past the rocks in long loose loops, gliding and banking into their turns,
+now and then a few wingbeats; and a grey heron wades in the shallows of the
+Koi pond's far bank, still for long spells, turning its head now and then.
+A splash anywhere in the pond makes it stretch up and look; a thing thrown
+near it puts it up, and it flies off low over the garden, its neck drawn in
+and its legs trailing, and comes back a minute or so later, gliding in and
+flaring to land where it stood. None are about after dark. They are
+scenery, as the fish are: nothing thrown meets them, and they keep out of
+reach. Their state changes only in the physics steps and they are posed at
+each frame's time from closed forms, from their own seeded stream, so a
+seeded game goes alike at any frame rate. Each bird is a skinned mesh made
+in code (its skeleton posed on the CPU: wings beating with the hand lagging
+and flexing on the upstroke, folding on the back, the heron's neck and
+legs), its feathers drawn per pixel: overlapping contour feathers with
+relief, flight feathers with shafts, wing and tail edges cut into rounded
+feather tips, the heron's breast plumes as strands, the thin vanes glowing
+when backlit. The water mirrors them; the mirror image is drawn again only
+around a bird that moves in its view. The gulls cost 6 draw calls and the
+heron 3 (its legs in the water drawn in the under-water pass);
+`tools/bird-probe.mjs` checks where they fly, the heron's flush and return,
+the frame rate and the cost.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -1580,7 +1606,7 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
-  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`, `tools/bird-probe.mjs`,
   `tools/garden-probe.mjs`, `tools/tropics-probe.mjs` and
   `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
