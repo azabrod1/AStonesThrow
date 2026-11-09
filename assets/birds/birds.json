@@ -1,10 +1,79 @@
 {
- "size": [
-  2048,
-  1024
- ],
+ "atlases": {
+  "heron": {
+   "file": "heron.webp",
+   "size": [
+    2048,
+    1024
+   ]
+  },
+  "kelp": {
+   "file": "kelp.webp",
+   "size": [
+    1024,
+    512
+   ]
+  },
+  "frigate": {
+   "file": "frigate.webp",
+   "size": [
+    512,
+    256
+   ]
+  },
+  "eagle": {
+   "file": "eagle.webp",
+   "size": [
+    512,
+    512
+   ]
+  },
+  "goose": {
+   "file": "goose.webp",
+   "size": [
+    1024,
+    1024
+   ]
+  },
+  "fishEagle": {
+   "file": "fishEagle.webp",
+   "size": [
+    1024,
+    512
+   ]
+  },
+  "swan": {
+   "file": "swan.webp",
+   "size": [
+    1024,
+    512
+   ]
+  },
+  "ibis": {
+   "file": "ibis.webp",
+   "size": [
+    1024,
+    512
+   ]
+  },
+  "raven": {
+   "file": "raven.webp",
+   "size": [
+    1024,
+    256
+   ]
+  },
+  "herring": {
+   "file": "herring.webp",
+   "size": [
+    1024,
+    512
+   ]
+  }
+ },
  "frames": {
   "heron-stand": {
+   "atlas": "heron",
    "uv": [
     0.79638671875,
     0.00390625,
@@ -28,6 +97,7 @@
    }
   },
   "heron-up": {
+   "atlas": "heron",
    "uv": [
     0.001953125,
     0.00390625,
@@ -51,6 +121,7 @@
    }
   },
   "heron-mid": {
+   "atlas": "heron",
    "uv": [
     0.001953125,
     0.6015625,
@@ -74,6 +145,7 @@
    }
   },
   "heron-down": {
+   "atlas": "heron",
    "uv": [
     0.31005859375,
     0.00390625,
@@ -97,6 +169,7 @@
    }
   },
   "heron-land": {
+   "atlas": "heron",
    "uv": [
     0.55322265625,
     0.00390625,
@@ -119,12 +192,565 @@
     "source": "https://commons.wikimedia.org/wiki/File:Ardea_cinerea_EM1B6259_%2832537479404%29.jpg"
    }
   },
-  "gull-glide": {
+  "kelp-glide": {
+   "atlas": "kelp",
    "uv": [
-    0.603515625,
-    0.6015625,
-    0.12890625,
-    0.1396484375
+    0.59765625,
+    0.0078125,
+    0.322265625,
+    0.455078125
+   ],
+   "metres": [
+    1.1,
+    0.7767
+   ],
+   "anchor": [
+    0.45,
+    0.45
+   ],
+   "credit": {
+    "file": "Kelp gull half moon island 1.17.25 DSC 9790-topaz-rawdenoise.jpg",
+    "author": "lwolfartist",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Kelp_gull_half_moon_island_1.17.25_DSC_9790-topaz-rawdenoise.jpg"
+   }
+  },
+  "kelp-up": {
+   "atlas": "kelp",
+   "uv": [
+    0.00390625,
+    0.0078125,
+    0.2783203125,
+    0.5
+   ],
+   "metres": [
+    0.95,
+    0.8533
+   ],
+   "anchor": [
+    0.4,
+    0.2
+   ],
+   "credit": {
+    "file": "Kelp gull deesembocadura rio olivia DSC 3427-topaz-rawdenoise.jpg",
+    "author": "lwolfartist",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Kelp_gull_deesembocadura_rio_olivia_DSC_3427-topaz-rawdenoise.jpg"
+   }
+  },
+  "kelp-down": {
+   "atlas": "kelp",
+   "uv": [
+    0.2861328125,
+    0.0078125,
+    0.3076171875,
+    0.474609375
+   ],
+   "metres": [
+    1.05,
+    0.81
+   ],
+   "anchor": [
+    0.55,
+    0.6
+   ],
+   "credit": {
+    "file": "Kelp gull deesembocadura rio olivia DSC 3294-topaz-rawdenoise.jpg",
+    "author": "lwolfartist",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Kelp_gull_deesembocadura_rio_olivia_DSC_3294-topaz-rawdenoise.jpg"
+   }
+  },
+  "frigate-glide": {
+   "atlas": "frigate",
+   "uv": [
+    0.0078125,
+    0.015625,
+    0.705078125,
+    0.59765625
+   ],
+   "metres": [
+    1.9,
+    0.8053
+   ],
+   "anchor": [
+    0.5,
+    0.6
+   ],
+   "credit": {
+    "file": "Great Frigatebird ( immature) Eastern Island Midway Atoll 2019-01-07 16-16-20 (46379948975).jpg",
+    "author": "Bettina Arrigoni",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Great_Frigatebird_%28_immature%29_Eastern_Island_Midway_Atoll_2019-01-07_16-16-20_%2846379948975%29.jpg"
+   }
+  },
+  "frigate-front": {
+   "atlas": "frigate",
+   "uv": [
+    0.0078125,
+    0.62890625,
+    0.81640625,
+    0.30859375
+   ],
+   "metres": [
+    2.2,
+    0.4158
+   ],
+   "anchor": [
+    0.5,
+    0.6
+   ],
+   "credit": {
+    "file": "Great Frigatebird ( immature) Eastern Island Midway Atoll 2019-01-07 16-22-01 (46571488854).jpg",
+    "author": "Bettina Arrigoni",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Great_Frigatebird_%28_immature%29_Eastern_Island_Midway_Atoll_2019-01-07_16-22-01_%2846571488854%29.jpg"
+   }
+  },
+  "eagle-glide": {
+   "atlas": "eagle",
+   "uv": [
+    0.0078125,
+    0.572265625,
+    0.7421875,
+    0.400390625
+   ],
+   "metres": [
+    1.9,
+    1.025
+   ],
+   "anchor": [
+    0.45,
+    0.5
+   ],
+   "credit": {
+    "file": "Verreaux's Eagle. Black Eagle, Aquila verreauxii, at Walter Sisulu National Botanical Garden, Gauteng, South Africa (18987033114).jpg",
+    "author": "Derek Keats",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Verreaux%27s_Eagle._Black_Eagle%2C_Aquila_verreauxii%2C_at_Walter_Sisulu_National_Botanical_Garden%2C_Gauteng%2C_South_Africa_%2818987033114%29.jpg"
+   }
+  },
+  "eagle-up": {
+   "atlas": "eagle",
+   "uv": [
+    0.0078125,
+    0.0078125,
+    0.625,
+    0.556640625
+   ],
+   "metres": [
+    1.6,
+    1.425
+   ],
+   "anchor": [
+    0.45,
+    0.45
+   ],
+   "credit": {
+    "file": "Verreaux's Eagle. Black Eagle, Aquila verreauxii, at Walter Sisulu National Botanical Garden, Gauteng, South Africa (19583407276).jpg",
+    "author": "Derek Keats",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Verreaux%27s_Eagle._Black_Eagle%2C_Aquila_verreauxii%2C_at_Walter_Sisulu_National_Botanical_Garden%2C_Gauteng%2C_South_Africa_%2819583407276%29.jpg"
+   }
+  },
+  "goose-mid": {
+   "atlas": "goose",
+   "uv": [
+    0.4765625,
+    0.00390625,
+    0.4296875,
+    0.2607421875
+   ],
+   "metres": [
+    1.1,
+    0.6675
+   ],
+   "anchor": [
+    0.57,
+    0.25
+   ],
+   "credit": {
+    "file": "Egyptian goose, South Luangwa National Park (51871856029).jpg",
+    "author": "I've Got It On Film!",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose%2C_South_Luangwa_National_Park_%2851871856029%29.jpg"
+   }
+  },
+  "goose-down": {
+   "atlas": "goose",
+   "uv": [
+    0.3203125,
+    0.2978515625,
+    0.421875,
+    0.1201171875
+   ],
+   "metres": [
+    1.08,
+    0.3075
+   ],
+   "anchor": [
+    0.57,
+    0.3
+   ],
+   "credit": {
+    "file": "Egyptian goose, South Luangwa National Park (51871856029).jpg",
+    "author": "I've Got It On Film!",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose%2C_South_Luangwa_National_Park_%2851871856029%29.jpg"
+   }
+  },
+  "goose-stand": {
+   "atlas": "goose",
+   "uv": [
+    0.00390625,
+    0.2978515625,
+    0.1767578125,
+    0.203125
+   ],
+   "metres": [
+    0.4525,
+    0.52
+   ],
+   "anchor": [
+    0.3753,
+    0.0
+   ],
+   "credit": {
+    "file": "Egyptian goose (1).jpg",
+    "author": "The Blue Rider",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose_%281%29.jpg"
+   }
+  },
+  "goose-rest": {
+   "atlas": "goose",
+   "uv": [
+    0.1845703125,
+    0.2978515625,
+    0.1318359375,
+    0.12890625
+   ],
+   "metres": [
+    0.3375,
+    0.33
+   ],
+   "anchor": [
+    0.427,
+    0.0
+   ],
+   "credit": {
+    "file": "Egyptian goose (1).jpg",
+    "author": "The Blue Rider",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose_%281%29.jpg"
+   }
+  },
+  "goose-up": {
+   "atlas": "goose",
+   "uv": [
+    0.00390625,
+    0.00390625,
+    0.46875,
+    0.2900390625
+   ],
+   "metres": [
+    1.2,
+    0.7425
+   ],
+   "anchor": [
+    0.5,
+    0.3
+   ],
+   "credit": {
+    "file": "Nilgans (54254515720).jpg",
+    "author": "Ralf Hüsges",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Nilgans_%2854254515720%29.jpg"
+   }
+  },
+  "fishEagle-glide": {
+   "atlas": "fishEagle",
+   "uv": [
+    0.00390625,
+    0.484375,
+    0.390625,
+    0.392578125
+   ],
+   "metres": [
+    2.0,
+    1.005
+   ],
+   "anchor": [
+    0.55,
+    0.45
+   ],
+   "credit": {
+    "file": "2021 sep kenia-62 (51676976311).jpg",
+    "author": "leopoldo de castro",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:2021_sep_kenia-62_%2851676976311%29.jpg"
+   }
+  },
+  "fishEagle-up": {
+   "atlas": "fishEagle",
+   "uv": [
+    0.37890625,
+    0.0078125,
+    0.29296875,
+    0.41796875
+   ],
+   "metres": [
+    1.5,
+    1.07
+   ],
+   "anchor": [
+    0.45,
+    0.45
+   ],
+   "credit": {
+    "file": "African fish eagle, Haliaeetus vocifer, at Chobe National Park, Botswana (32832146603).jpg",
+    "author": "Derek Keats",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:African_fish_eagle%2C_Haliaeetus_vocifer%2C_at_Chobe_National_Park%2C_Botswana_%2832832146603%29.jpg"
+   }
+  },
+  "fishEagle-front": {
+   "atlas": "fishEagle",
+   "uv": [
+    0.00390625,
+    0.0078125,
+    0.37109375,
+    0.46875
+   ],
+   "metres": [
+    1.9,
+    1.2
+   ],
+   "anchor": [
+    0.45,
+    0.55
+   ],
+   "credit": {
+    "file": "African fish eagle, Haliaeetus vocifer, at Lake Chivero, Harare, Zimbabwe (21908277406).jpg",
+    "author": "Derek Keats",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:African_fish_eagle%2C_Haliaeetus_vocifer%2C_at_Lake_Chivero%2C_Harare%2C_Zimbabwe_%2821908277406%29.jpg"
+   }
+  },
+  "swan-down": {
+   "atlas": "swan",
+   "uv": [
+    0.00390625,
+    0.5859375,
+    0.3525390625,
+    0.345703125
+   ],
+   "metres": [
+    1.9,
+    0.9316
+   ],
+   "anchor": [
+    0.6,
+    0.55
+   ],
+   "credit": {
+    "file": "After eating the family was leaving Houten - panoramio.jpg",
+    "author": "Henk Mons",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:After_eating_the_family_was_leaving_Houten_-_panoramio.jpg"
+   }
+  },
+  "swan-mid": {
+   "atlas": "swan",
+   "uv": [
+    0.00390625,
+    0.0078125,
+    0.3154296875,
+    0.5703125
+   ],
+   "metres": [
+    1.7,
+    1.5368
+   ],
+   "anchor": [
+    0.55,
+    0.6
+   ],
+   "credit": {
+    "file": "Banking to the Left.jpg",
+    "author": "Charlie From Bristol",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Banking_to_the_Left.jpg"
+   }
+  },
+  "swan-up": {
+   "atlas": "swan",
+   "uv": [
+    0.3232421875,
+    0.0078125,
+    0.3525390625,
+    0.359375
+   ],
+   "metres": [
+    1.9,
+    0.9684
+   ],
+   "anchor": [
+    0.55,
+    0.25
+   ],
+   "credit": {
+    "file": "Mute Swan (8940930326).jpg",
+    "author": "Andy Morffew",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Mute_Swan_%288940930326%29.jpg"
+   }
+  },
+  "ibis-down": {
+   "atlas": "ibis",
+   "uv": [
+    0.3232421875,
+    0.0078125,
+    0.3154296875,
+    0.591796875
+   ],
+   "metres": [
+    0.95,
+    0.8912
+   ],
+   "anchor": [
+    0.55,
+    0.55
+   ],
+   "credit": {
+    "file": "Threskiornis aethiopicus (29779757897).jpg",
+    "author": "Donald Hobern",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Threskiornis_aethiopicus_%2829779757897%29.jpg"
+   }
+  },
+  "ibis-up": {
+   "atlas": "ibis",
+   "uv": [
+    0.00390625,
+    0.0078125,
+    0.3154296875,
+    0.625
+   ],
+   "metres": [
+    0.95,
+    0.9412
+   ],
+   "anchor": [
+    0.55,
+    0.4
+   ],
+   "credit": {
+    "file": "Threskiornis aethiopicus (44667354662).jpg",
+    "author": "Donald Hobern",
+    "licence": "CC BY 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Threskiornis_aethiopicus_%2844667354662%29.jpg"
+   }
+  },
+  "raven-glide": {
+   "atlas": "raven",
+   "uv": [
+    0.5751953125,
+    0.015625,
+    0.306640625,
+    0.47265625
+   ],
+   "metres": [
+    0.9515,
+    0.3667
+   ],
+   "anchor": [
+    0.35,
+    0.55
+   ],
+   "credit": {
+    "file": "Common Raven on Seedskadee NWR (22849558584).jpg",
+    "author": "USFWS Mountain-Prairie",
+    "licence": "Public domain",
+    "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Common_Raven_on_Seedskadee_NWR_%2822849558584%29.jpg"
+   }
+  },
+  "raven-down": {
+   "atlas": "raven",
+   "uv": [
+    0.28125,
+    0.015625,
+    0.2900390625,
+    0.6328125
+   ],
+   "metres": [
+    0.9,
+    0.4909
+   ],
+   "anchor": [
+    0.4,
+    0.5
+   ],
+   "credit": {
+    "file": "Common Raven on Seedskadee NWR (22850605113).jpg",
+    "author": "USFWS Mountain-Prairie",
+    "licence": "Public domain",
+    "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Common_Raven_on_Seedskadee_NWR_%2822850605113%29.jpg"
+   }
+  },
+  "raven-up": {
+   "atlas": "raven",
+   "uv": [
+    0.00390625,
+    0.015625,
+    0.2734375,
+    0.96875
+   ],
+   "metres": [
+    0.8485,
+    0.7515
+   ],
+   "anchor": [
+    0.4,
+    0.4
+   ],
+   "credit": {
+    "file": "Common Raven on Seedskadee NWR (23181911180).jpg",
+    "author": "USFWS Mountain-Prairie",
+    "licence": "Public domain",
+    "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Common_Raven_on_Seedskadee_NWR_%2823181911180%29.jpg"
+   }
+  },
+  "herring-glide": {
+   "atlas": "herring",
+   "uv": [
+    0.720703125,
+    0.0078125,
+    0.2578125,
+    0.279296875
    ],
    "metres": [
     0.8,
@@ -142,12 +768,13 @@
     "source": "https://commons.wikimedia.org/wiki/File:Herring_Gull_%2844562549102%29.jpg"
    }
   },
-  "gull-up": {
+  "herring-up": {
+   "atlas": "herring",
    "uv": [
-    0.47265625,
-    0.6015625,
-    0.12890625,
-    0.2451171875
+    0.458984375,
+    0.0078125,
+    0.2578125,
+    0.490234375
    ],
    "metres": [
     0.8,
@@ -165,12 +792,13 @@
     "source": "https://commons.wikimedia.org/wiki/File:Gr%C3%A5trut_European_Herring_Gull_%2813896263568%29.jpg"
    }
   },
-  "gull-front": {
+  "herring-front": {
+   "atlas": "herring",
    "uv": [
-    0.2451171875,
-    0.6015625,
-    0.2255859375,
-    0.259765625
+    0.00390625,
+    0.0078125,
+    0.451171875,
+    0.51953125
    ],
    "metres": [
     1.4,
