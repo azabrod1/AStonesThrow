@@ -586,33 +586,51 @@ bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
 
-**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). A few, done well:
-three herring gulls work the water off the Rocky cove, low over the sea out
-past the rocks in long loose loops, gliding and banking into their turns,
-now and then a few wingbeats; and a grey heron wades in the shallows of the
-Koi pond's far bank, still for long spells, turning its head now and then.
-A splash anywhere in the pond makes it stretch up and look; a thing thrown
-near it puts it up, and it flies off low over the garden, its neck drawn in
-and its legs trailing, and comes back a minute or so later, gliding in and
-flaring to land where it stood. None are about after dark. They are
-scenery, as the fish are: nothing thrown meets them, and they keep out of
-reach. Their state changes only in the physics steps and they are posed at
-each frame's time from closed forms, from their own seeded stream, so a
-seeded game goes alike at any frame rate. Each bird is a photograph of a
-real one: herons and herring gulls from Wikimedia Commons (CC BY; the
-credits are under the Birds setting and in `assets/birds/birds.json`), cut
-out of their sky or rocks and packed into one image by
-`tools/bird-sprites.py`, drawn as a picture that faces the camera, as a game
-draws a far bird. A picture cannot turn, so the birds are flown to be seen
-side on: the heron flushes along the bank and lands in along it. A gull
-glides, flaps between two frames and, flying at the eye, shows a head-on
-one; the heron stands in the water (its photo cut at mid-shin), and flies
-with its wings up, level or down by its wingbeat and its legs let down as it
-takes off and lands. The water mirrors them; the mirror image is drawn again only
-around a bird that moves in its view. Each bird costs 2 draw calls (its
-picture and its mirror image);
-`tools/bird-probe.mjs` checks where they fly, the heron's flush and return,
-the frame rate and the cost.
+**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). Every place has
+its own, the ones that live where its photograph was taken (Poly Haven's
+coordinates put most of the skies in South Africa):
+
+| Place | Birds |
+|---|---|
+| Rocky cove (Cape Town) | three kelp gulls working the water past the rocks |
+| Loch Ness | three herring gulls, likewise |
+| Koi pond (Nagoya) | a grey heron wading at the far bank |
+| Pool (Sterkfontein Dam) | two Egyptian geese on the lawn, one resting |
+| Lakeside (Sterkfontein Dam) | an African fish eagle low over the open water |
+| Harbour (Sterkfontein Dam) | a string of five sacred ibises crossing now and then |
+| Mesas (above the dam) | a pair of Egyptian geese crossing now and then |
+| Highlands (eastern Free State) | a grey heron flying over now and then |
+| Desert oasis (Richtersveld) | a Verreaux's eagle gliding under the koppies |
+| Swiss Alps | two ravens |
+| Wooded lake (Radków) | a pair of mute swans crossing now and then |
+| Polynesian lagoon | two great frigatebirds soaring |
+
+The gulls, eagles, ravens and frigatebirds go round long loose loops,
+banking into their turns, each kind flapping as it does (a gull a few beats
+now and then, an eagle hardly, a raven mostly); a passing flock crosses the
+view on a straight line, the first time soon after the place is shown. The
+heron and the geese stand: a splash nearby makes them look; a thing thrown
+near puts them up (the geese together), and they come back a minute or so
+later, gliding in to land where they stood. None are about after dark. They
+are scenery, as the fish are: nothing thrown meets them, and they keep out
+of reach and in the home view's sky. Their state changes only in the
+physics steps and they are posed at each frame's time from closed forms,
+from their own seeded stream, so a seeded game goes alike at any frame rate.
+
+Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
+or public domain; the credits are under the Birds setting and in
+`assets/birds/birds.json`), cut out of its sky (or, for the standing birds,
+its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
+a kind (30 to 330 KB), fetched only when a place with that kind is shown,
+and drawn as a picture that faces the camera, as a game draws a far bird. A
+picture cannot turn, so the birds are flown to be seen side on. Each kind
+has a few frames (gliding; wings up, level and down by its wingbeat; head
+on; legs down; standing or resting). The water mirrors them; the mirror
+image is drawn again only around a bird that moves in its view. A bird on
+the ground has a soft shadow under it. Each bird costs 2 draw calls (its
+picture and its mirror image), a goose on the lawn 3 (and its shadow);
+`tools/bird-probe.mjs` checks every place's birds, where they fly, the
+standing birds' flush and return, the frame rate and the cost.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -1870,14 +1888,15 @@ farther out, so it rises into the view rather than filling its corner.
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
 - `python3 tools/bird-sprites.py` writes the birds' pictures,
-  `assets/birds/birds.webp` and `birds.json`: eight Wikimedia Commons
-  photographs of grey herons and herring gulls (CC BY 2.0 and 4.0, cached in
-  the gitignored `tools/.bird-photos/`), each cut out of its sky (by its
-  distance from a smooth fit of the sky, or by blueness) or, the standing
-  heron, out of its rocks (OpenCV's GrabCut from an outline and a few
-  strokes), scaled to the bird's size in metres and packed into one 2048 by
-  1024 image (411 KB), fetched only when a place with birds is first shown.
-  Needs numpy, scipy, Pillow and opencv-python-headless.
+  `assets/birds/<kind>.webp` and `birds.json`: 31 frames from 29 Wikimedia Commons
+  photographs of ten kinds (CC BY 2.0, 3.0 and 4.0, CC0 and public domain,
+  cached in the gitignored `tools/.bird-photos/`), each cut out of its sky
+  (by its distance from a smooth fit of the sky, or by blueness; `crop` to
+  take one bird of two) or, the standing heron and geese, out of their shore
+  (OpenCV's GrabCut from an outline and a few strokes), scaled to the bird's
+  size in metres and packed into one image a kind (30 to 330 KB), fetched
+  only when a place with that kind is first shown. Needs numpy, scipy,
+  Pillow and opencv-python-headless.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
