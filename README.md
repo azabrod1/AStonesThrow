@@ -648,6 +648,7 @@ coordinates put most of the skies in South Africa):
 | Swiss Alps | two ravens |
 | Wooded lake (Radków) | a pair of mute swans now and then |
 | Polynesian lagoon | great frigatebirds soaring |
+| Reflecting Pool (Washington, D.C.) | a blue jay and a northern cardinal crossing between the elms |
 
 The flying birds come and go: now and then one (or a flock) comes into
 the view from beyond a side of the frame, goes about over the water and
@@ -662,7 +663,9 @@ shown finds its birds anywhere in their comings and goings, and every visit
 to the page has its own seed (`?birdSeed=` chooses one; a page driven by a
 tool has seed 1, so frames are reproducible). Each
 kind flaps as it does (a gull a few beats now and then, a fish eagle in
-bouts, an eagle hardly, a raven mostly). The
+bouts, an eagle hardly, a raven mostly, a jay steadily, a cardinal in
+bounds: a few beats, then its wings shut a moment as it arcs on, its path
+rising and dipping a few centimetres about the visit's). The
 heron and the geese stand: a splash nearby makes them look; a thing thrown
 near puts them up (the geese together), and they come back a minute or so
 later, gliding in to land where they stood. None are about after dark. They
@@ -677,7 +680,11 @@ a side-on outline and painted from that photograph, its wings rectified flat
 from a photograph from below, slotted primaries and all, on a skeleton
 (`src/birdRig.js`) whose wingbeat is a bird's (a cosine stroke, the hand
 lagging the arm, twisting on the downstroke), so it beats, glides and banks
-smoothly from any side. The grey heron is one too: its trunk, six-jointed
+smoothly from any side. The Reflecting Pool's blue jay and cardinal are
+made the same way, their bodies cut from perched birds (GrabCut from a
+traced outline, levelled along the body, the cardinal's tail and head
+swung into line) and their wings from a bird with its wing spread above
+or below, the other side derived from it. The grey heron is one too: its trunk, six-jointed
 neck and legs shaped from a side-on photograph, so it stands, looks about,
 draws its neck in or stretches it, walks the bank, strikes at fish, crouches
 and takes off trailing its legs, its legs seen through the water
@@ -686,7 +693,8 @@ alone through its wingbeat (`--poses=standing`: a standing kind's ways). The
 other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
-or public domain; the credits are in `CREDITS.md` and in
+or public domain, and CC BY-SA for the jay's and cardinal's wings, so their
+images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky (or, for the standing birds,
 its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
 a kind (30 to 330 KB), fetched only when a place with that kind is shown,
