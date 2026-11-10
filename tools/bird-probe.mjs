@@ -245,10 +245,16 @@ const heronAt = (frame) => frame.birds[0];
   for (const place of Object.keys(BIRDS_BY_PLACE)) {
     const birds = new BirdPopulation(); birds.setPlace(place); birds.setConditions(DAY);
     const frames = 3000;
+    // Each visit is made once (its path laid out, src/birds.js makeVisit), not again every frame while it is awaited.
+    let made = 0;
+    const makeVisit = birds.makeVisit.bind(birds);
+    birds.makeVisit = (...values) => { made++; return makeVisit(...values); };
     const started = costClock();
     for (let frame = 0; frame < frames; frame++) { birds.step(frame / 60, []); birds.showAt(frame / 60); }
     const milliseconds = costSince(started) / frames;
     check(milliseconds < 0.05, `${place}: a frame's posing under 0.05 ms (${milliseconds.toFixed(4)})`);
+    const visitors = new Set(birds.birds.map((bird) => bird.visitor).filter(Boolean)).size;
+    if (visitors) check(made <= visitors * 6, `${place}: each visit is laid out once: ${made} made in ${frames / 60} s by ${visitors} visiting`);
   }
 }
 

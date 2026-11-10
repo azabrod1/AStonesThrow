@@ -602,7 +602,9 @@ export class BirdPopulation {
   visitAt(visitor, local, lag) {
     if (local < 0) return null;
     const { visits, group } = visitor;
-    if (!visits.length || local < visits[0].start) {
+    // Made from the first again only when there are none, or time has gone back before the earliest kept (a
+    // visit's own index then: waiting for the first is not that).
+    if (!visits.length || (visits[0].index > 0 && local < visits[0].start)) {
       visits.length = 0;
       visits.push(this.makeVisit(visitor, 0, between(FIRST_VISIT, hashed(visitor.seed, 0, 32)) * group.gap[1]));
     }
