@@ -54,6 +54,7 @@ import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
 import { MIRROR_LAYER } from './splash.js';
+import { basinSpan, basinDeck } from './basin.js';
 
 export const POOL = {
   depth: 1.4,       // m: the floor under the still water
@@ -70,11 +71,10 @@ const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with th
 const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at its own bounce times this (holdInPool)
 const ACROSS = { x: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 0, 1) };
 const ACROSS_BACK = { x: new THREE.Vector3(-1, 0, 0), z: new THREE.Vector3(0, 0, -1) };
-// A basin (`square`): the Pool's, the solver's pool ({ minX, minZ, size }), or any other walled water, a rectangle
-// ({ minX, minZ, sizeX, sizeZ }) with its own walls' top (`deck`, m over the still water; POOL.deck unless given):
-// the Reflecting Pool's (src/mallPool.js MALL_BASIN).
-const spanOf = (square, axis) => (axis === 'x' ? square.sizeX : square.sizeZ) ?? square.size;
-const deckOf = (square) => square.deck ?? POOL.deck;
+// A basin (`square`, src/basin.js): the Pool's, the solver's pool, or any other walled water, a rectangle with its
+// own walls' top (POOL.deck unless given): the Reflecting Pool's (src/mallPool.js MALL_BASIN).
+const spanOf = basinSpan;
+const deckOf = (square) => basinDeck(square, POOL.deck);
 
 /**
  * How far `rock` reaches from its centre towards the walls across `axis`

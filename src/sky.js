@@ -710,14 +710,14 @@ export function insetLayout(insets) {
     if (!(azimuth[1] > azimuth[0] && azimuth[1] - azimuth[0] < 360)) throw new Error(`The ${name} inset's azimuths [${azimuth}] must rise by less than a turn: across north, run past 360 ([350, 370])`);
     if (!(elevation[1] > elevation[0])) throw new Error(`The ${name} inset's elevations [${elevation}] must rise`);
   }
-  let x = 0;
+  let atlasOffsetX = 0;
   const places = insets.map(({ azimuth, elevation, perDegree }) => {
     const blocks = (degrees) => Math.ceil((degrees * perDegree) / INSET_BLOCK) * INSET_BLOCK;
-    const place = { x, y: 0, width: blocks(azimuth[1] - azimuth[0]), height: blocks(elevation[1] - elevation[0]) };
-    x += place.width;
+    const place = { x: atlasOffsetX, y: 0, width: blocks(azimuth[1] - azimuth[0]), height: blocks(elevation[1] - elevation[0]) };
+    atlasOffsetX += place.width;
     return place;
   });
-  return { width: x, height: Math.max(0, ...places.map((place) => place.height)), places };
+  return { width: atlasOffsetX, height: Math.max(0, ...places.map((place) => place.height)), places };
 }
 export function horizonRows(sourceHeight, aboveDegrees = HORIZON_STRIP.above) {
   const above = Math.round((aboveDegrees / 180) * sourceHeight);
@@ -949,9 +949,9 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     insetTarget = decodeInsetAtlas(atlas);
     domeUniforms.uInset.value = insetTarget.texture;
     insets.forEach(({ azimuth, elevation }, index) => {
-      const { x, y, width, height } = layout.places[index];
+      const { x: atlasX, y: atlasY, width, height } = layout.places[index];
       domeUniforms.uInsetWindow.value[index].set(azimuth[0] / 360, azimuth[1] / 360, THREE.MathUtils.degToRad(elevation[1]), THREE.MathUtils.degToRad(elevation[0]));
-      domeUniforms.uInsetPlace.value[index].set(x, y, width, height);
+      domeUniforms.uInsetPlace.value[index].set(atlasX, atlasY, width, height);
     });
     for (let index = insets.length; index < INSET_COUNT; index++) domeUniforms.uInsetWindow.value[index].set(0, 0, 0, 0);
     domeUniforms.uInsetSize.value.set(atlas.width, atlas.height);

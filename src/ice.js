@@ -195,6 +195,7 @@ import { groundHeightAt, shoreDistance } from './pondFloor.js';
 import { roundLipReach } from './cavity.js';
 import { ICE_SHADOW, ICE_SHADOW_UNIFORMS } from './iceShadow.js';
 import { passBy } from './collide.js';
+import { basinBounds } from './basin.js';
 
 const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
@@ -484,6 +485,7 @@ export class IceSheet {
     this.thickness = 0;
     this.time = 0;               // the world's clock (setTime): when a hole opened, its shards are let go, it skins over
     this.pool = null;            // the pool's square ({ minX, minZ, size }) when the water is the pool's, else the lake (setPool)
+    this.poolBounds = null;      // its walls' faces (src/basin.js basinBounds)
     this.deck = null;            // the pool's deck as ground (src/pool.js poolGround), round a frozen pool
     this.holes = [];             // oldest first
     this.opened = 0;             // how many holes have opened (src/main.js looks over what rests on the ice when it changes)
@@ -576,7 +578,9 @@ export class IceSheet {
 
   /** The water it covers: the pool's square and its deck (`deck`, src/pool.js poolGround), or the lake (null). */
   setPool(square, deck = null) {
+    if (square && square.size === undefined) throw new Error('The ice covers a square basin only: uIcePool holds one size (ICE_COMMON)');
     this.pool = square ?? null;
+    this.poolBounds = square ? basinBounds(square) : null;
     this.deck = square ? deck : null;
     if (square) this.uniforms.uIcePool.value.set(square.minX, square.minZ, square.size, 1);
     else this.uniforms.uIcePool.value.set(0, 0, 0, 0);
@@ -613,19 +617,24 @@ export class IceSheet {
 
   /** Whether (x, z) lies over the water the ice covers: the lake out from its waterline, or inside the pool's walls. */
   overWater(x, z) {
-    const pool = this.pool;
-    if (pool) return x > pool.minX && x < pool.minX + pool.size && z > pool.minZ && z < pool.minZ + pool.size;
+    const pool = this.poolBounds;
+    if (pool) return x > pool.minX && x < pool.maxX && z > pool.minZ && z < pool.maxZ;
     return shoreDistance(x, z) > 0;
   }
 
   /** The holes not yet skinned over. */
   get openHoles() { return this.holes.filter((hole) => !hole.skin?.closed).length; }
 
+  /** The water's sides: the pool's walls, or the solver's patch. */
+  get waterBounds() {
+    return this.poolBounds ?? basinBounds({ minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize });
+  }
+
   /** Where a hole may be (the header): the solver's patch less HOLE.edge, or the pool inside its walls less HOLE.wall. */
   get holeBox() {
-    const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
+    const box = this.waterBounds;
     const gap = this.pool ? HOLE.wall : HOLE.edge;
-    return { minX: box.minX + gap, minZ: box.minZ + gap, maxX: box.minX + box.size - gap, maxZ: box.minZ + box.size - gap };
+    return { minX: box.minX + gap, minZ: box.minZ + gap, maxX: box.maxX - gap, maxZ: box.maxZ - gap };
   }
 
   /** Whether a hole may open at (x, z): over the solver's water, inside holeBox (its edge is brought inside it, shapeHole). */
@@ -1298,8 +1307,8 @@ export class IceSheet {
 
   /** Whether a crack may run on at (x, z): over the ice (inside the pool's walls, off the shore, in the patch), and in no hole. */
   crackMayRun(x, z) {
-    const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
-    return x > box.minX && x < box.minX + box.size && z > box.minZ && z < box.minZ + box.size && this.overWater(x, z) && !this.holeAbout(x, z);
+    const box = this.waterBounds;
+    return x > box.minX && x < box.maxX && z > box.minZ && z < box.maxZ && this.overWater(x, z) && !this.holeAbout(x, z);
   }
 
   /** A crack's segment into the grid (CRACK.cell), so the cracks after it find it (crackMet). */

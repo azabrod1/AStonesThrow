@@ -35,7 +35,8 @@
 // is: src/pool.js holdInPool, poolGround).
 import * as THREE from 'three';
 import { MALL_GROUND_VERTEX, MALL_GROUND_FRAGMENT } from './shaders/scene.js';
-import { MALL_POOL } from './pondFloor.js';
+import { MALL_POOL, MALL_WATER } from './pondFloor.js';
+import { basinBounds } from './basin.js';
 import { OUTER_HALF_SIZE } from './waterSurface.js';
 import { MIRROR_LAYER } from './splash.js';
 
@@ -49,9 +50,9 @@ const WALL_FROM = -0.1;   // m: the walls' faces reach this far under the still 
  * The pool inside its walls, as src/pool.js holds things in a basin: its corner, its sides and its walls' top (m), and
  * that its walls hold what reaches below their top even above the water (holdInPool `holdUnderTop`; the Pool's do not).
  */
-export const MALL_BASIN = Object.freeze({ minX: -HALF, minZ: EAST, sizeX: 2 * HALF, sizeZ: MALL_POOL.length, deck: COPING_TOP, holdUnderTop: true });
+export const MALL_BASIN = Object.freeze({ ...MALL_WATER, deck: COPING_TOP, holdUnderTop: true });
 /** The water's rectangle (src/waterSurface.js setBounds): the walls' faces, MALL_BASIN's sides. */
-export const MALL_BOUNDS = Object.freeze({ minX: MALL_BASIN.minX, minZ: MALL_BASIN.minZ, maxX: MALL_BASIN.minX + MALL_BASIN.sizeX, maxZ: MALL_BASIN.minZ + MALL_BASIN.sizeZ });
+export const MALL_BOUNDS = Object.freeze(basinBounds(MALL_BASIN));
 
 // The ground's cell edges out from a wall's face (m): the coping, the walk, then growing to the horizon.
 const GROUND_EDGES = [0, 0.75, 6.25, 15, 40, 120, 400, 1500, OUTER_HALF_SIZE];
@@ -61,9 +62,9 @@ function groundGeometry() {
   const xs = [...GROUND_EDGES.slice(1).reverse().map((out) => -HALF - out), -HALF, HALF, ...GROUND_EDGES.slice(1).map((out) => HALF + out)];
   const zs = [...GROUND_EDGES.slice(1).reverse().map((out) => EAST - out), EAST, WEST, ...GROUND_EDGES.slice(1).map((out) => WEST + out)];
   const positions = [], normals = [], indices = [];
-  for (const z of zs) {
-    for (const x of xs) {
-      positions.push(x, COPING_TOP, z);
+  for (const rowZ of zs) {
+    for (const columnX of xs) {
+      positions.push(columnX, COPING_TOP, rowZ);
       normals.push(0, 1, 0);
     }
   }

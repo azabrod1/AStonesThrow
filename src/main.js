@@ -325,6 +325,7 @@ import { StreamSheath } from './streamSheath.js';
 import { SprayFan } from './sprayFan.js';
 import { ObjectGrab, GRAB_HOLD_MS } from './objectGrab.js';
 import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
+import { basinSpan, basinDeck } from './basin.js';
 import { createMallPool, MALL_BASIN, MALL_BOUNDS } from './mallPool.js';
 import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
@@ -2371,7 +2372,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // In the basin as holdInPool keeps things there: a ball against a wall is in, not on the deck (the Pool's, or the
     // Reflecting Pool's coping).
     const basin = pooled ? pool.square : mallHere ? MALL_BASIN : null;
-    const deck = basin?.deck ?? POOL.deck, spanX = basin?.sizeX ?? basin?.size, spanZ = basin?.sizeZ ?? basin?.size;
+    const deck = basin ? basinDeck(basin, POOL.deck) : POOL.deck, spanX = basin && basinSpan(basin, 'x'), spanZ = basin && basinSpan(basin, 'z');
     const inBasin = (x, z) => basin !== null && poolInside(basin, rock.radius)(x, z);
     const rim = ice.top - 1e-6;
     let hole = ice.on && from.y + lowest < rim ? rock.iceHole : null;

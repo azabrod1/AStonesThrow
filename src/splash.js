@@ -302,6 +302,7 @@ import { splashRandom, reseedSplashRandom, asSplash } from './splashRandom.js';
 import { RING_SOURCE } from './rings.js';
 import { DROP_RING } from './dropRings.js';
 import { STONE_DENSITY } from './things.js';
+import { basinBounds, basinDeck } from './basin.js';
 import { PARTICLE_VERTEX, SPRAY_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
@@ -2212,11 +2213,12 @@ export class SplashSystem {
    * radius)` marks the paving wet where it fell.
    */
   setGround(ground) {
-    this.ground = ground ? { ...ground, deck: ground.deck ?? ground.square.deck } : null;
+    this.ground = ground ? { ...ground, deck: ground.deck ?? basinDeck(ground.square) } : null;
     const square = ground?.square;
     const inset = DECK_DROPS.wallInset;
-    this.groundBox = square ? { maxX: square.minX + (square.sizeX ?? square.size), maxZ: square.minZ + (square.sizeZ ?? square.size) } : null;
-    this.walls = square ? { minX: square.minX + inset, maxX: this.groundBox.maxX - inset, minZ: square.minZ + inset, maxZ: this.groundBox.maxZ - inset } : null;
+    const bounds = square ? basinBounds(square) : null;
+    this.groundBox = bounds && { maxX: bounds.maxX, maxZ: bounds.maxZ };
+    this.walls = bounds && { minX: bounds.minX + inset, maxX: bounds.maxX - inset, minZ: bounds.minZ + inset, maxZ: bounds.maxZ - inset };
     this.whiteWater.setWalls(this.walls);   // a stream's churn too (src/whiteWater.js)
   }
 

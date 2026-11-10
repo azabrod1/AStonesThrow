@@ -86,6 +86,7 @@
 import * as THREE from 'three';
 import { FLOOR_VERTEX, FLOOR_FRAGMENT, FLOOR_BAKE_FRAGMENT, LAND_VERTEX, LAND_FRAGMENT } from './shaders/scene.js';
 import { FullscreenPass } from './gpu.js';
+import { basinInside } from './basin.js';
 
 // The shore: the waterline runs along z = SHORE.z + x²/(2·SHORE.bend), 27 cm
 // behind the shore view's eye (at z = 2.45, src/main.js) and bending back on
@@ -137,6 +138,8 @@ export const LAGOON_SHORE = { origin: [5.2, 0], bearing: 22, bow: 900, wander: [
 // side walls and `deep` along the middle (2 ft 6 in to 3 ft), a shallow crown. LAKE_BED in src/shaders/scene.js is its
 // GLSL twin (MALL_*): change both.
 export const MALL_POOL = { halfWidth: 25.3, west: 2.75, length: 618, coping: 0.3, edge: 0.6, deep: 0.88 };
+/** The Reflecting Pool's water inside its walls' faces, a basin (src/basin.js), from MALL_POOL: src/mallPool.js's MALL_BASIN is it with its walls' top. */
+export const MALL_WATER = Object.freeze({ minX: -MALL_POOL.halfWidth, minZ: MALL_POOL.west - MALL_POOL.length, sizeX: 2 * MALL_POOL.halfWidth, sizeZ: MALL_POOL.length });
 let shoreKind = 'lake';
 // Each place's shore (its sky's `shore`, src/sky.js; setShoreLook): the
 // ground's dry colour (`sand`, an albedo; Lakeside's is LAND_FRAGMENT's
@@ -228,7 +231,7 @@ export function lagoonShoreDistance(x, z) {
 }
 /** How far inside the Reflecting Pool's walls a world XZ point lies (m: to the nearest wall's water face; negative outside them). */
 export function mallShoreDistance(x, z) {
-  return Math.min(MALL_POOL.halfWidth - Math.abs(x), MALL_POOL.west - z, z - (MALL_POOL.west - MALL_POOL.length));
+  return basinInside(MALL_WATER, x, z);
 }
 /** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach); the Koi pond's, the lagoon's or the Reflecting Pool's in its place. */
 export function shoreDistance(x, z) {
@@ -340,7 +343,7 @@ export function mallBedGeometry() {
   for (let distance = BED_ROWS.first; distance < length; distance *= BED_ROWS.growth) zs.push(west - distance);
   zs.push(east, east - WALL_STEP);
   const positions = [];
-  for (const z of zs) for (const x of xs) positions.push(x, 0, z);
+  for (const rowZ of zs) for (const columnX of xs) positions.push(columnX, 0, rowZ);
   const indices = [];
   for (let row = 0; row < zs.length - 1; row++) {
     for (let column = 0; column < xs.length - 1; column++) {
