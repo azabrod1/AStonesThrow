@@ -10,7 +10,8 @@
 //   speed, banked no more than 50°, never jumping between frames; they come
 //   and go, every visit beginning and ending out beyond the frame's sides,
 //   each on a path of its own; the gulls and the fish eagle glide and flap
-//   by turns; a flock flies together;
+//   by turns; the Reflecting Pool's cardinal bounds (its wings shut a
+//   moment each cycle) and its jay beats steadily; a flock flies together;
 // - the heron stands wading at its spot: its feet on the bed, in the water,
 //   a few centimetres to a few tens deep, inside the pond;
 // - the Pool's geese stand on its lawn, past the deck, and a stone coming
@@ -38,7 +39,7 @@ function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'}
 
 const PHYSICS_STEP = 1 / 240;   // src/main.js's
 const EYE = new THREE.Vector3(0, 1.15, 2.45);   // the home view's eye (src/main.js VIEWS.shore)
-const THROW_REACH = 15;   // m: farther than any throw goes from the hand
+const THROW_REACH = 9;   // m: farther than anything thrown goes from the eye (it lands in the water's 6 m patch, at most 6.2 m off, its arc a few metres up)
 const FRAME_TOP = THREE.MathUtils.degToRad(7.4);   // the home view's frame reaches this far above the horizon (48° high, looking 16.6° down)
 const DAY = { solarElevation: 37 };
 const NIGHT = { solarElevation: -28.3 };   // Lakeside Night: lit by a moon high up, the true sun well down
@@ -121,13 +122,30 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
   check(biggestJump < 0.05, `${place}: no bird's heading jumps between frames: ${biggestJump.toFixed(3)} rad at most`);
   check(visits >= 8 && seen > 0.2 && seen < 0.9, `${place}: they come and go: ${visits} visits in ten minutes, one in view ${(seen * 100).toFixed(0)}% of the time`);
   check(inside === 0, `${place}: every visit begins and ends out of the frame, beyond its sides (${inside} inside)`);
-  // Each visit its own path: no two come in at the same place, and more than one way of going about.
+  // Each visit its own path: no two come in at the same place, and more than one way of going about where its birds
+  // have more than one (the songbirds only cross, tree row to tree row).
   const sameEntry = entries.some((entry, index) => entries.slice(index + 1).some((other) => Math.hypot(entry.x - other.x, entry.y - other.y, entry.z - other.z) < 0.5 && Math.abs(Math.sin(entry.heading - other.heading)) < 0.05));
-  check(!sameEntry && styles.size >= 2, `${place}: every visit a path of its own (${[...styles].join(', ')})`);
+  const ways = new Set(groups.flatMap((group) => Object.keys(group.styles ?? {}))).size;
+  check(!sameEntry && styles.size >= Math.min(2, ways), `${place}: every visit a path of its own (${[...styles].join(', ')})`);
   if (groups.some((group) => ['kelp', 'herring', 'fishEagle'].includes(group.kind))) {
     const shown = frames.filter((frame) => frame.birds.some((bird) => bird.shown));
     const flapping = shown.filter((frame) => frame.birds.some((bird) => bird.shown && bird.beat > 0.5)).length / shown.length;
     check(flapping > 0.1 && flapping < 0.9, `${place}: they glide and flap by turns: beating in ${(flapping * 100).toFixed(0)}% of the frames they are seen in`);
+  }
+  if (place === 'mall') {
+    // The songbirds' flight: the cardinal bounds (wings shut for a moment, its path rising and dipping a few
+    // centimetres each cycle about the visit's), the jay beats steadily, a glide only now and then.
+    const seenOf = (kind) => frames.flatMap((frame) => frame.birds.filter((bird) => bird.kind === kind && bird.shown));
+    const cardinal = seenOf('cardinal'), jay = seenOf('blueJay');
+    const shut = cardinal.filter((bird) => bird.fold > 0.99).length / cardinal.length;
+    let dips = 0;
+    for (let index = 1; index < frames.length - 1; index++) {
+      const [before, bird, after] = [frames[index - 1], frames[index], frames[index + 1]].map((frame) => frame.birds.find((one) => one.kind === 'cardinal'));
+      if (before.shown && bird.shown && after.shown && bird.fold === 0 && before.fold > 0 && bird.pitch < 0) dips++;
+    }
+    const beating = jay.filter((bird) => bird.beat > 0.5).length / jay.length;
+    check(shut > 0.15 && shut < 0.6 && dips > 20 && cardinal.every((bird) => bird.fold === 0 || bird.beat === 1 - bird.fold), `the cardinal bounds: wings shut in ${(shut * 100).toFixed(0)}% of its frames, ${dips} bounds come down into a flap`);
+    check(beating > 0.6 && jay.every((bird) => !bird.fold), `the jay beats steadily: in ${(beating * 100).toFixed(0)}% of its frames, never shut`);
   }
   if (groups.some((group) => group.together)) {
     // Together: while the first and the last of the flock are both in view, they are a few spacings apart.
