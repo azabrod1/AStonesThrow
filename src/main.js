@@ -1122,13 +1122,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const birdView = createBirdView({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
   sceneMain.add(birdView.above, birdView.mirror);
   sceneUnder.add(birdView.below);   // what of a standing bird is in the water (the heron's legs)
+  // Where a standing bird's feet are under a frozen pond: the ice's top, which it stands on, or null in a hole's water.
+  const iceUnderBird = (x, z) => (ice.on && !ice.holeAt(x, z) ? ice.top : null);
   /** The place's birds, as they start at `time` (the caller draws the mirror image whole again, with them or without). */
   function applyBirds(time) {
     birds.setPlace(birdsOn ? placeName : 'none');
     birds.reset(time);
     birds.setConditions({ sunDirection });
     birds.showAt(time);
-    birdView.show(birds, camera);
+    birdView.show(birds, camera, iceUnderBird);
   }
   applyBirds(0);
   sceneMain.environment = environment.envTexture;
@@ -2691,7 +2693,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     visitor.showAt(end);   // whatever is out on the loch, posed at the frame's time (src/lochVisitor.js)
     birds.showAt(end);   // the birds, posed at the frame's time (src/birds.js), their pictures chosen and placed (src/birdSprites.js)
-    birdView.update(birds, camera);
+    birdView.update(birds, camera, iceUnderBird);
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
     for (const rock of rocks) {

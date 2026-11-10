@@ -629,8 +629,8 @@ on; legs down; standing or resting). The water mirrors them; the mirror
 image is drawn again only around a bird that moves in its view. The heron
 is cut out whole, down to its toes: what of it is under the water is drawn
 in the under-water pass, bent at the surface as a reed is, so its legs go
-on down to its feet on the bed. A bird on the ground has a soft shadow
-under it. Each bird costs 2 draw calls (its picture and its mirror image),
+on down to its feet on the bed; on a frozen pond it stands on the ice. A
+bird on the ground or the ice has a soft shadow under it. Each bird costs 2 draw calls (its picture and its mirror image),
 the heron 3 (and its legs under the water), a goose on the lawn 3 (and its
 shadow);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the

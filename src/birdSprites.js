@@ -43,7 +43,10 @@
 // its way back up, as the reeds are) and, for an eye under the water,
 // fading into the water's colour. The water's crests, a centimetre or two,
 // hide the top of it and show the bottom of the upper picture, as at a
-// reed's waterline. A bird standing on dry ground (the Pool's geese) has a
+// reed's waterline. On a frozen pond the heron stands on the ice instead
+// (update's `iceAt`: where a hole's open water is, in it), as herons stand
+// on ice in winter, nothing of it under the sheet. A bird standing on dry
+// ground or on ice (the Pool's geese, a heron in winter) has a
 // third: its shadow, a soft dark oval flat on the ground under it, along its
 // body and a little away from the sun (a blob shadow, as games seat a far
 // figure on the ground: a picture casts no shadow of its own), darker in
@@ -322,21 +325,24 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
   }
 
   /** The birds of a place (src/birds.js setPlace): a pair of meshes each, from the pool; each kind's pictures fetched if they have not been. */
-  function show(population, camera) {
+  function show(population, camera, iceAt) {
     while (pool.length < population.birds.length) pool.push(makeSprite());
     for (const sprite of pool) hide(sprite);
     sprites = population.birds.map((bird, index) => Object.assign(pool[index], { kind: bird.kind }));
     for (const sprite of sprites) sprite.uniforms.uAtlas.value = textures.get(sprite.kind) ?? standIn;
     for (const kind of new Set(sprites.map((sprite) => sprite.kind))) load(kind);
-    update(population, camera);
+    update(population, camera, iceAt);
   }
 
-  /** Each bird's frame chosen and placed from its pose (src/birds.js showAt) as `camera` sees it. */
-  function update(population, camera) {
-    population.birds.forEach((bird, index) => { if (sprites[index]) place(sprites[index], bird.pose, camera); });
+  /**
+   * Each bird's frame chosen and placed from its pose (src/birds.js showAt) as `camera` sees it; `iceAt(x, z)` the
+   * ice's top there, or null where there is open water (src/main.js: the frozen pond, a hole in it).
+   */
+  function update(population, camera, iceAt = () => null) {
+    population.birds.forEach((bird, index) => { if (sprites[index]) place(sprites[index], bird.pose, camera, iceAt); });
   }
 
-  function place(sprite, at, camera) {
+  function place(sprite, at, camera, iceAt) {
     const ready = Boolean(textures.get(sprite.kind)) && Boolean(catalogue.frames) && at.shown;
     sprite.shown = ready;
     sprite.still = false;
@@ -345,16 +351,20 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     sprite.shadow.visible = false;
     if (!ready) sprite.drawn.frame = null;   // shown again, it is a change
     if (!ready || !camera) return;
-    // Its middle where it flies; standing, its feet (src/birds.js laySpot: the heron's on the bed, under the water).
+    // Its middle where it flies; standing, its feet (src/birds.js laySpot: the heron's on the bed, under the water),
+    // or on the ice over them.
     const standing = at.flying === false;
-    sprite.centre.set(at.x, at.y, at.z);
+    const ice = standing && at.y < 0 ? iceAt(at.x, at.z) : null;
+    const feet = ice ?? at.y;
+    sprite.centre.set(at.x, standing ? feet : at.y, at.z);
     for (const mesh of [...sprite.meshes, sprite.under]) mesh.position.copy(sprite.centre);
     const { role, flip, roll } = frameFor(sprite.kind, at, sprite.centre, camera);
     const frame = catalogue.frames[`${sprite.kind}-${role}`];
     // Still when what is drawn is last frame's: its picture, which way it faces and turns, and where (mirrorBounds).
     const { drawn } = sprite;
-    sprite.still = drawn.frame === frame && drawn.flip === flip && drawn.roll === roll && drawn.x === at.x && drawn.y === at.y && drawn.z === at.z;
-    Object.assign(drawn, { frame, flip, roll, x: at.x, y: at.y, z: at.z });
+    const { x, y, z } = sprite.centre;
+    sprite.still = drawn.frame === frame && drawn.flip === flip && drawn.roll === roll && drawn.x === x && drawn.y === y && drawn.z === z;
+    Object.assign(drawn, { frame, flip, roll, x, y, z });
     const uniforms = sprite.uniforms;
     // Its bounds about its anchor (src/main.js redraws the mirror image there): to the picture's farthest corner.
     const [anchorX, anchorY] = frame.anchor;
@@ -364,13 +374,13 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     uniforms.uAnchor.value.fromArray(frame.anchor);
     uniforms.uFlip.value = flip;
     uniforms.uRoll.value = roll;
-    // In the water, what of it is under the surface; on dry ground, its shadow under it (the heron's water takes none).
-    sprite.under.visible = standing && at.y < 0;
-    if (standing && at.y >= 0) {
+    // In the water, what of it is under the surface; on dry ground or ice, its shadow under it (open water takes none).
+    sprite.under.visible = standing && feet < 0;
+    if (standing && feet >= 0) {
       const { sunDirection } = lighting;
       const cast = SHADOW_CAST * frame.metres[1] / Math.max(sunDirection.y, 0.35);
       const lit = sunDirection.y > 0 ? 1 : 0;
-      sprite.shadow.position.set(at.x - sunDirection.x * cast * lit, at.y + 0.005, at.z - sunDirection.z * cast * lit);
+      sprite.shadow.position.set(at.x - sunDirection.x * cast * lit, feet + 0.005, at.z - sunDirection.z * cast * lit);
       sprite.shadow.rotation.y = at.heading;
       sprite.shadow.scale.set(frame.metres[0] * SHADOW_SIZE[0], 1, frame.metres[0] * SHADOW_SIZE[1]);
       sprite.shadow.visible = true;
