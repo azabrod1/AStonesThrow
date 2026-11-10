@@ -683,7 +683,8 @@ lagging the arm, twisting on the downstroke), so it beats, glides and banks
 smoothly from any side. The Reflecting Pool's blue jay and cardinal are
 made the same way, their bodies cut from perched birds (GrabCut from a
 traced outline, levelled along the body, the cardinal's tail and head
-swung into line) and their wings from a bird with its wing spread above
+swung into line, its crest a thin fin over its skull, and the folded wing of
+the perched photo painted out, since in flight it is spread) and their wings from a bird with its wing spread above
 or below, the other side derived from it. The grey heron is one too: its trunk, six-jointed
 neck and legs shaped from a side-on photograph, so it stands, looks about,
 draws its neck in or stretches it, walks the bank, strikes at fish, crouches
