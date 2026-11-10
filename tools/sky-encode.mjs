@@ -9,8 +9,9 @@
 // which this tool downloads from Poly Haven when it is missing (never kept
 // in the repository: 100 MB each). A sky tools/mall-backdrop.py builds (an
 // hour's `file` in tools/mall-backdrop.json) is no Poly Haven file: its 8k is
-// that tool's, written locally, so where it is missing the committed strip is
-// kept as it is (neither re-encoded nor verified) and the rest go on. The 2k photo gives the dome 5.7 pixels a
+// that tool's, written locally, so where it is missing the committed strip and
+// insets are kept as they are, not re-encoded, and the rest go on; --verify
+// still checks the committed files (committedFile). The 2k photo gives the dome 5.7 pixels a
 // degree, the strip 23, so the land on the skyline is sharp at a desktop's
 // or a phone's pixels (src/sky.js, Horizon, which decodes the strip on the
 // GPU). A sky with `insets` (src/sky.js Insets: the Reflecting Pool's
@@ -120,6 +121,7 @@ import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { HORIZON_STRIP, horizonRows, stripAbove } from '../src/sky.js';
+import { parseHorizonStrip } from '../src/horizonStrip.js';
 import encodeJpeg, { init as initEncoder } from '@jsquash/jpeg/encode.js';
 import decodeJpeg, { init as initDecoder } from '@jsquash/jpeg/decode.js';
 
@@ -408,7 +410,7 @@ async function encodeHorizon(hdrPath, measurement) {
     await access(sourcePath);
   } catch {
     if (BUILT_SKIES.has(name)) {
-      console.log(`${name}: no ${path.basename(sourcePath)} (tools/mall-backdrop.py writes it): the committed strip and insets kept, not re-encoded or verified`);
+      console.log(`${name}: no ${path.basename(sourcePath)} (tools/mall-backdrop.py writes it): the committed strip and insets kept, not re-encoded`);
       return null;
     }
     console.log(`${name}: downloading ${HORIZON_URL(name)}`);
@@ -427,6 +429,27 @@ async function encodeInsets(hdrPath, measurement) {
   try { await access(sourcePath); } catch { return null; }
   const atlas = await readPanorama(sourcePath);
   return encodeImage(`${name}_insets`, atlas, measurement, INSET_QUALITY, atlas.height);
+}
+
+/**
+ * A committed strip or atlas this run does not encode (a built sky's, its
+ * source not here), for verify: { name, file, decoded, width, height }, its
+ * half floats as this tool models the loader's decode of the file's own two
+ * JPEGs; null if there is no such file.
+ */
+async function committedFile(folder, name) {
+  let file;
+  try { file = await readFile(path.join(folder, `${name}.jpg`)); } catch { return null; }
+  const { base, gain, metadata } = parseHorizonStrip(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+  const decodeBytes = (jpeg) => decodeJpeg(jpeg.buffer.slice(jpeg.byteOffset, jpeg.byteOffset + jpeg.length));
+  const [baseBack, gainBack] = await Promise.all([decodeBytes(base), decodeBytes(gain)]);
+  const { width, height } = baseBack;
+  const decoded = new Float32Array(width * height * 3);
+  for (let index = 0; index < width * height; index++) {
+    const boost = boostOf(gainBack.data[4 * index], metadata);
+    for (let channel = 0; channel < 3; channel++) decoded[3 * index + channel] = THREE.DataUtils.fromHalfFloat(THREE.DataUtils.toHalfFloat(decodeChannel(baseBack.data[4 * index + channel], boost)));
+  }
+  return { name, file, decoded, width, height };
 }
 
 /**
@@ -533,7 +556,16 @@ for (const input of inputs) {
   results.push(result);
   if (argumentsGiven.includes('--no-horizon')) continue;
   const horizon = await encodeHorizon(input, measurement);
-  if (!horizon) continue;
+  if (!horizon) {
+    // A built sky without its source: its committed strip and insets are still verified.
+    if (!argumentsGiven.includes('--verify')) continue;
+    const name = path.basename(input, '.hdr').replace(/_\d+k$/, '');
+    for (const kept of [`${name}_horizon`, `${name}_insets`]) {
+      const committed = await committedFile(path.dirname(input), kept);
+      if (committed) { console.log(`${kept}: the committed file, to be verified`); results.push(committed); }
+    }
+    continue;
+  }
   await writeFile(path.join(path.dirname(input), `${horizon.name}.jpg`), horizon.file);
   console.log(horizon.report);
   results.push(horizon);
