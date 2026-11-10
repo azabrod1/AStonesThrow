@@ -15,7 +15,10 @@
 //     each station a ring as deep as the outline there and `WIDTH`'s share of
 //     that wide (rounder at the breast, narrower at the head, flat at the
 //     tail), painted from the side-on photograph projected across it (each
-//     side the same picture), so side on it is the photograph;
+//     side the same picture), so side on it is the photograph; a crested
+//     kind's head (`crown`: the skull's top under the crest) is that ring
+//     from its throat to its crown, and its crest above it a fin CREST_FIN
+//     thick, so from in front it is a crest, not a cone as wide as the head;
 //   - the wings: each a sheet over the flattened wing's outline (`wing`: its
 //     leading and trailing edges along the span), painted from below with the
 //     photograph's underwing and from above with its upper side (gl_FrontFacing
@@ -63,6 +66,7 @@ const SKY_SHARE = 1.0;
 const SHADE_SIDE = 0.72;          // the body modelled: its side away from the sun, and toward it
 const SHADE_SUN = 1.12;
 const MIRROR_NEARNESS_SCALE = 4; // src/boulders.js's
+const CREST_FIN = 0.0035;         // m: half a crest's thickness at its root (it thins to a third of that at its tip)
 // A kind's body's width against its depth along it (0 the tail's tip, 1 the bill's): flat at the tail, round at the
 // breast, narrower at the head.
 const WIDTH = [[0, 0.25], [0.22, 0.35], [0.35, 0.85], [0.6, 0.95], [0.75, 0.8], [0.86, 0.72], [1, 0.5]];
@@ -181,6 +185,31 @@ function sample(stations, values, at) {
  * mirrored), from a shoulder at (shoulderX, shoulderY), added through `add` (and their triangles to `indices`): the
  * shoulder's, elbow's and wrist's places (the right wing's, model space).
  */
+/**
+ * A crested body's normals (buildModel): the rings' first `stations` + 1, each RING + 1 round, are no longer
+ * ellipses, so each vertex's normal is taken from its neighbours along the body and round its ring, turned to the
+ * side the ellipse's normal faced.
+ */
+function crestNormals(positions, normals, stations) {
+  const at = (station, around) => {
+    const index = (THREE.MathUtils.clamp(station, 0, stations) * (RING + 1) + ((around + RING) % RING)) * 3;
+    return new THREE.Vector3(positions[index], positions[index + 1], positions[index + 2]);
+  };
+  const along = new THREE.Vector3(), round = new THREE.Vector3(), normal = new THREE.Vector3();
+  for (let station = 0; station <= stations; station++) {
+    for (let around = 0; around <= RING; around++) {
+      along.subVectors(at(station + 1, around), at(station - 1, around));
+      round.subVectors(at(station, around + 1), at(station, around - 1));
+      normal.crossVectors(along, round);
+      const index = (station * (RING + 1) + around) * 3;
+      if (normal.lengthSq() < 1e-14) continue;
+      normal.normalize();
+      if (normal.x * normals[index] + normal.y * normals[index + 1] + normal.z * normals[index + 2] < 0) normal.negate();
+      normals[index] = normal.x; normals[index + 1] = normal.y; normals[index + 2] = normal.z;
+    }
+  }
+}
+
 function addWings(wing, shoulderX, shoulderY, add, indices) {
   const root = wing.stations[0], tip = wing.tip;
   const elbowS = root + (tip - root) * SKELETON.elbow, wristS = root + (tip - root) * SKELETON.wrist;
@@ -258,10 +287,23 @@ export function buildModel(entry) {
     const headShare = THREE.MathUtils.smoothstep(x, neckX - 0.04, neckX + 0.04);
     const tailShare = 1 - THREE.MathUtils.smoothstep(x, tailX - 0.05, tailX + 0.05);
     const joint = headShare > 0 ? [JOINTS.body, JOINTS.head, headShare] : [JOINTS.body, JOINTS.tail, tailShare];
+    // Under a crest, the ring's width is the head's (an ellipse from the throat to the crown), and above the crown
+    // the crest's fin.
+    const crownY = body.crown ? Math.min(sample(body.stations, body.crown, x), middle + depth) : middle + depth;
+    const skullMiddle = (crownY + middle - depth) / 2, skullDepth = Math.max((crownY - (middle - depth)) / 2, 0.002);
+    const skullWidth = skullDepth * through(WIDTH, share);
+    const crestHeight = middle + depth - crownY;
     for (let around = 0; around <= RING; around++) {
       const angle = (around / RING) * Math.PI * 2;
-      const y = middle + depth * Math.cos(angle), z = width * Math.sin(angle);
-      const normal = new THREE.Vector3(0, Math.cos(angle) / depth, Math.sin(angle) / width).normalize();
+      const y = middle + depth * Math.cos(angle);
+      let z = width * Math.sin(angle);
+      if (crestHeight > 1e-4) {
+        const inSkull = THREE.MathUtils.clamp((y - skullMiddle) / skullDepth, -1, 1);
+        const skull = skullWidth * Math.sqrt(1 - inSkull * inSkull);
+        const fin = y > crownY - CREST_FIN ? CREST_FIN * (1 - (2 / 3) * THREE.MathUtils.clamp((y - crownY) / crestHeight, 0, 1)) : 0;
+        z = Math.sign(Math.sin(angle)) * Math.max(skull, fin);
+      }
+      const normal = new THREE.Vector3(0, Math.cos(angle) / depth, Math.sin(angle) / width).normalize();   // the crest's: crestNormals
       // The side's picture across it, a little in from its edge on the top and the belly (the outline's edge pixels
       // are the photo's background and what hung below it).
       const pictureY = middle + depth * 0.86 * Math.cos(angle);
@@ -274,6 +316,7 @@ export function buildModel(entry) {
       indices.push(a, b, a + 1, a + 1, b, b + 1);
     }
   }
+  if (body.crown) crestNormals(positions, normals, stations);
 
   // The skeleton's places.
   const shoulderX = left + SKELETON.shoulder * length;
