@@ -1,6 +1,6 @@
 # Credits
 
-Everything the page shows that someone else made. The CC BY and CC BY-SA entries must be credited wherever their work is shown; the CC0 ones need no credit, but they get one anyway. The site publishes this as `credits.html`, linked from the Location page (where the Reflecting Pool's card also carries its credit line): change the two together.
+Everything the page shows that someone else made, ready to go into an About screen. The CC BY and CC BY-SA entries must be credited wherever their work is shown; the CC0 ones need no credit, but they get one anyway.
 
 ## Reflecting Pool
 
