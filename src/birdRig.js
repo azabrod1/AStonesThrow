@@ -20,7 +20,10 @@
 // and the hand's droop or lift: an eagle's shallow V, a frigatebird's
 // crooked M, a gull's arched hand), so a bird going from a glide into
 // flapping does so smoothly whatever the phase. The body rises a little on
-// the downstroke and sinks on the upstroke, against the wings.
+// the downstroke and sinks on the upstroke, against the wings. A bounding
+// songbird shuts its wings between bursts (`fold`, 0 to 1): each wing is
+// lowered to its side, swept back along the body and drawn in about its
+// shoulder, so it lies folded on the back as a perched bird's does.
 // Each kind's numbers are its FLIGHT entry; angles in radians.
 import * as THREE from 'three';
 
@@ -47,6 +50,13 @@ export const FLIGHT = {
   // A heron: deep, slow, bowed beats (its wings arched down in a glide), hardly any flex.
   heron: { amplitude: degrees(36), centre: degrees(-2), down: 0.55, lag: 0.12, handSwing: 0.5, flex: 0.12, pronation: degrees(8), rise: 0.015,
     glide: { dihedral: degrees(-3), hand: degrees(-12), sweep: degrees(4) } },
+  // Songbirds: deep, quick beats, the wing drawn right in on the upstroke (a passerine's flex gait), the body bobbing
+  // with each. The cardinal's are deeper and quicker still, in bursts between bounds with its wings shut (src/birds.js
+  // FLAPPING.bounding; `fold` here).
+  blueJay: { amplitude: degrees(48), centre: degrees(8), down: 0.5, lag: 0.08, handSwing: 0.4, flex: 0.7, pronation: degrees(12), rise: 0.03,
+    glide: { dihedral: degrees(4), hand: degrees(-4), sweep: degrees(8) } },
+  cardinal: { amplitude: degrees(55), centre: degrees(10), down: 0.5, lag: 0.06, handSwing: 0.35, flex: 0.85, pronation: degrees(12), rise: 0.03,
+    glide: { dihedral: degrees(4), hand: degrees(-4), sweep: degrees(8) } },
 };
 
 const scratch = { matrix: new THREE.Matrix4(), rotation: new THREE.Matrix4(), quaternion: new THREE.Quaternion(), euler: new THREE.Euler(), vector: new THREE.Vector3() };
@@ -103,6 +113,9 @@ const jointPoint = new THREE.Vector3();
  */
 export function poseJoints(out, model, flight, pose) {
   const angles = flapAngles(flight, pose.phase ?? 0, pose.beat ?? 0);
+  // Its wings shut in flight (`fold`, 0 to 1: a songbird's bound between bursts of beats) as a standing bird's are
+  // (poseStanding): shrunk to the shoulder and swept back, inside the body's picture of its folded wings.
+  const fold = THREE.MathUtils.clamp(pose.fold ?? 0, 0, 1);
   // The body: placed, headed (about up, 0 along +x, turning toward −z), climbing (nose up) and banked (right wing down
   // for a right turn: pose.bank > 0), and risen against the wings.
   scratch.euler.set(pose.bank ?? 0, pose.heading ?? 0, pose.pitch ?? 0, 'YZX');
@@ -120,8 +133,13 @@ export function poseJoints(out, model, flight, pose) {
     const at = (point) => jointPoint.set(point.x, point.y, point.z * side);
     // Shoulder: raised (about the body's axis: up for either wing), swept, twisted about the span.
     const raise = side > 0 ? -1 : 1;   // a rotation about +x lowers the right wing (+z)
-    about(shoulderMatrix, at(shoulder), AXIS_X, raise * angles.shoulder);
+    about(shoulderMatrix, at(shoulder), AXIS_X, raise * angles.shoulder * (1 - fold));
     shoulderMatrix.multiply(about(local, at(shoulder), AXIS_Z, angles.twist * 0.4));
+    if (fold > 0) {
+      shoulderMatrix.multiply(about(local, at(shoulder), AXIS_Y, side * degrees(70) * fold));
+      const shrink = 1 - 0.94 * fold;
+      shoulderMatrix.multiply(local.makeTranslation(shoulder.x, shoulder.y, shoulder.z * side).multiply(step.makeScale(shrink, shrink, shrink)).multiply(scratch.matrix.makeTranslation(-shoulder.x, -shoulder.y, -shoulder.z * side)));
+    }
     shoulderWorld.multiplyMatrices(world, shoulderMatrix);
     shoulderWorld.toArray(out, (side > 0 ? JOINTS.rightShoulder : JOINTS.leftShoulder) * 16);
     // Elbow: swept forward on the upstroke (the forearm comes in).

@@ -27,7 +27,9 @@
 //   - Desert oasis (the Richtersveld): a Verreaux's eagle under the koppies.
 //     Swiss Alps (Lago d'Isola): a pair of ravens. Wooded lake (Radków): a
 //     pair of mute swans. The Polynesian lagoon: great frigatebirds, hardly
-//     ever beating their wings, circling.
+//     ever beating their wings, circling. The Reflecting Pool (Washington,
+//     D.C.): a blue jay and a northern cardinal, crossing low between the
+//     elms either side of the pool, now and then.
 //   - None at night (setConditions: the true sun more than NIGHT_SUN below
 //     the horizon, though the moon may light the scene).
 //
@@ -47,7 +49,9 @@
 // and laid out so that its tightest turn needs no more than LAID_BANK at
 // its speed (drawn again if it would), as a gull or an eagle turns,
 // unhurried. It flaps as its kind does (FLAPPING: in bouts drawn from its
-// seed and the time, flapBout, and whenever it climbs but in a thermal). A flock flies
+// seed and the time, flapBout, and whenever it climbs but in a thermal; a
+// cardinal bounds, `bound`: a burst of beats, then its wings shut as it
+// arcs on, its path rising and dipping about the visit's). A flock flies
 // its leader's path strung out behind it. All of it is closed form in time
 // (visitAt), the visits made in order and the last few kept. A standing
 // bird's state (`mode`) is changed only in the physics steps (step,
@@ -81,7 +85,12 @@ const FLAPPING = {
   fishing: { window: 6, share: 0.65, least: 2, most: 4, ease: 0.4, climb: 0.8 },   // a fish eagle low over the water: bouts of slow, shallow beats between glides
   frigate: { window: 20, share: 0.1, least: 0.6, most: 1.0, ease: 0.25, climb: 0.2 },   // hardly ever
   corvid: { window: 3.2, share: 0.75, least: 1.6, most: 2.8, ease: 0.25, climb: 1.4 },   // rows, with short glides
+  jay: { window: 2.6, share: 0.85, least: 1.6, most: 2.5, ease: 0.15, climb: 1.2 },   // a blue jay: rows steadily, now and then a short glide
   steady: { steady: true },
+  // A small songbird's bounding flight (a cardinal's): a burst of beats (`flap` s), climbing, then its wings shut for
+  // a bound (`bound` s), coasting up and over and dropping under gravity, again and again, so its path rises and dips
+  // (bounding, in the visit's own time: each visit's lengths drawn from its seed).
+  bounding: { bounding: true, flap: [0.3, 0.42], bound: [0.16, 0.26], shut: 0.04 },
 };
 
 // The kinds: their size (m: wingspan, bill to tail), their wingbeat (Hz; Pennycuick's: a gull about 3, a heron about
@@ -98,6 +107,9 @@ export const BIRD_KINDS = {
   raven: { name: 'Common raven', span: 1.2, length: 0.62, beat: 3.4, cruise: 10, flapping: 'corvid', stand: 0 },
   swan: { name: 'Mute swan', span: 2.2, length: 1.45, beat: 2.9, cruise: 15, flapping: 'steady', stand: 0 },
   frigate: { name: 'Great frigatebird', span: 2.2, length: 0.95, beat: 1.6, cruise: 9, flapping: 'frigate', stand: 0 },
+  // Songbirds: a passerine's quick beats (a jay's about 7 a second, a cardinal's about 11, as birds of their weight beat).
+  blueJay: { name: 'Blue jay', span: 0.4, length: 0.28, beat: 7, cruise: 8.5, flapping: 'jay', stand: 0 },
+  cardinal: { name: 'Northern cardinal', span: 0.29, length: 0.22, beat: 11, cruise: 7.5, flapping: 'bounding', stand: 0 },
 };
 
 // Each place's birds (src/places.js PLACES): how many of which kind and their habit.
@@ -130,6 +142,13 @@ export const BIRDS_BY_PLACE = {
   highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 0.7, turn: 0.3 } }],
   // On the Pool's lawn (src/pool.js: the deck, POOL.deck up, ends 3.9 m from the pool's middle at (0, −1)), beyond
   // its far side, where the home view's top sees it; side on to the eye.
+  // The Reflecting Pool (Washington, D.C.): a blue jay and a cardinal, birds of the elms either side of it, now and
+  // then crossing the pool from one row to the other, low and near (nothing thrown goes past the water's 6 m patch,
+  // so they may come within 10 m of the eye, where a songbird shows), the cardinal bounding.
+  mall: [
+    { kind: 'blueJay', habit: 'visit', count: 1, distance: [10, 24], height: [1.6, 4], aim: 0, spread: 16, gap: [15, 45], styles: { cross: 1 } },
+    { kind: 'cardinal', habit: 'visit', count: 1, distance: [10, 22], height: [1.6, 3.5], aim: 0, spread: 16, gap: [20, 55], styles: { cross: 1 } },
+  ],
   pool: [{ kind: 'goose', habit: 'graze', count: 2, ground: 0.1, spots: [[-1.5, -7.4, 0.2], [0.8, -8.4, Math.PI - 0.3]], postures: ['stand', 'rest'] }],
 };
 
@@ -521,10 +540,13 @@ export class BirdPopulation {
     // A point by bearing (degrees right of the home view's line), distance and height; kept under the frame's top
     // (CEILING, but for a thermal's last turns: `free`) and out of reach.
     const points = [];
+    // A bounding bird's arcs rise over its path (src/birds.js bound): its path kept that much lower.
+    const flapping = FLAPPING[BIRD_KINDS[group.kind].flapping];
+    const rise = flapping.bounding ? GRAVITY * flapping.bound[1] ** 2 / 8 + 0.1 : 0;
     const at = (bearing, distance, height, free = false) => {
       const radians = THREE.MathUtils.degToRad(bearing);
       const clampedDistance = Math.max(distance, near * 0.9);
-      const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING);
+      const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING) - rise;
       points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
     };
     const middle = () => group.aim + signed(group.spread);
@@ -661,11 +683,42 @@ export class BirdPopulation {
     const flapping = FLAPPING[kind.flapping];
     // Beating as its kind does, and to climb (not in a thermal: the air lifts it).
     const climbRate = visit.speed * velocity.y / Math.max(Math.hypot(level, velocity.y), 1e-9);
-    pose.beat = flapping.steady ? 1 : Math.min(1, this.flapBout(bird, time, flapping) + (visit.thermal ? 0 : Math.max(climbRate, 0) * flapping.climb));
+    if (flapping.bounding) this.bound(bird, visit, time - visitor.since - visit.start, flapping);
+    else pose.beat = flapping.steady ? 1 : Math.min(1, this.flapBout(bird, time, flapping) + (visit.thermal ? 0 : Math.max(climbRate, 0) * flapping.climb));
     pose.look = 0.25 * Math.sin(time * 0.37 + bird.seed);   // it looks about as it goes, a little
   }
 
   /** How hard a bird beats at `time` from its bouts alone (its kind's FLAPPING), 0 to 1. */
+  /**
+   * A bounding songbird `into` s into its visit (FLAPPING.bounding): beating or bounding with its wings shut (pose
+   * beat and fold), and how far its path rises and dips about the visit's (pose.y, and pitch with it). Each cycle is
+   * a bound, a ballistic arc (up at v0 = g·bound/2 and down again), then the burst that brings it back up (decelerating
+   * its fall at 2·v0/flap and climbing again): smooth in height and climb, its middle on the visit's path.
+   */
+  bound(bird, visit, into, { flap, bound, shut }) {
+    const { pose } = bird;
+    const flapping = between(flap, hashed(bird.seed, visit.index, 5)), bounding = between(bound, hashed(bird.seed, visit.index, 6));
+    const cycle = flapping + bounding;
+    const at = ((into % cycle) + cycle) % cycle;
+    const upward = GRAVITY * bounding / 2, lift = 2 * upward / flapping;
+    // The arc's middle over a cycle (the bound's g·b²/12 a second of it, the burst's −v0·f/6), so the path's is its.
+    const middle = (bounding * GRAVITY * bounding * bounding / 12 - flapping * upward * flapping / 6) / cycle;
+    let height, climb;
+    if (at < bounding) {
+      height = upward * at - GRAVITY * at * at / 2;
+      climb = upward - GRAVITY * at;
+      pose.fold = smoother(0, shut, at) * (1 - smoother(bounding - shut, bounding, at));
+    } else {
+      const since = at - bounding;
+      height = -upward * since + lift * since * since / 2;
+      climb = -upward + lift * since;
+      pose.fold = 0;
+    }
+    pose.beat = 1 - pose.fold;
+    pose.y += height - middle;
+    pose.pitch += Math.atan2(climb, visit.speed) * 0.6;
+  }
+
   flapBout(bird, time, flapping) {
     const { window, share, least, most, ease } = flapping;
     const shifted = time + bird.flapOffset;
