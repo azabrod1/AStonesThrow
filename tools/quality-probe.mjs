@@ -613,11 +613,13 @@ await page.evaluate(() => { window.__pond.setWind('calm'); window.__pond.advance
 part('the pixel budget');
 await page.evaluate(() => { window.__pond.pause(); window.__pond.setQuality('high'); });
 await page.setViewportSize({ width: 2560, height: 1440 });
-await page.waitForFunction(() => window.__pond.budget.canvas.width > 1000, undefined, { timeout: 60000 }).catch(() => {});
+// The resize comes with the page's next frame, after any frame still being drawn: on SwiftShader one may take a
+// couple of minutes here (patience).
+await page.waitForFunction(() => window.__pond.budget.canvas.width > 1000, undefined, { timeout: patience(60000) }).catch(() => {});
 const largeBudget = await checkBuilt({ page, width: 2560, height: 1440 }, '2560×1440');
 check(largeBudget.canvas.width * largeBudget.canvas.height <= PIXEL_BUDGET, `the canvas keeps within ${PIXEL_BUDGET / 1e6} M pixels (${largeBudget.canvas.width}×${largeBudget.canvas.height}, ratio ${largeBudget.pixelRatio.toFixed(3)})`);
 await page.setViewportSize({ width: phone.width, height: phone.height });
-await page.waitForFunction((width) => window.__pond.budget.canvas.width === width, phone.width, { timeout: 60000 }).catch(() => {});
+await page.waitForFunction((width) => window.__pond.budget.canvas.width === width, phone.width, { timeout: patience(60000) }).catch(() => {});
 await page.evaluate(() => window.__pond.resume());
 
 part('one frame loop, on low');
