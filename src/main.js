@@ -331,6 +331,7 @@ import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './f
 import { createFishView } from './fishMeshes.js';
 import { BirdPopulation } from './birds.js';
 import { createBirdView } from './birdSprites.js';
+import { createBirdView as createBirdModels, MODELLED_KINDS } from './birdMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
 import { compileOnly } from './precompile.js';
@@ -1119,7 +1120,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const birds = new BirdPopulation({ seed: Number(pageParameters.get('birdSeed') ?? 1) });
   // Their pictures come after the start (src/birdSprites.js load): the mirror image is drawn whole again when they do,
   // or a still heron would have no reflection until it stirred.
-  const birdView = createBirdView({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
+  // A kind with a model (src/birdMeshes.js) is drawn as one; the rest as pictures (src/birdSprites.js), till each has one.
+  const birdViews = [
+    createBirdModels({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } }),
+    createBirdView({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; }, modelled: (kind) => MODELLED_KINDS.has(kind) }),
+  ];
+  const birdView = {
+    above: new THREE.Group().add(...birdViews.map((view) => view.above)),
+    mirror: new THREE.Group().add(...birdViews.map((view) => view.mirror)),
+    below: new THREE.Group().add(...birdViews.map((view) => view.below)),
+    show: (...given) => birdViews.forEach((view) => view.show(...given)),
+    update: (...given) => birdViews.forEach((view) => view.update(...given)),
+    mirrorBounds: (into, frustum) => birdViews.reduce((sum, view) => sum + view.mirrorBounds(into, frustum), 0),
+    warmUp: () => { const started = birdViews.map((view) => view.warmUp()); return { done: () => started.forEach((one) => one.done()) }; },
+    get drawCalls() { return birdViews.reduce((sum, view) => sum + view.drawCalls, 0); },
+  };
   sceneMain.add(birdView.above, birdView.mirror);
   sceneUnder.add(birdView.below);   // what of a standing bird is in the water (the heron's legs)
   // Where a standing bird's feet are under a frozen pond: the ice's top, which it stands on, or null in a hole's water.

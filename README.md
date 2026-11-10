@@ -623,6 +623,16 @@ of reach and in the home view's sky. Their state changes only in the
 physics steps and they are posed at each frame's time from closed forms,
 from their own seeded stream, so a seeded game goes alike at any frame rate.
 
+The African fish eagle is a 3D model shaped and painted from photographs of
+real ones (`tools/bird-models.py`, `src/birdMeshes.js`): its body lofted from
+a side-on outline and painted from that photograph, its wings rectified flat
+from a photograph from below, slotted primaries and all, on a skeleton
+(`src/birdRig.js`) whose wingbeat is a bird's (a cosine stroke, the hand
+lagging the arm, twisting on the downstroke), so it beats, glides and banks
+smoothly from any side. `tools/bird-look.mjs` shoots a model alone through
+its wingbeat. The other kinds are still pictures, as follows, until each has
+its model.
+
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
 or public domain; the credits are under the Birds setting and in
 `assets/birds/birds.json`), cut out of its sky (or, for the standing birds,

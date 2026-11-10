@@ -212,8 +212,10 @@ const cameraRight = new THREE.Vector3();
  * for each bird, update(population, camera) chooses each
  * one's frame and places it, mirrorBounds tells src/main.js where a moving
  * bird's mirror image is; onLoaded is called once the pictures have come.
+ * A kind that `modelled` says is drawn as a model (src/birdMeshes.js) is
+ * left to it: never fetched or shown here.
  */
-export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
+export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, modelled = () => false }) {
   const above = new THREE.Group(), below = new THREE.Group(), mirror = new THREE.Group();
   const standIn = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
   standIn.needsUpdate = true;
@@ -252,7 +254,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
 
   /** A kind's pictures, fetched the first time it is shown; its birds stay unshown until they have come. */
   async function load(kind) {
-    if (textures.has(kind)) return;
+    if (textures.has(kind) || modelled(kind)) return;
     textures.set(kind, null);
     try {
       await loadCatalogue();
@@ -343,7 +345,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
   }
 
   function place(sprite, at, camera, iceAt) {
-    const ready = Boolean(textures.get(sprite.kind)) && Boolean(catalogue.frames) && at.shown;
+    const ready = !modelled(sprite.kind) && Boolean(textures.get(sprite.kind)) && Boolean(catalogue.frames) && at.shown;
     sprite.shown = ready;
     sprite.still = false;
     for (const mesh of sprite.meshes) mesh.visible = ready;

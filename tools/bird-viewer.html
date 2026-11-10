@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!-- One kind's bird model (src/birdMeshes.js) alone, posed through its wingbeat and seen from several sides, for
+     tools/bird-look.mjs to shoot: ?kind=fishEagle&beat=1&glide=0. Rows: its wingbeat's phases; columns: side on,
+     from below, from in front and below, from above. -->
+<html><head><meta charset="utf-8">
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js" } }</script>
+<style>html, body { margin: 0; background: #7aaad6; }</style></head>
+<body><canvas id="view" width="1280" height="960"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { createBirdView } from '../src/birdMeshes.js';
+const parameters = new URLSearchParams(location.search);
+const kind = parameters.get('kind') ?? 'fishEagle';
+const beat = Number(parameters.get('beat') ?? 1);
+const rows = Number(parameters.get('rows') ?? 4), columns = 4;
+const canvas = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setClearColor(0x7aaad6);
+renderer.autoClear = false;
+const lighting = { sunIrradiance: new THREE.Vector3(3, 2.9, 2.7), skyAmbient: new THREE.Vector3(0.75, 0.82, 0.95), sunDirection: new THREE.Vector3(0.4, 0.8, 0.3).normalize() };
+const scene = new THREE.Scene();
+const view = createBirdView({ lighting, mirrorLayer: 5 });
+scene.add(view.above);
+const pose = () => ({ x: 0, y: 1, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat, look: 0, legs: 0, shown: true, flying: true });
+const birds = Array.from({ length: rows }, (unused, row) => ({ kind, pose: { ...pose(), phase: (row / rows) * Math.PI * 2 } }));
+const population = { birds: [birds[0]] };
+const camera = new THREE.PerspectiveCamera(30, (1280 / columns) / (960 / rows), 0.1, 100);
+view.show(population, camera);
+const sides = [[0, 0.15, 6], [0, -5, 2.5], [5, -2.5, 1], [-1, 5, 3]];   // eye offsets: side on, below, in front and below, above
+window.ready = new Promise((resolve) => {
+  const draw = () => {
+    if (!view.count) { view.update(population, camera); requestAnimationFrame(draw); return; }
+    renderer.clear();
+    for (let row = 0; row < rows; row++) {
+      population.birds[0] = birds[row];
+      view.update(population, camera);
+      for (let column = 0; column < columns; column++) {
+        const [x, y, z] = sides[column];
+        camera.position.set(x, y, z).normalize().multiplyScalar(Number(parameters.get('distance') ?? 3)).add(new THREE.Vector3(0, 1, 0));
+        camera.lookAt(0, 1, 0);
+        const width = 1280 / columns, height = 960 / rows;
+        renderer.setViewport(column * width, (rows - 1 - row) * height, width, height);
+        renderer.setScissor(column * width, (rows - 1 - row) * height, width, height);
+        renderer.setScissorTest(true);
+        renderer.render(scene, camera);
+      }
+    }
+    resolve();
+  };
+  draw();
+});
+</script></body></html>
