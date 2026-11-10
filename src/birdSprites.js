@@ -14,9 +14,10 @@
 //   - front: coming at the eye or going from it (head on, its bank turning
 //     the picture), for a kind that has one;
 //   - land: its legs let down, taking off or landing (the heron);
-//   - stand: standing in the water (the heron's photograph is cut at the
-//     waterline) or on the ground (the geese's at their soles); rest, its
-//     head tucked in (a goose on the Pool's lawn, src/birds.js `postures`).
+//   - stand: standing in the water or on the ground, whole down to its
+//     feet (the heron's toes on the bed, the geese's soles on the lawn);
+//     rest, its head tucked in (a goose on the Pool's lawn, src/birds.js
+//     `postures`).
 // Tilted by its climb. Each frame faces left in its image; one flying (or
 // standing) to the right on the screen is drawn mirrored.
 //
@@ -29,13 +30,23 @@
 // one draw call: `above` in the main scene, and `mirror` on the mirror's
 // layer, alpha-tested, its distance in alpha (as src/boulders.js
 // sceneryShader writes it), which src/main.js draws again only while a bird
-// in its view moves (mirrorBounds). `below` is kept empty: nothing of a bird
-// is under the water. A bird standing on dry ground (the Pool's geese) has a
+// in its view moves (mirrorBounds); both drop what is under the still
+// surface (y < 0). A bird standing in the water (the heron) has a third,
+// `below`, in the under-water pass: the same picture from the waterline
+// down (its corners above the water brought down the picture to it), each
+// corner moved to where the flat surface shows it (SEEN_THROUGH_WATER, as
+// src/reeds.js draws a stem's lower half), so its legs bend at the
+// waterline as a straw in a glass does and go on down to its feet on the
+// bed, lit through the water above them (the light down to them and some of
+// its way back up, as the reeds are) and, for an eye under the water,
+// fading into the water's colour. The water's crests, a centimetre or two,
+// hide the top of it and show the bottom of the upper picture, as at a
+// reed's waterline. A bird standing on dry ground (the Pool's geese) has a
 // third: its shadow, a soft dark oval flat on the ground under it, along its
 // body and a little away from the sun (a blob shadow, as games seat a far
 // figure on the ground: a picture casts no shadow of its own), darker in
 // sunlight, never gone (what lies under a bird is shaded by it whatever the
-// sky). Every bird is the same three programs, built under the veil (warmUp)
+// sky). Every bird is the same four programs, built under the veil (warmUp)
 // with a texel standing in for its picture. Each kind's
 // pictures are one image (assets/birds/<kind>.webp, 30 to 400 KB), fetched
 // the first time a place with that kind is shown and set as its birds'
@@ -43,6 +54,7 @@
 // leaves that kind unshown.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
+import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 
 const FOLDER = new URL('../assets/birds/', import.meta.url);
 const FRAMES_URL = new URL('birds.json', FOLDER);
@@ -61,6 +73,10 @@ const FALLBACKS = { glide: ['mid', 'down', 'up'], mid: ['glide', 'down', 'up'], 
 const SUN_SHARE = 0.3;
 const SKY_SHARE = 1.0;
 const MIRROR_NEARNESS_SCALE = 4;   // src/boulders.js's: the mirror image's alpha is 1 − this / distance
+// How far nearer the eye a standing bird's under-water part is tested against the bed (m, along each pixel's ray, so
+// it is drawn where it was): it stands on the bed, which the bed's coarse triangles cut through on a steep bank (the
+// heron's), hiding most of its legs.
+const BELOW_PULL = 0.25;
 // A standing bird's shadow: how dark its middle is in shade, and how much darker in the sun; its size against the
 // picture's (along the body, across it); and how far it is cast away from the sun, a share of the picture's height
 // over the sun's slope (no farther than at 20° up).
@@ -77,19 +93,42 @@ uniform float uFlip;     // 1 as it is (facing left), -1 mirrored
 uniform float uRoll;     // turned in the picture's plane (rad, anticlockwise)
 varying vec2 vUv;
 varying vec3 vViewPosition;
+varying vec3 vWorld;
+#ifdef BELOW
+${SEEN_THROUGH_WATER}
+#endif
 void main() {
   // The quad's corner (position.xy from 0 to 1) about the anchor, in metres, mirrored and turned, in the camera's plane.
-  vec2 corner = (position.xy - uAnchor) * uSize;
+  vec2 local = position.xy;
+  vec2 corner = (local - uAnchor) * uSize;
   corner.x *= uFlip;
   float cosine = cos(uRoll), sine = sin(uRoll);
   corner = vec2(cosine * corner.x - sine * corner.y, sine * corner.x + cosine * corner.y);
   #ifdef MIRROR
     corner = -corner;   // the mirror's camera is upside down (src/main.js placeMirrorCamera: its up reflected), so its picture is turned round
   #endif
-  vec4 middle = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-  vec4 mvPosition = middle + vec4(corner, 0.0, 0.0);
+  vec3 middle = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vec3 cameraRight = vec3(1.0, 0.0, 0.0) * mat3(viewMatrix);   // the camera's plane in the world
+  vec3 cameraUp = vec3(0.0, 1.0, 0.0) * mat3(viewMatrix);
+  #ifdef BELOW
+    // Only what is under the water: a corner above it brought down the picture to the waterline (a standing bird's
+    // picture is never turned, so its height in the picture is local.y's).
+    float above = middle.y + cameraRight.y * corner.x + cameraUp.y * corner.y;
+    if (above > 0.0) {
+      corner.y -= above / cameraUp.y;
+      local.y = uAnchor.y + corner.y / uSize.y;
+    }
+  #endif
+  vec3 world = middle + cameraRight * corner.x + cameraUp * corner.y;
+  vWorld = world;
+  #ifdef BELOW
+    vec4 mvPosition = viewMatrix * vec4(seenThroughWater(world, 0.0), 1.0);   // where the still surface shows it (the header)
+    mvPosition.xyz *= max(1.0 - ${BELOW_PULL.toFixed(2)} / length(mvPosition.xyz), 0.5);   // nearer the eye along its ray (BELOW_PULL)
+  #else
+    vec4 mvPosition = viewMatrix * vec4(world, 1.0);
+  #endif
   vViewPosition = -mvPosition.xyz;
-  vUv = uRect.xy + vec2(position.x, 1.0 - position.y) * uRect.zw;
+  vUv = uRect.xy + vec2(local.x, 1.0 - local.y) * uRect.zw;
   gl_Position = projectionMatrix * mvPosition;
 }
 `;
@@ -99,15 +138,37 @@ uniform sampler2D uAtlas;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec3 uSunDirection;
+uniform vec3 uExtinction;   // the water's, per metre (lighting.extinction)
+uniform vec3 uWaterColor;   // the water's own radiance, for an eye under it
 varying vec2 vUv;
 varying vec3 vViewPosition;
+varying vec3 vWorld;
 void main() {
-  vec4 picture = texture2D(uAtlas, vUv);   // linear (the atlas is sRGB, decoded as it is sampled)
+  #ifdef BELOW
+    // Squashed by the water (a tenth of its height and less, seen from the shore), its picture would be sampled at a
+    // mip level that blends in the next frame in the atlas: its footprint held to twice its narrower way's.
+    vec2 alongX = dFdx(vUv), alongY = dFdy(vUv);
+    float widest = 2.0 * max(min(length(alongX), length(alongY)), 1e-7);
+    alongX *= min(1.0, widest / max(length(alongX), 1e-7));
+    alongY *= min(1.0, widest / max(length(alongY), 1e-7));
+    vec4 picture = textureGrad(uAtlas, vUv, alongX, alongY);
+  #else
+    vec4 picture = texture2D(uAtlas, vUv);   // linear (the atlas is sRGB, decoded as it is sampled)
+  #endif
   vec3 light = uSunIrradiance * ${SUN_SHARE.toFixed(2)} * smoothstep(-0.02, 0.2, uSunDirection.y) + uSkyAmbient * ${SKY_SHARE.toFixed(2)};
+  #ifdef BELOW
+    light *= exp(-uExtinction * max(-vWorld.y, 0.0) * 1.5);   // the light down to it, and some of its way back up (as src/reeds.js)
+  #else
+    if (vWorld.y < 0.0) discard;   // under the still surface: the under-water pass draws it (below)
+  #endif
   vec3 radiance = picture.rgb * light;
   #ifdef MIRROR
     if (picture.a < 0.5) discard;
     gl_FragColor = vec4(radiance, 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
+  #elif defined(BELOW)
+    if (picture.a < 0.02) discard;
+    if (cameraPosition.y < 0.0) radiance = mix(uWaterColor, radiance, exp(-uExtinction * length(cameraPosition - vWorld)));
+    gl_FragColor = vec4(radiance, picture.a);
   #else
     if (picture.a < 0.02) discard;
     gl_FragColor = vec4(radiance, picture.a);
@@ -141,8 +202,9 @@ const cameraRight = new THREE.Vector3();
 
 /**
  * The birds' pictures: `above` and `mirror` for the main scene (the
- * mirror's on `mirrorLayer` alone), `below` empty. show(population) makes a
- * pair of meshes for each bird, update(population, camera) chooses each
+ * mirror's on `mirrorLayer` alone), `below` for the under-water pass (what
+ * of a standing bird is in the water). show(population) makes the meshes
+ * for each bird, update(population, camera) chooses each
  * one's frame and places it, mirrorBounds tells src/main.js where a moving
  * bird's mirror image is; onLoaded is called once the pictures have come.
  */
@@ -156,6 +218,8 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     uSunIrradiance: { value: lighting.sunIrradiance },   // filled in place by the sky (src/sky.js)
     uSkyAmbient: { value: lighting.skyAmbient },
     uSunDirection: { value: lighting.sunDirection },
+    uExtinction: { value: lighting.extinction },
+    uWaterColor: { value: lighting.waterColor },
   };
   const shadowMaterial = new THREE.ShaderMaterial({
     uniforms: { uSunDirection: shared.uSunDirection },
@@ -205,8 +269,10 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     }
   }
 
-  function material(mirrored) {
-    // Every bird's materials the same two programs (their source the same), each its own frame's uniforms.
+  /** A bird's material for one pass: 'above' (the main scene), 'mirror' or 'below' (the under-water pass). */
+  function material(pass) {
+    // Every bird's materials the same three programs (their source the same), each its own frame's uniforms.
+    const mirrored = pass === 'mirror';
     const uniforms = {
       ...shared,
       uAtlas: { value: standIn },
@@ -220,30 +286,35 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
       uniforms,
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
-      defines: mirrored ? { MIRROR: '' } : {},
+      defines: mirrored ? { MIRROR: '' } : pass === 'below' ? { BELOW: '' } : {},
       transparent: !mirrored,
-      depthWrite: mirrored,
+      depthWrite: mirrored,   // under the water, the bed's depth just behind it stays the one its absorption is measured to (BELOW_PULL)
       side: THREE.DoubleSide,
       toneMapped: false,
     });
   }
 
   function makeSprite() {
-    const aboveMesh = new THREE.Mesh(quad, material(false));
-    const mirrorMaterial = material(true);
-    mirrorMaterial.uniforms = { ...mirrorMaterial.uniforms, ...pick(aboveMesh.material.uniforms, ['uAtlas', 'uRect', 'uSize', 'uAnchor', 'uFlip', 'uRoll']) };   // one frame, both passes
-    const mirrorMesh = new THREE.Mesh(quad, mirrorMaterial);
+    const aboveMesh = new THREE.Mesh(quad, material('above'));
+    const frameUniforms = pick(aboveMesh.material.uniforms, ['uAtlas', 'uRect', 'uSize', 'uAnchor', 'uFlip', 'uRoll']);   // one frame, every pass
+    const [mirrorMesh, underMesh] = ['mirror', 'below'].map((pass) => {
+      const passMaterial = material(pass);
+      passMaterial.uniforms = { ...passMaterial.uniforms, ...frameUniforms };
+      return new THREE.Mesh(quad, passMaterial);
+    });
     mirrorMesh.layers.set(mirrorLayer);
     const shadow = new THREE.Mesh(flat, shadowMaterial);
-    for (const mesh of [aboveMesh, mirrorMesh, shadow]) { mesh.frustumCulled = false; mesh.visible = false; }
+    for (const mesh of [aboveMesh, mirrorMesh, underMesh, shadow]) { mesh.frustumCulled = false; mesh.visible = false; }
     above.add(aboveMesh, shadow);
     mirror.add(mirrorMesh);
-    return { kind: null, meshes: [aboveMesh, mirrorMesh], shadow, uniforms: aboveMesh.material.uniforms, centre: new THREE.Vector3(), radius: 1, shown: false, still: false };
+    below.add(underMesh);
+    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: underMesh, shadow, uniforms: aboveMesh.material.uniforms, centre: new THREE.Vector3(), radius: 1, shown: false, still: false };
   }
 
   function hide(sprite) {
     sprite.shown = false;
     for (const mesh of sprite.meshes) mesh.visible = false;
+    sprite.under.visible = false;
     sprite.shadow.visible = false;
   }
 
@@ -267,13 +338,13 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     sprite.shown = ready;
     sprite.still = Boolean(at.still);
     for (const mesh of sprite.meshes) mesh.visible = ready;
+    sprite.under.visible = false;
     sprite.shadow.visible = false;
     if (!ready || !camera) return;
-    // Its middle where it flies; standing, its picture's foot at its spot's surface (src/birds.js laySpot: the water's
-    // for the heron, whose photograph is cut there; the ground's for one on dry land).
+    // Its middle where it flies; standing, its feet (src/birds.js laySpot: the heron's on the bed, under the water).
     const standing = at.flying === false;
-    sprite.centre.set(at.x, standing ? at.surface : at.y, at.z);
-    for (const mesh of sprite.meshes) mesh.position.copy(sprite.centre);
+    sprite.centre.set(at.x, at.y, at.z);
+    for (const mesh of [...sprite.meshes, sprite.under]) mesh.position.copy(sprite.centre);
     const { role, flip, roll } = frameFor(sprite.kind, at, sprite.centre, camera);
     const frame = catalogue.frames[`${sprite.kind}-${role}`];
     const uniforms = sprite.uniforms;
@@ -283,12 +354,13 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     uniforms.uAnchor.value.fromArray(frame.anchor);
     uniforms.uFlip.value = flip;
     uniforms.uRoll.value = roll;
-    // On dry ground, its shadow under it (the heron's water takes none).
-    if (standing && at.surface > 0) {
+    // In the water, what of it is under the surface; on dry ground, its shadow under it (the heron's water takes none).
+    sprite.under.visible = standing && at.y < 0;
+    if (standing && at.y >= 0) {
       const { sunDirection } = lighting;
       const cast = SHADOW_CAST * frame.metres[1] / Math.max(sunDirection.y, 0.35);
       const lit = sunDirection.y > 0 ? 1 : 0;
-      sprite.shadow.position.set(at.x - sunDirection.x * cast * lit, at.surface + 0.005, at.z - sunDirection.z * cast * lit);
+      sprite.shadow.position.set(at.x - sunDirection.x * cast * lit, at.y + 0.005, at.z - sunDirection.z * cast * lit);
       sprite.shadow.rotation.y = at.heading;
       sprite.shadow.scale.set(frame.metres[0] * SHADOW_SIZE[0], 1, frame.metres[0] * SHADOW_SIZE[1]);
       sprite.shadow.visible = true;
@@ -342,11 +414,13 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     return moving;
   }
 
-  /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so all three programs are built; done() takes them away. */
+  /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so all four programs are built; done() takes them away. */
   function warmUp() {
     if (!pool.length) pool.push(makeSprite());
     const sprite = pool[0];
     for (const mesh of [...sprite.meshes, sprite.shadow]) { mesh.position.set(0, 0.3, -1.4); mesh.visible = true; }
+    sprite.under.position.set(0, -0.1, -1.4);   // its lower half under the water
+    sprite.under.visible = true;
     sprite.uniforms.uSize.value.set(0.4, 0.4);
     return { done() { if (!sprites.includes(sprite)) hide(sprite); } };
   }
@@ -354,7 +428,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
   return {
     above, below, mirror,
     show, update, mirrorBounds, warmUp,
-    get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0) + (sprite.shadow.visible ? 1 : 0), 0); },
+    get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0) + (sprite.under.visible ? 1 : 0) + (sprite.shadow.visible ? 1 : 0), 0); },
     get count() { return sprites.filter((sprite) => sprite.shown).length; },
   };
 }

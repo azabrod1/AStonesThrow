@@ -626,9 +626,13 @@ and drawn as a picture that faces the camera, as a game draws a far bird. A
 picture cannot turn, so the birds are flown to be seen side on. Each kind
 has a few frames (gliding; wings up, level and down by its wingbeat; head
 on; legs down; standing or resting). The water mirrors them; the mirror
-image is drawn again only around a bird that moves in its view. A bird on
-the ground has a soft shadow under it. Each bird costs 2 draw calls (its
-picture and its mirror image), a goose on the lawn 3 (and its shadow);
+image is drawn again only around a bird that moves in its view. The heron
+is cut out whole, down to its toes: what of it is under the water is drawn
+in the under-water pass, bent at the surface as a reed is, so its legs go
+on down to its feet on the bed. A bird on the ground has a soft shadow
+under it. Each bird costs 2 draw calls (its picture and its mirror image),
+the heron 3 (and its legs under the water), a goose on the lawn 3 (and its
+shadow);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the
 standing birds' flush and return, the frame rate and the cost.
 
@@ -1893,7 +1897,8 @@ farther out, so it rises into the view rather than filling its corner.
   cached in the gitignored `tools/.bird-photos/`), each cut out of its sky
   (by its distance from a smooth fit of the sky, or by blueness; `crop` to
   take one bird of two) or, the standing heron and geese, out of their shore
-  (OpenCV's GrabCut from an outline and a few strokes), scaled to the bird's
+  (OpenCV's GrabCut from an outline and a few strokes; the heron's dark toes
+  keyed off its pale rock), scaled to the bird's
   size in metres and packed into one image a kind (30 to 330 KB), fetched
   only when a place with that kind is first shown. Needs numpy, scipy,
   Pillow and opencv-python-headless.

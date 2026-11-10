@@ -1121,6 +1121,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // or a still heron would have no reflection until it stirred.
   const birdView = createBirdView({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
   sceneMain.add(birdView.above, birdView.mirror);
+  sceneUnder.add(birdView.below);   // what of a standing bird is in the water (the heron's legs)
   /** The place's birds, as they start at `time` (the caller draws the mirror image whole again, with them or without). */
   function applyBirds(time) {
     birds.setPlace(birdsOn ? placeName : 'none');
@@ -3300,7 +3301,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
     }
     const fishWarmUp = everything || fishOn ? fishView.warmUp() : null;   // the fish's one program, whatever lives here (none in the Pool)
-    const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' three programs (above, mirror, a standing bird's shadow), whatever flies here
+    const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' four programs (above, mirror, below the water, a standing bird's shadow), whatever flies here
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
     buildPreview(everything ? 'pizza' : thingName);

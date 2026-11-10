@@ -108,7 +108,7 @@ export const BIRD_KINDS = {
 export const BIRDS_BY_PLACE = {
   cove: [{ kind: 'kelp', habit: 'patrol', count: 3, distance: [34, 52], bearing: 18, across: [9, 13], depth: [7, 11], height: [1.8, 2.8], swing: [0.25, 0.5], drift: [3, 6] }],
   loch: [{ kind: 'herring', habit: 'patrol', count: 3, distance: [36, 54], bearing: 18, across: [9, 13], depth: [7, 11], height: [1.8, 2.8], swing: [0.25, 0.5], drift: [3, 6] }],
-  koi: [{ kind: 'heron', habit: 'wade', count: 1, angle: 4.3, offshore: 0.16, heading: -2.85 }],
+  koi: [{ kind: 'heron', habit: 'wade', count: 1, angle: 4.3, offshore: 0.1, heading: -2.85 }],   // in 12 cm of water: to mid-shin
   lagoon: [{ kind: 'frigate', habit: 'patrol', count: 2, distance: [60, 85], bearing: 20, across: [14, 20], depth: [8, 10], height: [3, 4.5], swing: [0.5, 1], drift: [3, 6] }],
   swiss: [{ kind: 'raven', habit: 'patrol', count: 2, distance: [40, 60], bearing: 16, across: [8, 12], depth: [6, 9], height: [2, 3.2], swing: [0.3, 0.7], drift: [3, 6] }],
   desert: [{ kind: 'eagle', habit: 'patrol', count: 1, distance: [70, 95], bearing: 14, across: [14, 20], depth: [8, 12], height: [3.5, 4.5], swing: [0.5, 1], drift: [4, 8] }],
@@ -167,7 +167,7 @@ const turnBetween = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - 
 
 /** A pose, at rest. */
 function freshPose() {
-  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, legs: 0, crouch: 0, surface: 0, shown: false };
+  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, legs: 0, crouch: 0, shown: false };
 }
 
 /** A point on the cubic Bézier through four [x, y, z] points at u (into `out`). */
@@ -254,19 +254,19 @@ export class BirdPopulation {
   }
 
   /**
-   * A standing bird's spot: where its feet are (a heron's on the bed), which way it faces, and `surface`, the height
-   * its picture's foot is drawn at (the water's, where the heron's photograph is cut at its shins; else its feet's).
+   * A standing bird's spot: where its feet are (a heron's on the bed, src/birdSprites.js drawing what of it is under
+   * the water there) and which way it faces.
    */
   laySpot(bird, group) {
     if (group.habit === 'graze') {
       const [x, z, heading] = group.spots[bird.index];
-      bird.spot = { x, y: group.ground, z, heading, surface: group.ground };
+      bird.spot = { x, y: group.ground, z, heading };
       return;
     }
     const radius = koiShoreRadius(group.angle) - group.offshore;
     const x = KOI_SHORE.centre[0] + Math.cos(group.angle) * radius;
     const z = KOI_SHORE.centre[1] + Math.sin(group.angle) * radius;
-    bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: group.heading, surface: 0 };
+    bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: group.heading };
   }
 
   /** Every bird as it starts at `time`: one that stands, standing at its spot; a passing flock's windows from now. */
@@ -588,7 +588,6 @@ export class BirdPopulation {
     pose.legs = 1;
     pose.beat = 0;
     pose.fold = smoother(0, ways.land.fold, since);
-    pose.surface = spot.surface;
     // Its idle spells: in each it may turn its head and set its neck at the spell's start, then holds still.
     const spell = Math.floor(time / slot);
     const target = (index) => {

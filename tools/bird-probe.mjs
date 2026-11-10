@@ -177,7 +177,7 @@ const heronAt = (frame) => frame.birds[0];
 // coming down near one puts both up, and both come back to where they stood.
 {
   const geese = new BirdPopulation(); geese.setPlace('pool'); geese.setConditions(DAY); geese.showAt(0);
-  const onLawn = geese.birds.every(({ spot }) => Math.max(Math.abs(spot.x), Math.abs(spot.z + 1)) > 3.9 + 0.5 && spot.y === 0.1 && spot.surface === 0.1);
+  const onLawn = geese.birds.every(({ spot }) => Math.max(Math.abs(spot.x), Math.abs(spot.z + 1)) > 3.9 + 0.5 && spot.y === 0.1);
   check(geese.birds.length === 2 && onLawn, 'the Pool: two geese standing on its lawn, past the deck');
   check(geese.birds.map((bird) => bird.pose.posture).join() === 'stand,rest', 'one standing, one resting');
   const spot = geese.birds[0].spot;

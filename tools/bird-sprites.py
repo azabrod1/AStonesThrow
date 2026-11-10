@@ -30,7 +30,9 @@
 #   - 'grabcut': against a busy background (the standing heron, on rocks
 #     before reeds): OpenCV's GrabCut, started from a rough outline of the
 #     bird and a few strokes of what is surely bird and surely not, cut at
-#     `waterline` (its legs at mid-shin, so it stands in the water to there).
+#     `waterline` (under its feet: what stands in the water is drawn there);
+#     with `darkBelow` (a row, a brightness), only pixels darker than that are
+#     bird below the row (the heron's dark toes on a pale rock).
 # `crop` (a box in the 1280-pixel photo: left, top, right, bottom) cuts one
 # bird out of a photo of two before it is keyed; `gain` (per channel)
 # brings a photo taken in evening light to daylight, the kind's other frames'
@@ -63,19 +65,23 @@ PUBLIC_DOMAIN = ('Public domain', 'https://creativecommons.org/publicdomain/mark
 
 # Each frame: its photo (a Commons file), its author and licence, how it is cut, whether it faces right in the photo,
 # its box's size in metres and where it is anchored (a share of its box: x from its left, y from its bottom; a flying
-# bird's middle, a standing one's foot at the waterline).
+# bird's middle, a standing one's between its feet).
 PHOTOS = [
-    # Standing on a rock, its legs cut at mid-shin: it stands in the water to there. Its outline and strokes are the
-    # photo's (px at 1280 wide): what is surely bird, what is surely not.
+    # Standing on a rock, whole down to its toes: src/birdSprites.js draws what is under the water in the under-water
+    # pass, so its legs go on down through the water to its feet on the bed. Its outline and strokes are the photo's (px
+    # at 1280 wide): what is surely bird, what is surely not.
     dict(frame='heron-stand', bird='heron', file='Grey heron 2025 10 26 02.jpg', author='Alexis Lours', licence=CC_BY_4,
-         cut='grabcut', metres=0.85, measure='height', anchor='feet', waterline=700, box=(470, 90, 1160), feet=[(818, 700), (905, 700)],
+         cut='grabcut', metres=0.97, measure='height', anchor='feet', waterline=808, box=(470, 90, 1160), feet=[(793, 790), (908, 790)], darkBelow=(778, 100),
          outline=[(490, 150), (600, 120), (650, 100), (700, 120), (715, 200), (700, 280), (760, 290), (950, 300), (1150, 380), (1150, 440), (1000, 470),
-                  (930, 480), (930, 700), (885, 700), (885, 490), (845, 490), (840, 700), (795, 700), (800, 480), (720, 440), (650, 400), (640, 250),
-                  (630, 180), (560, 165)],
+                  (930, 480), (928, 755), (950, 765), (950, 792), (900, 798), (830, 810), (700, 808), (695, 790), (775, 762), (790, 700), (800, 480),
+                  (720, 440), (650, 400), (640, 250), (630, 180), (560, 165)],
          surely=[([(520, 150), (600, 148)], 3), ([(640, 140), (680, 140)], 10), ([(680, 170), (672, 250), (668, 330), (700, 400), (760, 420)], 12),
-               ([(760, 380), (1060, 380)], 40), ([(800, 340), (1000, 340)], 20), ([(822, 490), (815, 690)], 5), ([(902, 490), (907, 690)], 5)],
-         notBird=[([(860, 520), (862, 690)], 12), ([(950, 525), (1120, 525)], 20), ([(800, 255), (1100, 270)], 18), ([(560, 300), (600, 460)], 20),
-                 ([(550, 60), (750, 60)], 20), ([(1175, 340), (1175, 460)], 16), ([(765, 190), (765, 270)], 14), ([(760, 520), (760, 690)], 14)]),
+               ([(760, 380), (1060, 380)], 40), ([(800, 340), (1000, 340)], 20), ([(822, 490), (805, 700), (794, 768)], 5), ([(902, 490), (907, 690), (908, 772)], 5),
+               ([(790, 775), (706, 795)], 2), ([(792, 778), (722, 803)], 2), ([(795, 778), (800, 791)], 2),
+               ([(905, 778), (822, 805)], 2), ([(912, 776), (938, 772)], 2), ([(909, 780), (913, 786)], 2)],
+         notBird=[([(860, 520), (858, 752)], 12), ([(950, 525), (1120, 525)], 20), ([(800, 255), (1100, 270)], 18), ([(560, 300), (600, 460)], 20),
+                 ([(550, 60), (750, 60)], 20), ([(1175, 340), (1175, 460)], 16), ([(765, 190), (765, 270)], 14), ([(760, 520), (766, 735)], 14),
+                 ([(955, 560), (965, 745)], 14), ([(720, 700), (740, 760)], 14), ([(845, 770), (880, 770)], 6)]),
     dict(frame='heron-up', bird='heron', file='Ardea cinerea EM1B6250 (33380183305).jpg', author='Bengt Nyman', licence=CC_BY_2,
          cut='sky', low=20, high=48, metres=1.65, anchor=(0.55, 0.45)),
     dict(frame='heron-mid', bird='heron', file='Ardea cinerea EM1B6207 (32566003933).jpg', author='Bengt Nyman', licence=CC_BY_2,
@@ -245,6 +251,9 @@ def cut_grabcut(image, spec):
     cv2.grabCut(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, None, *models, 8, cv2.GC_INIT_WITH_MASK)
     bird = (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)
     bird[waterline:] = False
+    if 'darkBelow' in spec:   # dark toes on a pale rock: below that row only what is darker than the rock is bird
+        row, brightest = spec['darkBelow']
+        bird[row:] &= image[row:].mean(axis=2) < brightest
     bird = ndimage.binary_fill_holes(largest(bird))
     alpha = np.clip((ndimage.gaussian_filter(bird.astype(np.float64), 0.8) - 0.2) / 0.6, 0, 1)
     alpha[waterline:] = 0
