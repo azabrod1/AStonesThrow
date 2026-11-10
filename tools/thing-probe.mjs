@@ -123,7 +123,14 @@
 //   - a floater's middle step costs under STEP_COST_MS.
 //   - held things stay at the hand without an impact, release from rest,
 //     float or sink from their new position, and can be lifted and dropped
-//     again; picking's apparent/physical water positions round-trip.
+//     again; picking's apparent/physical water positions round-trip;
+//   - the water cannon (src/waterCannon.js; a thing with a `stream`, fired,
+//     never thrown, so it is left out of the throws above): a squirt at
+//     three aims at its least, first and most pressure lands within
+//     AIM_MISS of the aim, no slower than it left the nozzle; two squirts
+//     alike fall alike (its own seeded draws); a 0.2 s squirt lands a parcel
+//     a step, 48 in all, and is then done with nothing in the air; a step
+//     costs under STEP_COST_MS.
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
@@ -133,6 +140,7 @@ import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
+import { WaterCannon, nozzle } from '../src/waterCannon.js';
 import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
 
@@ -361,6 +369,7 @@ for (const preset of THINGS.roses.body.size.presets) {
 // ---- each thing in the lake ----
 const lake = [];
 for (const [index, name] of THING_NAMES.entries()) {
+  if (THINGS[name].stream) continue;   // fired, never thrown (src/waterCannon.js): its own section below
   // A bowling ball light and heavy; each step of a thing whose presets are things of their own (src/things.js variantAt:
   // an iPad's, a frying pan's, the roses').
   const stepped = THINGS[name].variants.length > 1 ? THINGS[name].body.size.presets : null;
@@ -467,7 +476,7 @@ for (const [index, name] of THING_NAMES.entries()) {
 
 // ---- the aim, for each ball at each strength and a few taps ----
 console.log('\nThe balls\' aim (the centre\'s path at the still water against the tap), at three strengths and three taps:');
-for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
+for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held && !THINGS[key].stream)) {
   // Each from a random state of its own (as in the lake), so what it draws (a plate's tilt) is the same whatever was
   // thrown before it.
   randomState = 1 + 104729 * (THING_NAMES.indexOf(name) + 1);
@@ -528,6 +537,57 @@ for (const waveHeight of [-0.3, 0.3]) {
     `a sinker settled under a ${waveHeight} m wave stays displaced ${centimetres(displaced)} cm after the gale stops (picking surface ${rock.drawn.surface})`);
 }
 
+// ---- the water cannon's stream (src/waterCannon.js) ----
+console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at its least, first and most pressure, stepped to its first landing');
+{
+  const thing = THINGS.cannon;
+  const water = { addSplat: () => true, addFoam: () => true, addFoamFlow: () => true, holds: () => true };
+  const splash = { time: 0, spray: { burst: () => 0 }, spawnDroplet: () => {} };
+  const cannon = new WaterCannon({ water, splash });
+  let worst = 0, cost = 0, steps = 0;
+  for (const pressure of [thing.slider.min, thing.slider.initial, thing.slider.max]) {
+    for (const [x, z] of [[0, -0.6], [0.8, -1.8], [-1.2, -3.2]]) {
+      const measured = measure('cannon', pressure);
+      const hand = handFor(measured.radius, measured.thing);
+      cannon.reset();
+      const handle = cannon.start({ hand, x, z, pressure, thing, radius: measured.radius, time: 0, seconds: 0.1 });
+      const made = nozzle(pressure, thing.stream);
+      let time = 0, landing = null;
+      while (!landing && time < 3) {
+        splash.time = time;
+        const started = performance.now();
+        landing = cannon.step(time, STEP, []);
+        cost += performance.now() - started;
+        steps++;
+        time += STEP;
+      }
+      const miss = landing ? Math.hypot(landing.x - x, landing.z - z) : Infinity;
+      worst = Math.max(worst, miss);
+      check(landing && handle.position.distanceTo(new THREE.Vector3(x, 0, z)) < AIM_MISS, `cannon at ${pressure} bar aimed at (${x}, ${z}): ${landing ? `its handle's landing ${centimetres(handle.position.distanceTo(new THREE.Vector3(x, 0, z)))} cm off` : 'never landed'}`);
+      check(landing && landing.speed >= made.speed - 1e-9, `cannon at ${pressure} bar: landed at ${landing?.speed.toFixed(1)} m/s, slower than it left (${made.speed.toFixed(1)})`);
+      console.log(`  ${pressure.toFixed(1)} bar at (${x}, ${z}): ⌀ ${(2000 * made.radius).toFixed(0)} mm at ${made.speed.toFixed(1)} m/s, ${(1000 * made.flow).toFixed(1)} L/s; lands after ${time.toFixed(3)} s, ${centimetres(miss)} cm off, at ${landing?.speed.toFixed(1)} m/s; breaks up over ${made.breakup.toFixed(1)} m`);
+    }
+  }
+  check(worst < AIM_MISS, `the cannon's stream missed its aim by up to ${centimetres(worst)} cm`);
+  // The same squirt twice falls alike: its draws are its own (seededRandom), never Math.random's.
+  const run = () => {
+    const splats = [];
+    const own = new WaterCannon({ water: { ...water, addSplat: (splat) => { splats.push([splat.x, splat.z, splat.velocity]); return true; } }, splash });
+    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
+    for (let step = 0; step < 240; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, []); }
+    return JSON.stringify(splats);
+  };
+  check(run() === run(), 'two squirts of the cannon alike in all do not land alike');
+  // A squirt lands a parcel a step, and once all are down it is done, nothing left in the air.
+  cannon.reset();
+  const handle = cannon.start({ hand: handFor(0.025, thing), x: 0, z: -1.4, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.2 });
+  for (let step = 0; step < 480; step++) { splash.time = step * STEP; cannon.step(step * STEP, STEP, []); }
+  check(cannon.inAir === 0 && handle.state === 'done' && Math.abs(cannon.landings - 48) <= 1 && !cannon.firing && !cannon.active,
+    `a 0.2 s squirt lands its 48 parcels and is done (${cannon.landings} landed, ${cannon.inAir} in the air, ${handle.state}${cannon.active ? ', still active' : ''})`);
+  console.log(`  a step costs ${(1000 * cost / steps).toFixed(2)} µs`);
+  check(cost / steps < STEP_COST_MS, `a cannon step costs ${(1000 * cost / steps).toFixed(2)} µs`);
+}
+
 // ---- the shore: a gale blowing floaters onto it ----
 console.log('\nBlown onto the shore by a gale for a minute, then out again for a minute: where each grounds, how far into the bed it goes, where it is after');
 for (const name of THING_NAMES) {
@@ -552,6 +612,7 @@ for (const name of THING_NAMES) {
 // ---- the deck ----
 console.log('\nOn the pool\'s deck, dropped from a metre onto the paving: how high it comes back, bounce by bounce, then where it rests');
 for (const [index, name] of THING_NAMES.entries()) {
+  if (THINGS[name].stream) continue;   // never dropped: fired (src/waterCannon.js)
   // Each from a random state of its own (its turn as it is let go), whatever was thrown before it.
   randomState = 3 + 7919 * (index + 1);
   const measured = measure(name, name === 'bowling' ? 16 : undefined);
@@ -1477,6 +1538,7 @@ console.log('\nThings meeting things (src/collide.js):');
 // ---- holding and releasing things, including an old sink/cavity ----
 {
   for (const name of THING_NAMES) {
+    if (THINGS[name].stream) continue;   // never thrown, so never taken from a throw (src/waterCannon.js)
     const { rock } = throwThing(name);
     follow(rock, { seconds: 18 });
     const glow = rock.meshAbove.material.emissive.clone();

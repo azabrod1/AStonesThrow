@@ -76,7 +76,7 @@ full screen, which only a press or a key may ask for):
   (diamond, emerald, ruby, sapphire), food (an apple, a watermelon, a
   pizza, a frozen pizza, a pie, a banana, a slice of bread, a birthday cake),
   toys (a rubber duck, a toy slide), electronics (a TV, an iPhone, an iPad)
-  and others (a brick, a snowball, a frying pan, roses), each
+  and others (a brick, a snowball, a frying pan, roses, a water cannon), each
   the size, weight and density of the real thing (`src/things.js`). The page
   shows one group at a time under a row of tabs, one for each group, so it
   fits a phone however many groups there are. The ⓘ on the strip's
@@ -165,7 +165,50 @@ full screen, which only a press or a key may ask for):
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
   9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
-  way up, and the roses' with `--seed=5` at 11°, on which they stand).
+  way up, and the roses' with `--seed=5` at 11°, on which they stand). The
+  water cannon's is a frame of its stream landing in the lake instead
+  (`--thing=cannon --throws=0:-1.4:0 --times=0.6 --w=320 --h=180`).
+- The water cannon (`src/waterCannon.js`; `cannon` in `src/things.js`, a
+  thing with a `stream`) is held, not thrown: a fire truck's monitor nozzle,
+  and a press fires a stream of water at the spot under the pointer for as
+  long as it lasts, so a tap is a squirt (the water already out flies on
+  and lands after), and moving the pointer sweeps it (its landing follows a
+  flight later); with it in hand the view turns by the mouse's right button
+  or by two fingers moved together (spread, they still zoom). The slider is
+  its pressure, 0.5 to 10 bar: the exit speed is Bernoulli's, sqrt(2P/ρ),
+  10 to 45 m/s, and the bore grows with it, 5 to 25 mm in radius, so the
+  flow runs from under a litre a second to some ninety, a deck gun's; Lob,
+  Skip and the strength are greyed out. The stream is no solver: each
+  physics step while it fires records a parcel let out then on the low
+  parabola to the aim (the farthest arc when the aim is out of reach, so it
+  falls short), and the stream in the air is the curve of the parcels not
+  yet down, drawn once a frame as a white rope (`src/streamSheath.js`: a
+  stream under pressure is rough-skinned and wears a sheath of drops, so it
+  is shaded as a cloud round its axis, opaque down its middle, soft and
+  ragged at its limb, streaked the way it flows, widening and thinning as
+  it goes), holed past much of its breakup length (35·d·We^0.2: a metre or
+  two for the weakest jet, tens of metres for the deck gun) and then only
+  drops: mist off its skin, and now and then a drop big enough to land and
+  ring on its own. Each step every parcel that comes down pushes the solver down
+  over its footprint (a crater with a rim, its centre wandering with the
+  turbulence), stamps foam in a streak onward of it, heaps up a small boil
+  of white water at its foot (`src/whiteWater.js`: soft puffs written once
+  and flown in the vertex shader, gone in a third of a second) and, coming
+  in low, glances: a rooster tail, drawn as the stream is (each landing
+  parcel thrown again off the water as a line across one fan, each part of
+  it on a parabola of its own, highest and farthest down the middle;
+  `src/sprayFan.js`, one sheet on the stream's program, lopsided and
+  shifting at random, never twice alike, torn into tongues long and short
+  that come and go, and coming apart into fine streaks and then drops,
+  which stream off the tongues, fly on and within half a second
+  rain into the water: a chop of small ripples there, and froth that
+  gathers in a second or so and goes as slowly),
+  rings the water about with stray drops, frightens the fish and shoves a
+  floater in its way along the stream; the Throw button, Space and the
+  harness fire a 1.5 s burst of it. On ice it wets the ice and the sheet
+  bounces. Its sound is the one that lasts: a hiss and a roar following the
+  pressure while it fires. `tools/thing-probe.mjs` checks its aim, its
+  seeded draws and its cost, and `tools/frame-rate-probe.mjs` plays a burst.
 - View: Shore, standing on the bank as the page opens; Behind, over the
   thrower's shoulder, a metre back and a little above the shore's eye, so
   the hand with the preview of the thing in it, the arc of the throw and
@@ -1829,6 +1872,8 @@ farther out, so it rises into the view rather than filling its corner.
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
+  `startStream(x, z)`, `aimStream(x, z)` and `stopStream()` (the water cannon in hand, fired at world (x, z) as a
+  press fires it, swept and shut; `streaming` while it is on, and `cannon` the cannon itself),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
   drawn), `restartFish()` (the place's fish as they start), `holdThing(rock)`, `carryHeld(x, y, z)` and

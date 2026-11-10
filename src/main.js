@@ -317,6 +317,9 @@ import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
+import { WaterCannon, CANNON, IMPACT, aimVelocity, nozzle } from './waterCannon.js';
+import { StreamSheath } from './streamSheath.js';
+import { SprayFan } from './sprayFan.js';
 import { ObjectGrab, GRAB_HOLD_MS } from './objectGrab.js';
 import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
 import { createSound } from './sound.js';
@@ -399,14 +402,18 @@ import { withRandom, parkMiller } from './withRandom.js';
 //                 drawn, each standing for that many more drops, so a phone
 //                 draws fewer, heavier sprites and the same mist. Neither
 //                 rebuilds anything: the ring is allocated once.
+//   whiteWater    the slots of the white water's ring (src/whiteWater.js: the
+//                 churn where the water cannon's stream lands), puffs alive at
+//                 once, the oldest overwritten past them; a stream keeps a few
+//                 tens alive, so it binds only on a long sweep. Allocated once.
 // Every target keeps its format on every preset, so a program drawn under the
 // loading veil (warmUp) meets no new pipeline state after a change of preset;
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, frameScale: 'css', idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, gardenCoarse: false, spray: { ring: 16384, share: 0.4 } },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, gardenCoarse: true, spray: { ring: 8192, share: 0.2 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, frameScale: 'css', idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, gardenCoarse: false, spray: { ring: 65536, share: 1 }, whiteWater: 256 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, gardenCoarse: false, spray: { ring: 16384, share: 0.4 }, whiteWater: 192 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, gardenCoarse: true, spray: { ring: 8192, share: 0.2 }, whiteWater: 128 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -489,6 +496,7 @@ const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11 };
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
+const PINCH_PAN = 0.08;       // two fingers whose spacing changes less than this share turn the view, with the cannon in hand (movePinch)
 // The fish (fishLook, fishBitten; src/fish.js): how far a splash frightens them (m, and m per m of the thing's radius: a 6 cm stone
 // 0.8 m, a 30 cm rock 2.2 m, times each kind's shyness), and a finger dipping in; how far under the still surface their backs keep in open water, under ice (more its
 // thickness) and under a gale's waves; a bite's dimple at the surface (m).
@@ -690,7 +698,7 @@ function migrateStoredSettings() {
 // A floater of each program (pumice the stones', a pizza its textured one, a shard of ice its clear one: src/rock.js
 // seenThrough), and a sinker of each besides the stone's (an iPad its textured one: a floater's rides the water, so a
 // textured sinker's is a program of its own).
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6 };
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6, cannonSeconds: 1.2 };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -858,6 +866,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
   splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
+  splash.whiteWater.setBudget(settings.whiteWater);
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
   // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
   const sound = createSound();
@@ -1019,7 +1028,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneMain = new THREE.Scene();
   // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
   sceneMain.fog = environment.fog;
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, spindrift.points, snow.flakes);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, splash.whiteWater.mesh, sun, rain.streaks, rain.flecks, spindrift.points, snow.flakes);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -1108,7 +1117,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // veil and keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the
   // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
-  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
+  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0 };
+  const previewAim = { vx: 0, vy: 0, vz: 0, flight: 0, short: false };   // the nozzle's launch (updatePreview), worked out in place
   /** A seed for the next throw's own parts (src/rock.js dressThing), from the browser's own randomness: never Math.random, so seeded throws stay. */
   function nextDressing() { return crypto.getRandomValues(new Uint32Array(1))[0]; }
   /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
@@ -1130,7 +1140,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function buildPreview(name = thingName) {
     if (!previewOn) return;
-    const { thing, radius } = measureThing(name);
+    const { thing, radius, size } = measureThing(name);
+    preview.pressure = size;   // a stream's (the nozzle points as its pressure's launch does: updatePreview)
     const flat = skipsNow() && thing.skips && Boolean(thing.byDiameter);
     const kind = meshKind(thing.look.mesh);
     const dressing = kind.fixed && kind.dress ? preview.dressing : null;   // the seed of its parts, if it has any
@@ -1152,12 +1163,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         vertexColors: true,
         ...(map ? { map } : {}),
         roughness: look.roughness,
-        metalness: 0,
+        metalness: look.metalness ?? 0,
         envMap: environment.envTexture,
         envMapIntensity: look.reflection,
-        transparent: true,
-        opacity: PREVIEW.opacity,
-        depthWrite: false,
+        // The water cannon's nozzle is solid: the thing itself, held, pointed at the aim (updatePreview).
+        transparent: !thing.stream,
+        opacity: thing.stream ? 1 : PREVIEW.opacity,
+        depthWrite: Boolean(thing.stream),
       });
       // A stone's grain and relief, as every thrown thing's material draws them (src/shaders/stone.js; no kind, no
       // grain, for anything else), so the stone in the hand looks like the one that flies; one program for every
@@ -1191,6 +1203,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The next one's parts, built as it comes back rather than in the throw's own frame.
     if (now >= preview.goneUntil && preview.dressedWith !== null && preview.dressedWith !== preview.dressing) buildPreview();
     const mesh = preview.mesh;
+    if (preview.thing?.stream) {
+      // The water cannon's nozzle neither turns nor goes after a squirt: it stays in the hand, pointed along the stream
+      // it fires (cannon.aim), or would fire at the marker (showAim), as steeply as its launch (src/waterCannon.js).
+      mesh.visible = true;
+      mesh.material.opacity = 1;
+      const aim = cannon.aim ?? (marker.visible ? { x: marker.position.x, z: marker.position.z } : null);
+      if (aim) {
+        const launch = aimVelocity(mesh.position, aim.x, aim.z, nozzle(preview.pressure, preview.thing.stream).speed, previewAim);
+        mesh.lookAt(mesh.position.x + launch.vx, mesh.position.y + launch.vy, mesh.position.z + launch.vz);
+      }
+      preview.drawnAt = now;
+      return;
+    }
     const seconds = THREE.MathUtils.clamp((now - preview.drawnAt) / 1000, 0, 0.1);
     preview.drawnAt = now;
     preview.turned = (preview.turned + PREVIEW.turn * seconds) % (2 * Math.PI);
@@ -2007,6 +2032,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function throwAt(x, z, options = {}) {
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
+    // A thing with a stream is not thrown: its throw is a burst of the stream at the aim (src/waterCannon.js; a press by
+    // hand fires it for as long as it lasts, the pointer handlers'). `seconds` sets the burst's length.
+    if (thing.stream) return startStream(x, z, { thing, radius, size }, options.seconds ?? CANNON.burstSeconds);
     // Skip skips what skips (src/things.js abilities: a stone of any kind, a pizza, an iPhone); anything else is thrown as ever.
     const thrownAs = MANNERS.includes(options.manner) ? options.manner : options.skip === undefined ? manner : options.skip ? 'skip' : 'toss';
     const skips = thrownAs === 'skip' && thing.skips;
@@ -2122,7 +2150,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function throwFromHand(x, z) {
     const rock = throwAt(x, z, { dressing: previewOn ? preview.dressing : null });   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
-    previewThrown();
+    if (rock?.isRock !== false) previewThrown();   // a burst of the water cannon leaves the nozzle in the hand
     onThrow?.(rock);
     return rock;
   }
@@ -2176,6 +2204,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   /** Whether a tap now throws a skip: Skip on and what is thrown skips (a ball does not, whatever Skip was left at for stones). */
   const skipsNow = () => skipping && THINGS[thingName].skips;
+  /** Whether the thing in hand shoots a stream (src/things.js `stream`: the water cannon), so a press fires rather than throws. */
+  const streamsNow = () => Boolean(THINGS[thingName].stream);
   /** Where a tap aims a throw: a skip keeps the tap's direction (skipThrow brings its touch onto the water). */
   const throwAim = (clientX, clientY) => aimPoint(clientX, clientY, throwMargin(), !skipsNow());
 
@@ -2184,6 +2214,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     marker.visible = true;
     marker.scale.setScalar(1);
     const measured = measureThing(thingName);
+    if (measured.thing.stream) {
+      // The stream's own arc from the nozzle (src/waterCannon.js previewArc), the ring where it comes down.
+      const landing = cannon.previewArc(handPosition(measured.radius, measured.thing), hit.x, hit.z, measured.size, measured.thing, arcPoints);
+      marker.position.set(landing.x, 0.004 + (galeWaves.on ? galeSurfaceAt(landing.x, landing.z) : 0), landing.z);
+      arcGeometry.attributes.position.needsUpdate = true;
+      arc.visible = true;
+      return;
+    }
     const skipped = skipsNow() ? skipThrow(handPosition(measured.radius, measured.thing), hit, measured) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius, measured.thing);
     // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
@@ -2216,6 +2254,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let pinch = null;                   // { distance, fov, direction } when the pinch began
   let thrownFrom = null;              // { x, y }: a mouse threw here; its aim stays hidden until it moves on (its arc would hang in the splash)
   const finger = new FingerInWater(water);
+  // The water cannon (src/waterCannon.js): a thing with a `stream` in hand (src/things.js) fires it for as long as the
+  // press lasts, the pointer sweeping it (the header).
+  // Past its glass first stretch the stream is a white rope (src/streamSheath.js), in the main scene over the white water.
+  // and the fan of spray thrown off its landing a sheet on the same program (src/sprayFan.js).
+  const sheath = new StreamSheath({ lighting, ambientWaves });
+  const fan = new SprayFan({ material: sheath.material });
+  sceneMain.add(sheath.mesh, fan.mesh);
+  const cannon = new WaterCannon({
+    water, splash, dropRings, sheath, fan,
+    startle: (x, z) => fishes.startle(x, 0, z, FISH_ALARM.finger),
+    wetIce: (x, z, radius) => { if (!ice.on || ice.holeAt(x, z)) return false; ice.wetSpot(x, z, radius); return true; },
+  });
+  let cannonPointer = null;           // the press firing the cannon
   let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
   let touching = null;                // { id }: the press whose finger is in the water
   const grab = new ObjectGrab(camera, canvas, lighting.extinction);
@@ -2344,6 +2395,27 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     showFinger(null);
   }
 
+  /**
+   * The water cannon on (src/waterCannon.js start), the thing `measured`
+   * (measureThing: its pressure is its `size`) aimed at world (x, z) from
+   * the hand, for a press (until stopStream) or for `seconds` (a burst:
+   * throwAt). Returns the burst's handle.
+   */
+  function startStream(x, z, measured, seconds = Infinity) {
+    const { thing, radius, size } = measured;
+    const target = new THREE.Vector3(x, 0, z);
+    if (koiPond) keepInPond(target, radius);   // it comes down on the Koi pond's water, never its ground (src/koiGarden.js)
+    const handle = cannon.start({ hand: handPosition(radius, thing), x: target.x, z: target.z, pressure: size, thing, radius, time: stepsTime, seconds });
+    if (readyForInput) dropRings.load();   // its stray drops' rings' table (src/dropRings.js), fetched at the first impact otherwise
+    showAim(null);
+    lastActivity = performance.now();
+    return handle;
+  }
+  function stopStream() {
+    cannon.stop(stepsTime);
+    cannonPointer = null;
+  }
+
   function cancelHold() {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
   }
@@ -2357,12 +2429,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function startPinch() {
     const span = pinchSpan();
     const point = toDeviceCoordinates(span.x, span.y);
-    pinch = { distance: span.distance, level: zoomLevel(), direction: directionAt(view, camera.aspect, point.x, point.y) };
+    pinch = { distance: span.distance, level: zoomLevel(), direction: directionAt(view, camera.aspect, point.x, point.y), x: span.x, y: span.y, panning: false };
   }
 
   function movePinch() {
     const span = pinchSpan();
     const point = toDeviceCoordinates(span.x, span.y);
+    // With the cannon in hand a one-finger drag sweeps the stream, so two fingers moved together (their spacing kept
+    // within PINCH_PAN) turn the view instead, as one finger does for anything else; spread or pinched, they zoom.
+    if (streamsNow() && (pinch.panning || Math.abs(span.distance - pinch.distance) / pinch.distance < PINCH_PAN)) {
+      if (!pinch.panning) { pinch.panning = true; pivotOnView(); }
+      moveEye(turnOrbit(orbit, span.x - pinch.x, span.y - pinch.y, (ORBIT_TURN * view.fov / home.fov) / Math.max(canvas.clientHeight, 1), eyeBounds(orbit)));
+      pinch.x = span.x; pinch.y = span.y;
+      return;
+    }
+    pinch.x = span.x; pinch.y = span.y;
     zoomTo((pinch.level * span.distance) / pinch.distance, point.x, point.y, pinch.direction);
   }
 
@@ -2377,12 +2458,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (pressStart?.id === event.pointerId) { pressStart = null; stopTurning(); cancelHold(); }
     if (touching?.id === event.pointerId) endTouch();
     if (grabPointer === event.pointerId) endGrab();
+    if (cannonPointer === event.pointerId) stopStream();
   }
 
   function cancelInteraction() {
     cancelHold();
     endGrab();
     endTouch();
+    stopStream();
     stopTurning();
     pressStart = null;
     pinch = null;
@@ -2391,11 +2474,28 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   canvas.addEventListener('pointerdown', (event) => {
-    if (!readyForInput || event.button !== 0) return;
+    // The right button turns the view with the cannon in hand (below); nothing else of it is taken.
+    if (!readyForInput || (event.button !== 0 && !(event.button === 2 && streamsNow()))) return;
     lastActivity = performance.now();
     abandonGlide();   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
+    if (activePointers.size === 1 && streamsNow()) {
+      // The water cannon in hand (the header): the press fires it from the moment it goes down, and moving sweeps it,
+      // so a tap is a squirt; no finger dips and nothing is picked up. A one-finger drag being the sweep, the view turns
+      // by the mouse's right button here, or by two fingers moved together (movePinch).
+      pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      if (event.button === 2) {
+        turning = { x: event.clientX, y: event.clientY };
+        canvas.style.cursor = 'grabbing';
+        pivotOnView();
+        showAim(null);
+        return;
+      }
+      const hit = aimPoint(event.clientX, event.clientY);
+      if (hit) { startStream(hit.x, hit.z, measureThing(thingName)); cannonPointer = event.pointerId; }
+      return;
+    }
     if (activePointers.size === 1) {
       const candidate = grab.pick(rocks, event.clientX, event.clientY, event.pointerType !== 'mouse');
       pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -2418,6 +2518,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       cancelHold();
       endGrab();
       endTouch();
+      stopStream();   // a second finger never squirts
       showAim(null);
       startPinch();
     }
@@ -2428,6 +2529,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
+    if (cannonPointer === event.pointerId) {
+      // The sweep: the stream flies at where the pointer is now (its landing follows, a flight later).
+      const hit = aimPoint(event.clientX, event.clientY);
+      if (hit) cannon.aimAt(hit.x, hit.z);
+      return;
+    }
     if (grabPointer === event.pointerId) {
       grab.move(event.clientX, event.clientY, constrainGrab, grabSurfaceAt, bedDepthAt);
       return;
@@ -2466,8 +2573,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const turned = press && turning;
     const touched = touching?.id === event.pointerId;
     const grabbed = grabPointer === event.pointerId;
+    const fired = cannonPointer === event.pointerId;
     releasePointer(event);
-    if (press && !turned && !touched && !grabbed) {
+    if (press && !turned && !touched && !grabbed && !fired) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) {
@@ -2572,6 +2680,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         // A splash (or a skip's touch) frightens the fish near it, the more widely the bigger the thing (src/fish.js).
         if (impact && !impact.ripple) fishes.startle(impact.x, 0, impact.z, FISH_ALARM.least + FISH_ALARM.perRadius * rock.radius);
       }
+      // The water cannon's step (src/waterCannon.js): the parcel let out, the mist off the stream, and whatever lands,
+      // on the water and on the floaters it shoves (before collideThings, so the walls and holes hold them this step).
+      const landing = cannon.step(stepsTime, PHYSICS_STEP, stepping);
+      if (landing) lastImpact = { x: landing.x, z: landing.z };
       // The ice's breaks and stars (src/ice.js events): its crack.
       for (const event of ice.events.splice(0)) sound.ice(event, seenAfter());
       // A thing striking a floater, floaters bumping, the pool's walls turning things back (and a skipping stone off
@@ -2598,6 +2710,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }
     advanceSplash(end);
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
+    cannon.drawAt(end);   // the stream in the air as it is now (src/waterCannon.js: its parcels' closed-form flight)
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
     for (const rock of rocks) {
@@ -2676,6 +2789,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       fingerSeen = { ...finger.position };
       threats.push({ x: finger.position.x, y: -0.05, z: finger.position.z, radius: FINGER.radius, inAir: false, still: moved < FISH_STILL });
     } else fingerSeen = null;
+    // The water cannon's stream coming down (src/waterCannon.js, this step's landing): in their way, as the finger is.
+    if (cannon.landing) threats.push({ x: cannon.landing.x, y: -0.05, z: cannon.landing.z, radius: Math.max(IMPACT.footprint * cannon.landing.radius, FINGER.radius), inAir: false, still: false });
     return { threats, foods };
   }
 
@@ -2726,6 +2841,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function render() {
     for (const rock of rocks) { rock.flex(); rock.showWet(); }   // a soft thing's shape, and how wet each looks, as drawn now (src/rock.js)
     updatePreview(performance.now());        // the thing in the hand, turned on, gone after a throw and back
+    sound.streamSet(cannon.strength);        // the cannon's hiss and roar while it fires (src/sound.js), by its pressure
     fishView.update();                       // each fish where it swims now
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
@@ -2757,7 +2873,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
     // The water's height under each floater riding it, read back for the physics (src/floaterRide.js: things meet it where
     // it is drawn); seldom while nothing can meet one (`quiet`: everything at rest, nothing held, the finger out).
-    const quiet = !grab.rock && !finger.inWater && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
+    const quiet = !grab.rock && !finger.inWater && !cannon.active && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0), quiet);
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
@@ -2918,6 +3034,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rain.setTexels(settings.rainTexels);
     snow.setShare(settings.snowShare);
     splash.spray.setBudget(settings.spray);
+    splash.whiteWater.setBudget(settings.whiteWater);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
     garden.setCoarse(settings.gardenCoarse);   // the Koi pond's garden as the mirror draws it (src/koiGarden.js)
@@ -3034,7 +3151,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const renderStart = performance.now();
     render();
     const renderEnd = performance.now();
-    if (splash.inMotion || rain.on || snow.on || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
+    if (splash.inMotion || rain.on || snow.on || cannon.active || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
     profiler?.frame({ interval, simulateMilliseconds: renderStart - simulateStart, renderMilliseconds: renderEnd - renderStart, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles });
   }
 
@@ -3046,6 +3163,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     pool.dry();
     ice.clear();   // whole again
     splash.reset(renderer);
+    cannon.reset();
     rings.reset();
     dropRings.reset();
     simulationTime = 0;
@@ -3152,6 +3270,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       thingVelocity(handPosition(measured.radius, measured.thing), new THREE.Vector3(WARM_UP.x, 0, WARM_UP.z), 'normal', measured, trial);
     }
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
+    // A burst of the water cannon too (src/waterCannon.js): its rope's program (src/streamSheath.js) and its white
+    // water's (src/whiteWater.js) are built as they are first drawn, here under the veil rather than at the first press;
+    // long enough to be in the air still at the frames drawn after the stone's impact.
+    throwAt(WARM_UP.x + 0.3, WARM_UP.z, { thing: 'cannon', seconds: WARM_UP.cannonSeconds });
     // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured thing's
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
@@ -3255,7 +3377,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (skip.halfDensity !== wasHalfDensity) resize();
     },
     throwStone: () => throwAt(0, -1.4, { radius: 0.03, power: 'normal' }),
-    hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0),
+    hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0) || cannon.landed,
     clearPond,
     describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}`,
     memory: () => ({ ...memoryEstimate(), textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }),
@@ -3573,13 +3695,23 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     },
     /** The pond back to still water: nothing thrown, the solver cleared (as the profiler starts each of its steps). */
     clear() { clearPond(); },
-    /** Whether a stone has met the water: gone in, or skipped (a skip's touch can be over within a frame). */
-    hasImpacted() { return rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0); },
+    /** Whether a stone has met the water: gone in, or skipped (a skip's touch can be over within a frame); or the cannon's stream has. */
+    hasImpacted() { return rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0) || cannon.landed; },
     /** Where the eye would stand at `steps` + 1 even shares of a glide from where it is to the view `name` (tools/zoom-probe.mjs). */
     glidePath(name, steps = 50) {
       const from = { ...orbit }, target = viewsNow()[name];
       return Array.from({ length: steps + 1 }, (unused, step) => { const share = step / steps; return orbitEye(glideOrbit(from, target, share * share * (3 - 2 * share))); });
     },
+    /**
+     * The water cannon (src/waterCannon.js) fired at world (x, z) as a press fires it, from the hand at the thing's pressure
+     * (what is in hand must have a stream: setThing('cannon')); aimStream sweeps it and stopStream shuts it; `streaming`
+     * while it is on, and `cannon` the cannon itself (its parcels in the air, its landings).
+     */
+    startStream(x, z) { if (streamsNow()) startStream(x, z, measureThing(thingName)); },
+    aimStream(x, z) { cannon.aimAt(x, z); },
+    stopStream() { stopStream(); },
+    get streaming() { return cannon.firing; },
+    get cannon() { return cannon; },
     /** A finger into the water at world (x, z), as a held press puts it (src/touch.js); then dragTouch moves it and liftTouch lifts it. */
     touchWater(x, z) { endTouch(); touching = { id: 'api' }; finger.dip(x, z); showFinger({ x, z }); },
     dragTouch(x, z) { finger.moveTo(x, z); showFinger({ x, z }); },
