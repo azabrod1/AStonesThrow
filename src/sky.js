@@ -838,6 +838,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // The sun: the photo's, or where the true one is when it is down, at
     // DOWN_SUN_ELEVATION; the file's direction turned into the scene's.
     const sunlit = lightOf(measurement) !== 'none';   // the sun or the moon
+    lighting.solarElevation = measurement.solar?.elevation ?? measurement.sun.elevation;   // the true sun's, whatever lights the scene (src/birds.js: none about at night)
     if (file === facingFile) lighting.sunDirection.copy(facingSun);
     else {
       const fileAzimuth = sunlit ? Math.atan2(measurement.sun.direction[2], measurement.sun.direction[0]) : THREE.MathUtils.degToRad(measurement.north + measurement.solar.azimuth) - Math.PI;

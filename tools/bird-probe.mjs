@@ -40,8 +40,8 @@ const PHYSICS_STEP = 1 / 240;   // src/main.js's
 const EYE = new THREE.Vector3(0, 1.15, 2.45);   // the home view's eye (src/main.js VIEWS.shore)
 const THROW_REACH = 15;   // m: farther than any throw goes from the hand
 const FRAME_TOP = THREE.MathUtils.degToRad(7.4);   // the home view's frame reaches this far above the horizon (48° high, looking 16.6° down)
-const DAY = { sunDirection: new THREE.Vector3(0.3, 0.6, -0.7).normalize() };
-const NIGHT = { sunDirection: new THREE.Vector3(0.3, -0.2, -0.9).normalize() };
+const DAY = { solarElevation: 37 };
+const NIGHT = { solarElevation: -28.3 };   // Lakeside Night: lit by a moon high up, the true sun well down
 const realRandom = Math.random;
 Math.random = () => { throw new Error('the birds drew Math.random'); };
 
@@ -145,9 +145,11 @@ const heronAt = (frame) => frame.birds[0];
   check(frames.every((frame) => heronAt(frame).mode === 'stand' && heronAt(frame).shown), 'left alone, it stays');
   const looks = new Set(frames.map((frame) => heronAt(frame).look.toFixed(2)));
   check(looks.size > 3, `it turns its head now and then (${looks.size} looks)`);
-  // What its picture shows (src/birdSprites.js: its posture, where it stands, which way it faces) never changes
-  // while it stands, so its mirror image is not drawn again for its head's turns.
-  check(frames.every((frame) => { const heron = heronAt(frame); return heron.posture === first.posture && heron.x === first.x && heron.y === first.y && heron.z === first.z && heron.heading === first.heading; }), 'and what its picture shows holds still (its mirror image is not drawn again)');
+  // Where it stands changes only while it walks (src/birds.js standingPlace; it turns on the spot before and after),
+  // so between walks its mirror image is not drawn again for where it is.
+  const moved = frames.slice(1).filter((frame, index) => { const heron = heronAt(frame), before = heronAt(frames[index]);
+    return heron.x !== before.x || heron.z !== before.z; });
+  check(moved.length > 0 && moved.every((frame) => heronAt(frame).walking > 0), `it walks now and then, and moves only as it walks (${moved.length} frames)`);
 }
 
 // A splash across the pond: it looks. A stone coming down near it: it goes, and later comes back.

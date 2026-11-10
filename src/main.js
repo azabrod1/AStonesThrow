@@ -738,6 +738,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     waterColor: new THREE.Vector3(),
     exposure: 0.55,
     night: 0,   // how far the eye sees with its rods (src/sky.js; NIGHT_VISION in src/shaders/fluid.js)
+    solarElevation: 90,   // degrees: the true sun's height at the hour shown (src/sky.js), down under a night lit by the moon
   };
   migrateStoredSettings();
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
@@ -1143,7 +1144,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applyBirds(time) {
     birds.setPlace(birdsOn ? placeName : 'none');
     birds.reset(time);
-    birds.setConditions({ sunDirection });
+    birds.setConditions({ solarElevation: lighting.solarElevation });
     birds.showAt(time);
     birdView.show(birds, camera, iceUnderBird);
   }
@@ -1629,7 +1630,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
-    birds.setConditions({ sunDirection });   // none about at night (src/birds.js)
+    birds.setConditions({ solarElevation: lighting.solarElevation });   // none about at night (src/birds.js)
     tropics.setEnvironment(environment.envTexture);
     visitor.setEnvironment(environment.envTexture);
     garden.setLight();

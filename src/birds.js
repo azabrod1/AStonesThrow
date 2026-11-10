@@ -28,8 +28,8 @@
 //     Swiss Alps (Lago d'Isola): a pair of ravens. Wooded lake (Radków): a
 //     pair of mute swans. The Polynesian lagoon: great frigatebirds, hardly
 //     ever beating their wings, circling.
-//   - None at night (setConditions: the sun more than NIGHT_SUN below the
-//     horizon).
+//   - None at night (setConditions: the true sun more than NIGHT_SUN below
+//     the horizon, though the moon may light the scene).
 //
 // How they fly (visit). A flying bird is not always there: it comes into
 // the view now and then from beyond one side of the frame, goes about over
@@ -64,7 +64,7 @@ import { KOI_SHORE, koiShoreRadius, koiFloorDepthAt } from './pondFloor.js';
 import { STEP_LENGTH } from './birdRig.js';
 
 const GRAVITY = 9.81;
-const NIGHT_SUN = THREE.MathUtils.degToRad(4);   // the sun this far below the horizon: no bird is about
+const NIGHT_SUN = 4;   // degrees: the true sun this far below the horizon (not the moon that lights a night), no bird is about
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where visits are laid out from
 
 // How a kind flaps (flapBout): its time cut into `window`-second spells, and in `share` of them a bout of `least` to
@@ -343,9 +343,9 @@ export class BirdPopulation {
     }
   }
 
-  /** Whether the birds are out: none while it is dark (the sun's direction, src/main.js lighting). */
-  setConditions({ sunDirection }) {
-    this.dark = sunDirection.y < -Math.sin(NIGHT_SUN);
+  /** Whether the birds are out: none while it is dark (the true sun's elevation in degrees, src/sky.js lighting.solarElevation). */
+  setConditions({ solarElevation }) {
+    this.dark = solarElevation < -NIGHT_SUN;
   }
 
   /**
