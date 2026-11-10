@@ -4,11 +4,13 @@
 //
 // - each place's birds (BIRDS_BY_PLACE): some at every place, none for
 //   'none';
-// - four minutes of every place's flying birds (patrol, pass): always low
-//   over the water in the home view's sky (out past THROW_REACH from the
-//   eye, between 1.2 m and the frame's top), at their kind's speed, banked
-//   no more than 50°, never jumping between frames; the gulls glide and flap
-//   by turns; a passing flock crosses now and then, together;
+// - ten minutes of every place's flying birds (visit): always low over the
+//   water in the home view's sky (out past THROW_REACH from the eye, between
+//   1.2 m and the frame's top, but in a thermal's turns), at their kind's
+//   speed, banked no more than 50°, never jumping between frames; they come
+//   and go, every visit beginning and ending out beyond the frame's sides,
+//   each on a path of its own; the gulls and the fish eagle glide and flap
+//   by turns; a flock flies together;
 // - the heron stands wading at its spot: its feet on the bed, in the water,
 //   a few centimetres to a few tens deep, inside the pond;
 // - the Pool's geese stand on its lawn, past the deck, and a stone coming
@@ -75,21 +77,30 @@ for (const place of Object.keys(PLACES)) {
   check(none.birds.length === 0, "'none': no birds");
 }
 
-// Every place's flying birds over four minutes.
+// Every place's flying birds over ten minutes.
+const OUT_OF_FRAME = THREE.MathUtils.degToRad(45);   // a wide screen's frame reaches 38° either side of the home view's line
+const bearingOf = (bird) => Math.atan2(bird.x - EYE.x, -(bird.z - EYE.z));
 for (const place of Object.keys(BIRDS_BY_PLACE)) {
   const groups = BIRDS_BY_PLACE[place];
-  if (!groups.some((group) => group.habit === 'patrol' || group.habit === 'pass')) continue;
-  const { frames } = run(place, 240, 1 / 60);
+  if (!groups.some((group) => group.habit === 'visit')) continue;
+  const { frames } = run(place, 600, 1 / 60);
   const cruise = BIRD_KINDS[groups[0].kind].cruise;
   let nearest = Infinity, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, biggestJump = 0;
+  let visits = 0, inside = 0, styles = new Set(), entries = [];
   for (let index = 1; index < frames.length; index++) {
     frames[index].birds.forEach((bird, which) => {
       const before = frames[index - 1].birds[which];
+      // A visit's first and last frames: out beyond the frame's side.
+      if (bird.shown !== before.shown) {
+        const edge = bird.shown ? bird : before;
+        if (Math.abs(bearingOf(edge)) < OUT_OF_FRAME) inside++;
+        if (bird.shown) { visits++; styles.add(bird.style); entries.push(edge); }
+      }
       if (!bird.shown) return;
       const distance = Math.hypot(bird.x - EYE.x, bird.z - EYE.z);
       nearest = Math.min(nearest, distance);
       lowest = Math.min(lowest, bird.y);
-      highestElevation = Math.max(highestElevation, Math.atan2(bird.y - EYE.y, distance));
+      if (bird.style !== 'circle') highestElevation = Math.max(highestElevation, Math.atan2(bird.y - EYE.y, distance));
       steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
       if (!before.shown) return;
       const speed = Math.hypot(bird.x - before.x, bird.y - before.y, bird.z - before.z) * 60;
@@ -97,22 +108,25 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
       biggestJump = Math.max(biggestJump, Math.abs(Math.atan2(Math.sin(bird.heading - before.heading), Math.cos(bird.heading - before.heading))));
     });
   }
+  const seen = frames.filter((frame) => frame.birds.some((bird) => bird.shown)).length / frames.length;
   check(nearest > THROW_REACH, `${place}: its birds keep out of reach: nearest ${nearest.toFixed(1)} m from the eye`);
   check(lowest > 1.2, `${place}: they stay over the water: lowest ${lowest.toFixed(2)} m`);
-  check(highestElevation < FRAME_TOP, `${place}: they stay in the home view's sky: highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
+  check(highestElevation < FRAME_TOP, `${place}: they stay in the home view's sky (but in a thermal): highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
   check(slowest > 0.4 * cruise && fastest < 2.2 * cruise, `${place}: they fly at their speed: ${slowest.toFixed(1)} to ${fastest.toFixed(1)} m/s (cruising ${cruise})`);
   check(steepestBank <= THREE.MathUtils.degToRad(50) + 1e-9, `${place}: banked at most 50°: ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
   check(biggestJump < 0.05, `${place}: no bird's heading jumps between frames: ${biggestJump.toFixed(3)} rad at most`);
-  if (groups.some((group) => ['kelp', 'herring'].includes(group.kind))) {
-    const flapping = frames.filter((frame) => frame.birds.some((gull) => gull.beat > 0.5)).length / frames.length;
-    check(flapping > 0.1 && flapping < 0.9, `${place}: the gulls glide and flap by turns: some beating in ${(flapping * 100).toFixed(0)}% of frames`);
+  check(visits >= 8 && seen > 0.2 && seen < 0.9, `${place}: they come and go: ${visits} visits in ten minutes, one in view ${(seen * 100).toFixed(0)}% of the time`);
+  check(inside === 0, `${place}: every visit begins and ends out of the frame, beyond its sides (${inside} inside)`);
+  // Each visit its own path: no two come in at the same place, and more than one way of going about.
+  const sameEntry = entries.some((entry, index) => entries.slice(index + 1).some((other) => Math.hypot(entry.x - other.x, entry.y - other.y, entry.z - other.z) < 0.5 && Math.abs(Math.sin(entry.heading - other.heading)) < 0.05));
+  check(!sameEntry && styles.size >= 2, `${place}: every visit a path of its own (${[...styles].join(', ')})`);
+  if (groups.some((group) => ['kelp', 'herring', 'fishEagle'].includes(group.kind))) {
+    const shown = frames.filter((frame) => frame.birds.some((bird) => bird.shown));
+    const flapping = shown.filter((frame) => frame.birds.some((bird) => bird.shown && bird.beat > 0.5)).length / shown.length;
+    check(flapping > 0.1 && flapping < 0.9, `${place}: they glide and flap by turns: beating in ${(flapping * 100).toFixed(0)}% of the frames they are seen in`);
   }
-  if (groups.some((group) => group.habit === 'pass')) {
-    const seen = frames.filter((frame) => frame.birds.some((bird) => bird.shown)).length / frames.length;
-    let crossings = 0;
-    for (let index = 1; index < frames.length; index++) if (frames[index].birds[0].shown && !frames[index - 1].birds[0].shown) crossings++;
-    check(crossings >= 3 && seen > 0.05 && seen < 0.6, `${place}: the flock crosses now and then: ${crossings} crossings in four minutes, in view ${(seen * 100).toFixed(0)}% of the time`);
-    // Together: while the first and the last of the flock are both crossing, they are a few spacings apart.
+  if (groups.some((group) => group.together)) {
+    // Together: while the first and the last of the flock are both in view, they are a few spacings apart.
     const last = frames[0].birds.length - 1;
     const widest = frames.reduce((most, frame) => (frame.birds[0].shown && frame.birds[last].shown ? Math.max(most, Math.hypot(frame.birds[0].x - frame.birds[last].x, frame.birds[0].z - frame.birds[last].z)) : most), 0);
     check(widest < 25, `${place}: its flock flies together: the last at most ${widest.toFixed(1)} m from the first`);

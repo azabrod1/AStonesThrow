@@ -592,23 +592,29 @@ coordinates put most of the skies in South Africa):
 
 | Place | Birds |
 |---|---|
-| Rocky cove (Cape Town) | three kelp gulls working the water past the rocks |
-| Loch Ness | three herring gulls, likewise |
+| Rocky cove (Cape Town) | kelp gulls coming by to work the water past the rocks |
+| Loch Ness | herring gulls, likewise |
 | Koi pond (Nagoya) | a grey heron wading at the far bank |
 | Pool (Sterkfontein Dam) | two Egyptian geese on the lawn, one resting |
-| Lakeside (Sterkfontein Dam) | an African fish eagle low over the open water |
-| Harbour (Sterkfontein Dam) | a string of five sacred ibises crossing now and then |
-| Mesas (above the dam) | a pair of Egyptian geese crossing now and then |
+| Lakeside (Sterkfontein Dam) | an African fish eagle coming over the open water |
+| Harbour (Sterkfontein Dam) | a string of five sacred ibises now and then |
+| Mesas (above the dam) | a pair of Egyptian geese now and then |
 | Highlands (eastern Free State) | a grey heron flying over now and then |
-| Desert oasis (Richtersveld) | a Verreaux's eagle gliding under the koppies |
+| Desert oasis (Richtersveld) | a Verreaux's eagle under the koppies |
 | Swiss Alps | two ravens |
-| Wooded lake (Radków) | a pair of mute swans crossing now and then |
-| Polynesian lagoon | two great frigatebirds soaring |
+| Wooded lake (Radków) | a pair of mute swans now and then |
+| Polynesian lagoon | great frigatebirds soaring |
 
-The gulls, eagles, ravens and frigatebirds go round long loose loops,
-banking into their turns, each kind flapping as it does (a gull a few beats
-now and then, an eagle hardly, a raven mostly); a passing flock crosses the
-view on a straight line, the first time soon after the place is shown. The
+The flying birds come and go: now and then one (or a flock) comes into
+the view from beyond a side of the frame, goes about over the water and
+leaves, and is away a while before it comes again. Each visit is a path of
+its own, drawn from the bird's seed and the visit's number: across from one
+side to the other, wandering nearer and farther; in, round in a wide turn
+and back out; or, for the eagles, gulls and frigatebirds, round and round in
+a thermal, rising, and off. The path is a smooth spline flown at the bird's
+speed, so it banks into its turns as a glider does and never jerks; each
+kind flaps as it does (a gull a few beats now and then, a fish eagle in
+bouts, an eagle hardly, a raven mostly). The
 heron and the geese stand: a splash nearby makes them look; a thing thrown
 near puts them up (the geese together), and they come back a minute or so
 later, gliding in to land where they stood. None are about after dark. They

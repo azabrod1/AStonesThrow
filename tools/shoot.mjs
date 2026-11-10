@@ -72,7 +72,9 @@
 // water, fish:n:behind from behind it.
 // --birds=none leaves every place without its birds (src/birds.js;
 // ?birds=none), and --look=bird:n turns the view, after the pre-roll, to bird
-// n (__pond.birds's order), from where the view stands.
+// n (__pond.birds's order), from where the view stands; bird:n:follow
+// turns it to the bird again before every frame (a tenth of a millisecond
+// on), so a run of --times is a clip that keeps it in frame.
 // --thing=name[:value] throws that (a key of THINGS in src/things.js: a
 // kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
 // slider value (a bowling ball's pounds, a basketball's size; a stone's
@@ -224,7 +226,7 @@ if (look.startsWith('bird:')) {
     const one = window.__pond.birds.birds[index];
     if (one) window.__pond.lookAt(one.x, one.y + (one.flying === false ? 0.45 : 0), one.z);
     return one;
-  }, Number(look.slice(5)));
+  }, Number(look.split(':')[1]));
   if (fov) await page.evaluate((degrees) => window.__pond.setFov(Number(degrees)), fov);
   await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] bird', JSON.stringify(where));
@@ -275,7 +277,7 @@ if (touchArgument) {
 for (const t of times) {
   // A one-pixel read-back waits for the GPU to finish the steps just queued:
   // under SwiftShader seconds of solver steps can outlast the screenshot's timeout.
-  await page.evaluate((seconds) => {
+  await page.evaluate(([seconds, follow]) => {
     const path = window.__touchPath;
     // The finger's place before each frame: along its path at an even speed, lifted at the end.
     const moveFinger = path && ((sinceCall) => {
@@ -287,8 +289,12 @@ for (const t of times) {
     });
     window.__pond.advance(seconds, moveFinger);
     if (path) path.clock += seconds;
+    if (follow !== null) {
+      const one = window.__pond.birds.birds[follow];
+      if (one?.shown) { window.__pond.lookAt(one.x, one.y + (one.flying === false ? 0.45 : 0), one.z); window.__pond.advance(0.0001); }
+    }
     const gl = window.__pond.renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-  }, Math.max(t - elapsed, 0));
+  }, [Math.max(t - elapsed, 0), look.startsWith('bird:') && look.endsWith(':follow') ? Number(look.split(':')[1]) : null]);
   elapsed = Math.max(t, elapsed);
   const decimals = Math.abs(Number(t.toFixed(2)) - t) < 1e-9 ? 2 : 4;
   const name = `t${t.toFixed(decimals).replace('.', '_')}.png`;

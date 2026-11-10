@@ -1,13 +1,13 @@
-// The birds (src/main.js; drawn by src/birdSprites.js): who flies over each
+// The birds (src/main.js; drawn by src/birdMeshes.js): who flies over each
 // place, and how. They are scenery, as the fish are: nothing thrown meets
 // them, they touch neither the splash nor the water's waves, and they never
 // come within reach of a throw. A thing thrown near a heron puts it up.
 //
 // Who lives where (BIRDS_BY_PLACE): a bird of every place, of where its
 // photograph was taken (Poly Haven's coordinates), a few done well.
-//   - Rocky cove (Cape Town's Atlantic shore): three kelp gulls working the
-//     water out past the rocks, in long loose loops, mostly gliding, now and
-//     then a few wingbeats (patrol). Loch Ness: three herring gulls, so.
+//   - Rocky cove (Cape Town's Atlantic shore): kelp gulls, each coming by
+//     now and then to work the water out past the rocks, mostly gliding, a
+//     few wingbeats now and then. Loch Ness: herring gulls, so.
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
 //     bank, as herons stand in every garden pond with fish in it (wade). It
 //     stands still for long spells, its head turning now and then, its neck
@@ -20,32 +20,38 @@
 //     on the lawn past the deck, as they come to every pool in South Africa,
 //     one standing, one resting with its head tucked in (graze); a thing
 //     thrown near puts both up, and they come back together.
-//   - Lakeside (Sterkfontein Dam): an African fish eagle working the open
-//     water low; Harbour, on the same dam: a string of sacred ibises crossing
-//     now and then (pass); Mesas, the hill over it: a pair of Egyptian geese
-//     crossing. Highlands (the eastern Free State): a grey heron flying over.
-//   - Desert oasis (the Richtersveld): a Verreaux's eagle, gliding along
-//     under the koppies. Swiss Alps (Lago d'Isola): two ravens. Wooded lake
-//     (Radków): a pair of mute swans crossing. The Polynesian lagoon: two
-//     great frigatebirds, hardly ever beating their wings (patrol, soaring).
+//   - Lakeside (Sterkfontein Dam): an African fish eagle, coming over the
+//     open water now and then, sometimes circling up in a thermal; Harbour,
+//     on the same dam: a string of sacred ibises; Mesas, the hill over it: a
+//     pair of Egyptian geese. Highlands (the eastern Free State): a grey heron.
+//   - Desert oasis (the Richtersveld): a Verreaux's eagle under the koppies.
+//     Swiss Alps (Lago d'Isola): a pair of ravens. Wooded lake (Radków): a
+//     pair of mute swans. The Polynesian lagoon: great frigatebirds, hardly
+//     ever beating their wings, circling.
 //   - None at night (setConditions: the sun more than NIGHT_SUN below the
 //     horizon).
 //
-// How they move. A patrolling bird's loop is closed form in time (gullAt):
-// its middle drifts slowly over the water, it goes round an ellipse across
-// the line of sight, rising and falling twice a loop, banking into its turn
-// as a glider does (tan(bank) = v·ω/g), and flaps as its kind does
-// (FLAPPING: in bouts drawn from its seed and the time, flapBout, and
-// whenever it climbs). A passing flock's crossings are closed form too
-// (passAt): windows of time, each crossing's line and height drawn from the
-// flock's seed and the window. A standing bird's state (`mode`) is changed
-// only in the physics steps (step, startle: src/main.js), and each frame
-// poses every bird at the frame's time (showAt), so a seeded game goes
-// alike at any frame rate (tools/frame-rate-probe.mjs). Their randomness is
-// their own seeded stream (seededRandom), never Math.random, so seeded
-// throws stay as they were.
+// How they fly (visit). A flying bird is not always there: it comes into
+// the view now and then from beyond one side of the frame, goes about over
+// the water and leaves, and is away a while (`gap`) before it comes again.
+// Each visit is a path of its own (makeVisit), drawn from the bird's seed
+// and the visit's number: over from one side to the other, wandering nearer
+// and farther, higher and lower; or in, round in a wide turn and back out;
+// or, for a soaring kind, round and round in a thermal, rising, and off.
+// The path is a cubic B-spline (splinePath: smooth to its curvature) flown
+// at the visit's speed by its length, so the bird's heading, climb and bank
+// (into its turn as a glider banks, tan(bank) = v²κ/g) all change smoothly;
+// it flaps as its kind does (FLAPPING: in bouts drawn from its seed and the
+// time, flapBout, and whenever it climbs but in a thermal). A flock flies
+// its leader's path strung out behind it. All of it is closed form in time
+// (visitAt), the visits made in order and the last few kept. A standing
+// bird's state (`mode`) is changed only in the physics steps (step,
+// startle: src/main.js), and each frame poses every bird at the frame's
+// time (showAt), so a seeded game goes alike at any frame rate
+// (tools/frame-rate-probe.mjs). Their randomness is their own seeded stream
+// (seededRandom), never Math.random, so seeded throws stay as they were.
 //
-// A pose (`pose`, from which src/birdSprites.js chooses its picture): where it
+// A pose (`pose`, from which src/birdMeshes.js poses its model): where it
 // is (x, y, z: its body's middle, or for a bird standing its feet), its
 // heading, pitch and bank (rad), its wingbeat's phase and how hard it beats
 // (beat, 0 to 1), how far its wings are folded (fold, 1 folded on its back),
@@ -58,7 +64,7 @@ import { KOI_SHORE, koiShoreRadius, koiFloorDepthAt } from './pondFloor.js';
 
 const GRAVITY = 9.81;
 const NIGHT_SUN = THREE.MathUtils.degToRad(4);   // the sun this far below the horizon: no bird is about
-const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where the gulls' loops are laid out from
+const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where visits are laid out from
 
 // How a kind flaps (flapBout): its time cut into `window`-second spells, and in `share` of them a bout of `least` to
 // `most` seconds of beating from the spell's start, eased in and out over `ease`; and it beats while it climbs,
@@ -66,6 +72,7 @@ const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): w
 const FLAPPING = {
   gull: { window: 5.5, share: 0.4, least: 1.2, most: 2.6, ease: 0.35, climb: 1.4 },   // glides, a few beats now and then
   soaring: { window: 12, share: 0.18, least: 0.8, most: 1.6, ease: 0.3, climb: 0.5 },   // an eagle: a few beats in a minute
+  fishing: { window: 6, share: 0.65, least: 2, most: 4, ease: 0.4, climb: 0.8 },   // a fish eagle low over the water: bouts of slow, shallow beats between glides
   frigate: { window: 20, share: 0.1, least: 0.6, most: 1.0, ease: 0.25, climb: 0.2 },   // hardly ever
   corvid: { window: 3.2, share: 0.75, least: 1.6, most: 2.8, ease: 0.25, climb: 1.4 },   // rows, with short glides
   steady: { steady: true },
@@ -80,7 +87,7 @@ export const BIRD_KINDS = {
   heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 9, flapping: 'steady', stand: 0.62 },
   goose: { name: 'Egyptian goose', span: 1.45, length: 0.7, beat: 3.8, cruise: 14, flapping: 'steady', stand: 0.32 },
   ibis: { name: 'African sacred ibis', span: 1.15, length: 0.7, beat: 3.6, cruise: 12, flapping: 'corvid', stand: 0 },
-  fishEagle: { name: 'African fish eagle', span: 2.1, length: 0.72, beat: 2.2, cruise: 10, flapping: 'soaring', stand: 0 },
+  fishEagle: { name: 'African fish eagle', span: 2.1, length: 0.72, beat: 2.2, cruise: 10, flapping: 'fishing', stand: 0 },
   eagle: { name: "Verreaux's eagle", span: 2.1, length: 0.85, beat: 2.0, cruise: 11, flapping: 'soaring', stand: 0 },
   raven: { name: 'Common raven', span: 1.2, length: 0.62, beat: 3.4, cruise: 10, flapping: 'corvid', stand: 0 },
   swan: { name: 'Mute swan', span: 2.2, length: 1.45, beat: 2.9, cruise: 15, flapping: 'steady', stand: 0 },
@@ -88,35 +95,33 @@ export const BIRD_KINDS = {
 };
 
 // Each place's birds (src/places.js PLACES): how many of which kind and their habit.
-//   patrol: `distance` (m from the shore's eye to the middle of a loop), `bearing` (degrees either side of the home
-//     view's line, or of `aim` degrees to its right: where the view shows open sky or water behind it), `across` and `depth` (m: the loop's half-widths, across the line of sight and along it), `height`
-//     (m above the water) and `swing` (m it rises and falls), `drift` (m its middle wanders).
-//   pass: now and then the group crosses the view together, one behind another, going somewhere: its time cut into
-//     `every`-second windows from when the place was shown (reset), the first always with a crossing early in it (so
-//     one comes soon after arriving), in `share` of the rest one at a time in the window drawn from its seed, along a
-//     straight line across the line of sight at `distance` m from the eye, `bearing` degrees either side of the home
-//     view's line, `height` m up, from `reach` times its distance out to one side to as far out the other (out of
-//     the frame both ends), rising or falling up to `climb` m over it; each bird `spacing` m behind the one before
-//     and a little to one side, as a small flock strings out.
+//   visit: now and then a bird comes into the view, goes about over the water a while and leaves (visitAt): each
+//     visit a fresh path, `gap` [least, most] s apart (the first within `first` s of the place being shown), drawn
+//     with `styles`' weights (cross: over from one side to the other, wandering nearer and farther; turn: in from one
+//     side, round in a wide turn out over the water and back out the same side; circle: in, round and round over the
+//     water, rising as in a thermal, and off; a soaring kind's), between `distance` [near, far] m from the shore's
+//     eye and `height` [low, high] m over the water, its turns and circles centred `aim` degrees to the right of the
+//     home view's line, give or take `spread`. `count` birds, each on its own visits, or with `together` one flock
+//     on its leader's, each `spacing` m behind the one before and a little to one side, as a small flock strings out.
 //   wade: `angle` (rad about the pond's centre, KOI_SHORE) and `offshore` (m out from the waterline) where it stands,
 //     `heading` (rad from +x, turning toward −z) which way it faces: side on to the home view, so its outline reads.
 //   graze: on dry ground `ground` m up, each bird at its own `spots` [x, z, heading] and in its own `postures` (stand,
 //     or rest: its head tucked in, until something makes it look); the group goes together when one is put up, and
 //     comes back together. Standing (wade or graze), a bird's ways are its kind's STANDING.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
-// sky (under FRAME_TOP in tools/bird-probe.mjs) and out of a throw's reach.
+// sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
 export const BIRDS_BY_PLACE = {
-  cove: [{ kind: 'kelp', habit: 'patrol', count: 3, distance: [34, 52], bearing: 18, across: [9, 13], depth: [7, 11], height: [1.8, 2.8], swing: [0.25, 0.5], drift: [3, 6] }],
-  loch: [{ kind: 'herring', habit: 'patrol', count: 3, distance: [36, 54], bearing: 18, across: [9, 13], depth: [7, 11], height: [1.8, 2.8], swing: [0.25, 0.5], drift: [3, 6] }],
+  cove: [{ kind: 'kelp', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [4, 30], first: 3, styles: { cross: 0.5, turn: 0.35, circle: 0.15 } }],
+  loch: [{ kind: 'herring', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [4, 30], first: 3, styles: { cross: 0.5, turn: 0.35, circle: 0.15 } }],
   koi: [{ kind: 'heron', habit: 'wade', count: 1, angle: 4.3, offshore: 0.1, heading: -2.85 }],   // in 12 cm of water: to mid-shin
-  lagoon: [{ kind: 'frigate', habit: 'patrol', count: 2, distance: [60, 85], bearing: 20, across: [14, 20], depth: [8, 10], height: [3, 4.5], swing: [0.5, 1], drift: [3, 6] }],
-  swiss: [{ kind: 'raven', habit: 'patrol', count: 2, distance: [40, 60], bearing: 16, across: [8, 12], depth: [6, 9], height: [2, 3.2], swing: [0.3, 0.7], drift: [3, 6] }],
-  desert: [{ kind: 'eagle', habit: 'patrol', count: 1, distance: [70, 95], bearing: 14, across: [14, 20], depth: [8, 12], height: [3.5, 4.5], swing: [0.5, 1], drift: [4, 8] }],
-  lakeside: [{ kind: 'fishEagle', habit: 'patrol', count: 1, distance: [60, 85], aim: 22, bearing: 6, across: [8, 12], depth: [8, 12], height: [2.5, 4], swing: [0.6, 1.2], drift: [4, 8] }],
-  wooded: [{ kind: 'swan', habit: 'pass', count: 2, every: 30, share: 0.75, distance: [35, 60], bearing: 15, height: [1.5, 3.5], reach: 1.25, climb: 1.5, spacing: 4 }],
-  harbour: [{ kind: 'ibis', habit: 'pass', count: 5, every: 30, share: 0.75, distance: [40, 70], bearing: 15, height: [2.5, 4.5], reach: 1.3, climb: 1.5, spacing: 3.5 }],
-  mesas: [{ kind: 'goose', habit: 'pass', count: 2, every: 30, share: 0.75, distance: [35, 60], bearing: 15, height: [1.5, 3], reach: 1.3, climb: 1, spacing: 2.5 }],
-  highlands: [{ kind: 'heron', habit: 'pass', count: 1, every: 40, share: 0.8, distance: [30, 50], bearing: 15, height: [1.5, 3], reach: 1.3, climb: 1, spacing: 0 }],
+  lagoon: [{ kind: 'frigate', habit: 'visit', count: 2, distance: [45, 100], height: [3, 6], aim: 0, spread: 14, gap: [8, 40], first: 3, styles: { cross: 0.3, turn: 0.2, circle: 0.5 } }],
+  swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [35, 80], height: [2, 4.5], aim: 0, spread: 14, gap: [10, 40], first: 3, styles: { cross: 0.6, turn: 0.4 } }],
+  desert: [{ kind: 'eagle', habit: 'visit', count: 1, distance: [55, 110], height: [3.5, 6.5], aim: 0, spread: 12, gap: [10, 40], first: 3, styles: { cross: 0.35, turn: 0.2, circle: 0.45 } }],
+  lakeside: [{ kind: 'fishEagle', habit: 'visit', count: 1, distance: [35, 85], height: [2.5, 5], aim: 14, spread: 12, gap: [8, 30], first: 3, styles: { cross: 0.35, turn: 0.25, circle: 0.4 } }],
+  wooded: [{ kind: 'swan', habit: 'visit', count: 2, together: true, spacing: 4, distance: [35, 70], height: [1.5, 3.5], aim: 0, spread: 14, gap: [12, 45], first: 3, styles: { cross: 0.8, turn: 0.2 } }],
+  harbour: [{ kind: 'ibis', habit: 'visit', count: 5, together: true, spacing: 3.5, distance: [40, 75], height: [2.5, 4.5], aim: 0, spread: 14, gap: [12, 40], first: 3, styles: { cross: 0.75, turn: 0.25 } }],
+  mesas: [{ kind: 'goose', habit: 'visit', count: 2, together: true, spacing: 2.5, distance: [35, 65], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 40], first: 3, styles: { cross: 0.75, turn: 0.25 } }],
+  highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], first: 3, styles: { cross: 0.7, turn: 0.3 } }],
   // On the Pool's lawn (src/pool.js: the deck, POOL.deck up, ends 3.9 m from the pool's middle at (0, −1)), beyond
   // its far side, where the home view's top sees it; side on to the eye.
   pool: [{ kind: 'goose', habit: 'graze', count: 2, ground: 0.1, spots: [[-1.5, -7.4, 0.2], [0.8, -8.4, Math.PI - 0.3]], postures: ['stand', 'rest'] }],
@@ -183,6 +188,78 @@ function bezier(points, along, out) {
   return out;
 }
 
+const EYE_HEIGHT = 1.15;   // the shore's eye's height (src/main.js VIEWS.shore)
+const OUT = 64;   // degrees either side of the home view's line: out of a wide screen's frame (38° either side at 16:9), where visits begin and end
+const CEILING = THREE.MathUtils.degToRad(6);   // a visit's points are kept this far above the eye's level, under the frame's top (7.4°)
+const SPAN_SAMPLES = 16;   // a spline's span sampled this many times for its length table
+
+/**
+ * The radius (m) of the control points' circle for a turn at `speed` (m/s) banked `bank` degrees: v²/(g·tan(bank)),
+ * widened by what the spline cuts off a circle drawn by eight points a turn (its curve runs 0.9 of their radius).
+ */
+const turnRadius = (speed, bank) => speed * speed / (GRAVITY * Math.tan(THREE.MathUtils.degToRad(bank))) / 0.9;
+
+/**
+ * A uniform cubic B-spline through (near) `points` ([x, y, z]), its ends pinned to the first and last (a phantom point
+ * mirrored beyond each, so it starts at the first heading for the second), with a table of its length along it:
+ * { controls, spans, parameters, lengths, length }.
+ */
+function splinePath(points) {
+  const first = points[0], second = points[1], last = points[points.length - 1], before = points[points.length - 2];
+  const controls = [first.map((value, axis) => 2 * value - second[axis]), ...points, last.map((value, axis) => 2 * value - before[axis])];
+  const spans = controls.length - 3;
+  const parameters = new Float64Array(spans * SPAN_SAMPLES + 1), lengths = new Float64Array(spans * SPAN_SAMPLES + 1);
+  const previous = new THREE.Vector3(), current = new THREE.Vector3();
+  const path = { controls, spans, parameters, lengths, length: 0 };
+  splineAt(path, 0, previous);
+  for (let index = 1; index < parameters.length; index++) {
+    parameters[index] = index / SPAN_SAMPLES;
+    splineAt(path, parameters[index], current);
+    lengths[index] = lengths[index - 1] + current.distanceTo(previous);
+    previous.copy(current);
+  }
+  path.length = lengths[lengths.length - 1];
+  return path;
+}
+
+/** A B-spline's point at parameter `parameter` (0 to spans) into `out`, and its first and second derivatives if given. */
+function splineAt(path, parameter, out, first, second) {
+  const span = Math.min(Math.floor(parameter), path.spans - 1), local = parameter - span, rest = 1 - local;
+  const squared = local * local, cubed = squared * local;
+  const weights = [rest * rest * rest / 6, (3 * cubed - 6 * squared + 4) / 6, (-3 * cubed + 3 * squared + 3 * local + 1) / 6, cubed / 6];
+  const slopes = [-rest * rest / 2, (3 * squared - 4 * local) / 2, (-3 * squared + 2 * local + 1) / 2, squared / 2];
+  const bends = [rest, 3 * local - 2, -3 * local + 1, local];
+  out.set(0, 0, 0); first?.set(0, 0, 0); second?.set(0, 0, 0);
+  for (let index = 0; index < 4; index++) {
+    const [x, y, z] = path.controls[span + index];
+    out.x += weights[index] * x; out.y += weights[index] * y; out.z += weights[index] * z;
+    if (first) { first.x += slopes[index] * x; first.y += slopes[index] * y; first.z += slopes[index] * z; }
+    if (second) { second.x += bends[index] * x; second.y += bends[index] * y; second.z += bends[index] * z; }
+  }
+  return out;
+}
+
+const scratchSample = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };
+
+/**
+ * Where a path is `along` m along it (into `out`): its point, its direction (velocity: its derivative there) and its
+ * heading's turn a metre (`turn`, rad/m, positive turning left: toward −z from +x), from the spline itself, not its
+ * table, so they are as smooth as it is.
+ */
+function sampleAt(path, along, out) {
+  const { lengths, parameters } = path;
+  let low = 0, high = lengths.length - 1;
+  while (high - low > 1) { const mid = (low + high) >> 1; if (lengths[mid] <= along) low = mid; else high = mid; }
+  const share = (along - lengths[low]) / Math.max(lengths[high] - lengths[low], 1e-9);
+  const parameter = parameters[low] + (parameters[high] - parameters[low]) * THREE.MathUtils.clamp(share, 0, 1);
+  splineAt(path, parameter, out.position, out.velocity, out.bend);
+  const { velocity, bend } = out;
+  const level = velocity.x * velocity.x + velocity.z * velocity.z;
+  // The heading atan2(−z', x') turns by (z'·x'' − x'·z'')/(x'² + z'²) a unit of the parameter; a metre is |v| of one.
+  out.turn = (velocity.z * bend.x - velocity.x * bend.z) / Math.max(level * velocity.length(), 1e-9);
+  return out;
+}
+
 /**
  * The birds of the place shown (setPlace), stepped with the world
  * (step, startle) and posed at a frame's time (showAt). `birds` lists them:
@@ -203,54 +280,25 @@ export class BirdPopulation {
     const stream = seededRandom(this.seed, 977);
     this.birds = [];
     for (const group of BIRDS_BY_PLACE[place] ?? []) {
-      const flock = group.habit === 'pass' ? this.layFlock(group, stream) : null;
-      let groupSeed = null;
+      let groupSeed = null, visitor = null;
       for (let index = 0; index < group.count; index++) {
         const bird = { kind: group.kind, habit: group.habit, group, index, pose: freshPose(), seed: Math.floor(stream() * 2 ** 31) };
         groupSeed ??= bird.seed;
         bird.groupSeed = groupSeed;   // a group's shared draws (when it comes back, from which side): its first bird's seed
-        if (group.habit === 'patrol') this.layPatrol(bird, group, stream);
-        else if (group.habit === 'pass') Object.assign(bird, { flock, rank: index, phaseOffset: stream() * Math.PI * 2 });
-        else this.laySpot(bird, group);
+        if (group.habit === 'visit') {
+          // Each on its own visits, or a flock all on its leader's (rank: its place behind the leader).
+          if (!group.together || !visitor) visitor = this.layVisitor(group, bird.seed);
+          Object.assign(bird, { visitor, rank: group.together ? index : 0, phaseOffset: stream() * Math.PI * 2, flapOffset: stream() * (FLAPPING[BIRD_KINDS[group.kind].flapping].window ?? 1) });
+        } else this.laySpot(bird, group);
         this.birds.push(bird);
       }
     }
     this.reset(0);
   }
 
-  /** A patrolling bird's loop (gullAt): its middle, size, height, speed round, way round and where on it it starts. */
-  layPatrol(bird, group, stream) {
-    const kind = BIRD_KINDS[bird.kind];
-    const distance = between(group.distance, stream());
-    const bearing = THREE.MathUtils.degToRad((group.aim ?? 0) + (stream() * 2 - 1) * group.bearing);
-    const across = between(group.across, stream()), depth = between(group.depth, stream());
-    bird.loop = {
-      middleX: EYE.x + Math.sin(bearing) * distance,
-      middleZ: EYE.z - Math.cos(bearing) * distance,
-      // Across the line of sight (to the right) and along it (away): the ellipse's axes.
-      acrossX: Math.cos(bearing), acrossZ: Math.sin(bearing), alongX: Math.sin(bearing), alongZ: -Math.cos(bearing),
-      across, depth,
-      height: between(group.height, stream()), swing: between(group.swing, stream()),
-      drift: between(group.drift, stream()), driftRates: [0.011 + 0.008 * stream(), 0.009 + 0.008 * stream()], driftPhases: [stream() * 6.28, stream() * 6.28],
-      // Round at its cruising speed: an ellipse's perimeter is about π·(3(a + b) − sqrt((3a + b)(a + 3b))) (Ramanujan).
-      rate: (stream() < 0.5 ? 1 : -1) * kind.cruise * (0.9 + 0.2 * stream()) * 2 * Math.PI / (Math.PI * (3 * (across + depth) - Math.sqrt((3 * across + depth) * (across + 3 * depth)))),
-      start: stream() * Math.PI * 2,
-      swingPhase: stream() * Math.PI * 2,
-      flapOffset: stream() * (FLAPPING[kind.flapping].window ?? 1),
-    };
-  }
-
-  /** A flock's crossings (passAt): its seed, its windows, the ranges each crossing is drawn from, its speed. */
-  layFlock(group, stream) {
-    const kind = BIRD_KINDS[group.kind];
-    return {
-      seed: Math.floor(stream() * 2 ** 31),
-      every: group.every, share: group.share, since: 0,
-      distance: group.distance, bearing: THREE.MathUtils.degToRad(group.bearing), height: group.height, reach: group.reach, climb: group.climb,
-      spacing: group.spacing, count: group.count,
-      speed: kind.cruise * (0.9 + 0.2 * stream()),
-      flapOffset: stream() * (FLAPPING[kind.flapping].window ?? 1),
-    };
+  /** A visiting bird's (or flock's) visits (visitAt): its seed, its group, the kind's speed; its visits made as asked for. */
+  layVisitor(group, seed) {
+    return { seed, group, cruise: BIRD_KINDS[group.kind].cruise, since: 0, visits: [], lagMost: group.together ? (group.count - 1) * group.spacing : 0 };
   }
 
   /**
@@ -269,11 +317,11 @@ export class BirdPopulation {
     bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: group.heading };
   }
 
-  /** Every bird as it starts at `time`: one that stands, standing at its spot; a passing flock's windows from now. */
+  /** Every bird as it starts at `time`: one that stands, standing at its spot; a visitor's visits from now. */
   reset(time) {
     this.disturbed = -Infinity;
     for (const bird of this.birds) {
-      if (bird.flock) bird.flock.since = time;
+      if (bird.visitor) { bird.visitor.since = time; bird.visitor.visits.length = 0; }
       if (!STANDING_HABITS.has(bird.habit)) continue;
       bird.mode = 'stand';
       bird.since = time - STANDING[bird.kind].land.fold;   // standing a while already: its wings folded
@@ -391,113 +439,179 @@ export class BirdPopulation {
   /** Every bird posed at `time` (src/main.js, once a frame): its pose. */
   showAt(time) {
     for (const bird of this.birds) {
-      if (bird.habit === 'patrol') this.poseGull(bird, time);
-      else if (bird.habit === 'pass') this.posePass(bird, time);
+      if (bird.habit === 'visit') this.poseVisit(bird, time);
       else this.poseStanding(bird, time);
       if (this.dark) bird.pose.shown = false;
     }
   }
 
-  /** Where a gull is on its loop at `time` (into `out`, its body's middle). */
-  gullAt(loop, time, out) {
-    const angle = loop.start + loop.rate * time;
-    const driftAcross = loop.drift * Math.sin(loop.driftRates[0] * time + loop.driftPhases[0]);
-    const driftAlong = 0.6 * loop.drift * Math.sin(loop.driftRates[1] * time + loop.driftPhases[1]);
-    const across = loop.across * Math.cos(angle) + driftAcross, along = loop.depth * Math.sin(angle) + driftAlong;
-    out.x = loop.middleX + loop.acrossX * across + loop.alongX * along;
-    out.z = loop.middleZ + loop.acrossZ * across + loop.alongZ * along;
-    out.y = loop.height + loop.swing * Math.sin(2 * angle + loop.swingPhase);
-    return out;
+  /**
+   * A visitor's visit `index` from `start` (s from when the place was shown): its path (a cubic B-spline through
+   * control points drawn from its seed and the index, in the view's terms: bearing right of the home view's line,
+   * distance from the eye, height over the water; see BIRDS_BY_PLACE), its speed, its length, and how long it lasts.
+   * Its ends are out of the frame to either side, so the bird flies in and out of view; between them every turn is
+   * smooth (the spline is C2, so its curvature and with it the bird's bank never jump).
+   */
+  makeVisit(visitor, index, start) {
+    const { group } = visitor;
+    const random = seededRandom(visitor.seed, index, 31);
+    const range = (pair) => between(pair, random());
+    const signed = (most) => (random() * 2 - 1) * most;
+    const styles = Object.entries(group.styles);
+    let pick = random() * styles.reduce((sum, [, weight]) => sum + weight, 0), style = styles[0][0];
+    for (const [name, weight] of styles) { if (pick < weight) { style = name; break; } pick -= weight; }
+    const side = random() < 0.5 ? 1 : -1;   // in from the right (1) or the left
+    const speed = visitor.cruise * (0.85 + 0.3 * random());
+    const [near, far] = group.distance;
+    // A point by bearing (degrees right of the home view's line), distance and height; kept under the frame's top
+    // (CEILING, but for a thermal's last turns: `free`) and out of reach.
+    const points = [];
+    const at = (bearing, distance, height, free = false) => {
+      const radians = THREE.MathUtils.degToRad(bearing);
+      const clampedDistance = Math.max(distance, near * 0.9);
+      const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING);
+      points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
+    };
+    const middle = () => group.aim + signed(group.spread);
+    at(side * (OUT + random() * 8), range(group.distance), range(group.height));
+    if (style === 'cross') {
+      // Over, by two to three places strung across the view, each nearer or farther, higher or lower.
+      // Each a step nearer or farther than the one before, smaller the faster it flies (a fast bird turns wide).
+      const stops = 2 + Math.floor(random() * 2), wander = 14 * Math.min(1, 10 / speed);
+      let distance = range(group.distance);
+      for (let stop = 1; stop <= stops; stop++) {
+        const share = stop / (stops + 1);
+        distance = THREE.MathUtils.clamp(distance + signed(wander), near, far);
+        at(side * (OUT - 2 * OUT * share) * 0.75 + group.aim * (1 - Math.abs(2 * share - 1)) + signed(6), distance, range(group.height));
+      }
+      at(-side * (OUT + random() * 8), range(group.distance), range(group.height));
+    } else if (style === 'turn') {
+      // In, out over the water and round (half a circle the far way, as wide as its speed asks at a bank of 20° to
+      // 35°), and back out the side it came in, nearer or farther than it came.
+      const apex = THREE.MathUtils.degToRad(middle());
+      const radius = turnRadius(speed, 20 + random() * 15);
+      const inner = between([near, (near + far) / 2], random());
+      const aheadX = Math.sin(apex), aheadZ = -Math.cos(apex), rightX = Math.cos(apex), rightZ = Math.sin(apex);
+      const centreX = EYE.x + aheadX * (inner + radius), centreZ = EYE.z + aheadZ * (inner + radius);
+      at(side * 32 + signed(6), inner + random() * 10, range(group.height));
+      const low = range(group.height), high = range(group.height);
+      for (let step = 0; step <= 4; step++) {
+        // From the circle's near point, round by its far side (away from where it came in), to its far point.
+        const angle = Math.PI * step / 4;
+        const towardEye = Math.cos(angle), awaySide = Math.sin(angle);
+        points.push([centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, low + (high - low) * step / 4, centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide]);
+      }
+      // Out along the circle's far side's line (no nearer than its middle, so it never doubles back).
+      const outward = inner + radius * (1 + random());
+      at(side * 34 + signed(4), outward, range(group.height));
+      at(side * (OUT + random() * 8), outward + signed(10), range(group.height));
+    } else {
+      // Circling: in to a thermal, round it one and a half to three times (eight points a turn), drifting with the
+      // wind and rising a few metres a turn, then off to either side, high.
+      const centreBearing = middle(), centreDistance = between([near + 15, far - 5], random());
+      const radius = turnRadius(speed * 0.85, 25 + random() * 13), turns = 1.5 + random() * 1.5, way = random() < 0.5 ? 1 : -1;
+      const radians = THREE.MathUtils.degToRad(centreBearing);
+      const centre = [EYE.x + Math.sin(radians) * centreDistance, EYE.z - Math.cos(radians) * centreDistance];
+      const drift = [signed(6), signed(4)];
+      const base = range(group.height), climb = 1.5 + random() * 2;
+      // Into the circle along the way it came (its first point where the circle's tangent runs from where it came
+      // in toward the middle), round, and out where the tangent runs toward the side it leaves by.
+      const approach = Math.atan2(centre[1] - points[0][2], centre[0] - points[0][0]);
+      const from = approach - way * Math.PI / 2;
+      const exit = random() < 0.5 ? side : -side;
+      let count = Math.round(turns * 8);
+      // The tangent at a step's angle is (−sin, cos)·way; across the view is about ±x.
+      while (-Math.sin(from + way * count * Math.PI / 4) * way * exit < 0.7) count++;
+      for (let step = 0; step <= count; step++) {
+        const share = step / 8;
+        const angle = from + way * share * Math.PI * 2;
+        const height = base + climb * share;
+        points.push([centre[0] + drift[0] * share + Math.cos(angle) * radius, height, centre[1] + drift[1] * share + Math.sin(angle) * radius]);
+      }
+      const last = points[points.length - 1];
+      at(exit * 35, Math.hypot(last[0] - EYE.x, last[2] - EYE.z), last[1] + 1, true);
+      at(exit * (OUT + random() * 8), range(group.distance), last[1] + 2, true);
+    }
+    const path = splinePath(points);
+    const flown = style === 'circle' ? speed * 0.85 : speed;   // slower round a thermal
+    return { index, style, start, speed: flown, path, length: path.length, duration: path.length / flown, thermal: style === 'circle' };
   }
 
-  poseGull(bird, time) {
-    const { pose, loop } = bird;
+  /**
+   * The visit of `visitor` under way at `local` (s from when the place was shown) for a bird `lag` m behind its
+   * leader, or null between visits. Visits are made in order (each `gap` after the one before has left, its whole
+   * flock with it) and the few lately made are kept: the same at any frame rate, as each is drawn from its index.
+   */
+  visitAt(visitor, local, lag) {
+    if (local < 0) return null;
+    const { visits, group } = visitor;
+    if (!visits.length || local < visits[0].start) {
+      visits.length = 0;
+      visits.push(this.makeVisit(visitor, 0, hashed(visitor.seed, 0, 32) * group.first));
+    }
+    for (let last = visits[visits.length - 1]; last.start + last.duration + visitor.lagMost / last.speed <= local; last = visits[visits.length - 1]) {
+      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32));
+      visits.push(this.makeVisit(visitor, last.index + 1, last.start + last.duration + visitor.lagMost / last.speed + gap));
+      if (visits.length > 4) visits.shift();
+    }
+    for (const visit of visits) {
+      const along = (local - visit.start) * visit.speed - lag;
+      if (along >= 0 && along <= visit.length) return { visit, along };
+    }
+    return null;
+  }
+
+  poseVisit(bird, time) {
+    const { pose, visitor } = bird;
     const kind = BIRD_KINDS[bird.kind];
-    const step = 0.05;
-    const before = this.gullAt(loop, time - step, { x: 0, y: 0, z: 0 });
-    const after = this.gullAt(loop, time + step, { x: 0, y: 0, z: 0 });
-    this.gullAt(loop, time, pose);
-    const velocityX = (after.x - before.x) / (2 * step), velocityY = (after.y - before.y) / (2 * step), velocityZ = (after.z - before.z) / (2 * step);
-    const level = Math.hypot(velocityX, velocityZ);
-    pose.heading = Math.atan2(-velocityZ, velocityX);
-    pose.pitch = Math.atan2(velocityY, level) * 0.6;
-    // Banked into the turn: tan(bank) = v·ω/g, ω its heading's rate (a turn to the right, its heading falling, banks right).
-    const headingBefore = Math.atan2(-(pose.z - before.z), pose.x - before.x), headingAfter = Math.atan2(-(after.z - pose.z), after.x - pose.x);
-    const turnRate = turnBetween(headingBefore, headingAfter) / step;
-    pose.bank = THREE.MathUtils.clamp(-Math.atan(level * turnRate / GRAVITY), -BANK_MOST, BANK_MOST);
-    const flapping = FLAPPING[kind.flapping];
-    pose.beat = flapping.steady ? 1 : Math.min(1, this.flapBout(bird, time, flapping) + Math.max(velocityY, 0) * flapping.climb);
-    pose.phase = 2 * Math.PI * kind.beat * time;
+    const lag = bird.rank * (visitor.group.spacing ?? 0);
+    const found = this.visitAt(visitor, time - visitor.since, lag);
+    pose.phase = 2 * Math.PI * kind.beat * time + bird.phaseOffset;
     pose.fold = 0;
     pose.neck = 0;
-    pose.look = 0.25 * Math.sin(time * 0.37 + bird.seed);   // it looks about as it goes, a little
     pose.legs = 0;
     pose.crouch = 0;
-    pose.shown = true;
+    pose.flying = true;
+    pose.shown = Boolean(found);
+    bird.style = found?.visit.style ?? null;
+    if (!found) {
+      // Between visits, nowhere in particular, but the same at any frame rate (its last frame's place would not be).
+      pose.x = EYE.x; pose.y = 0; pose.z = EYE.z; pose.heading = 0; pose.pitch = 0; pose.bank = 0; pose.beat = 0; pose.look = 0;
+      return;
+    }
+    const { visit, along } = found;
+    const sample = sampleAt(visit.path, along, scratchSample);
+    const { velocity } = sample;
+    const level = Math.hypot(velocity.x, velocity.z);
+    pose.x = sample.position.x; pose.y = sample.position.y; pose.z = sample.position.z;
+    if (bird.rank) {
+      // Strung out to one side and the other of the leader's line, a little higher or lower, bobbing.
+      const aside = (bird.rank % 2 ? 1 : -1) * Math.ceil(bird.rank / 2) * visitor.group.spacing * 0.45;
+      pose.x += (-velocity.z / level) * aside;
+      pose.z += (velocity.x / level) * aside;
+      pose.y += 0.25 * Math.sin(bird.rank * 2.1) + 0.12 * Math.sin(time * 0.9 + bird.rank);
+    }
+    pose.heading = Math.atan2(-velocity.z, velocity.x);
+    pose.pitch = Math.atan2(velocity.y, level) * 0.6;
+    // Banked into its turn as a glider is: tan(bank) = v²·(the heading's turn a metre)/g, a right turn (its heading
+    // falling) banking right.
+    pose.bank = THREE.MathUtils.clamp(-Math.atan(visit.speed * visit.speed * sample.turn / GRAVITY), -BANK_MOST, BANK_MOST);
+    const flapping = FLAPPING[kind.flapping];
+    // Beating as its kind does, and to climb (not in a thermal: the air lifts it).
+    const climbRate = visit.speed * velocity.y / Math.max(Math.hypot(level, velocity.y), 1e-9);
+    pose.beat = flapping.steady ? 1 : Math.min(1, this.flapBout(bird, time, flapping) + (visit.thermal ? 0 : Math.max(climbRate, 0) * flapping.climb));
+    pose.look = 0.25 * Math.sin(time * 0.37 + bird.seed);   // it looks about as it goes, a little
   }
 
   /** How hard a bird beats at `time` from its bouts alone (its kind's FLAPPING), 0 to 1. */
   flapBout(bird, time, flapping) {
     const { window, share, least, most, ease } = flapping;
-    const shifted = time + (bird.loop ?? bird.flock).flapOffset;
+    const shifted = time + bird.flapOffset;
     const spell = Math.floor(shifted / window);
     if (hashed(bird.seed, spell, 1) >= share) return 0;
     const length = between([least, most], hashed(bird.seed, spell, 2));
     const into = shifted - spell * window;
     return smoother(0, ease, into) * (1 - smoother(length - ease, length, into));
-  }
-
-  /**
-   * Where a bird of a passing flock is at `time` (into `out`, its body's middle), its heading and climb, and
-   * whether it is crossing then: false between crossings.
-   */
-  passAt(bird, time, out) {
-    const { flock } = bird;
-    const longest = 2 * flock.reach * flock.distance[1] / flock.speed;
-    const lagMost = (flock.count - 1) * flock.spacing / flock.speed;
-    // Its own clock runs behind the leader's by its place in the line, so every bird of a crossing is in one window.
-    const local = time - flock.since - bird.rank * flock.spacing / flock.speed;
-    const window = Math.floor(local / flock.every);
-    if (window < 0 || (window > 0 && hashed(flock.seed, window, 21) >= flock.share)) return false;
-    const distance = between(flock.distance, hashed(flock.seed, window, 23));
-    const duration = 2 * flock.reach * distance / flock.speed;
-    const early = window === 0 ? 0.25 : 1;   // the first window's crossing in its first quarter
-    const start = window * flock.every + early * hashed(flock.seed, window, 22) * Math.max(flock.every - longest - lagMost, 0);
-    const along = (local - start) / duration;
-    if (along < 0 || along > 1) return false;
-    const bearing = (hashed(flock.seed, window, 24) * 2 - 1) * flock.bearing;
-    const way = hashed(flock.seed, window, 26) < 0.5 ? 1 : -1;
-    const climb = (hashed(flock.seed, window, 27) * 2 - 1) * flock.climb;
-    // Across the line of sight (to the right, times its way) and along it (away from the eye).
-    const acrossX = Math.cos(bearing) * way, acrossZ = Math.sin(bearing) * way;
-    const alongX = Math.sin(bearing), alongZ = -Math.cos(bearing);
-    const sideways = (along - 0.5) * 2 * flock.reach * distance;
-    // Strung out to one side and the other, a little deeper or nearer by turns (the leader on the line).
-    const aside = (bird.rank % 2 ? 1 : -1) * Math.ceil(bird.rank / 2) * flock.spacing * 0.45;
-    out.x = EYE.x + alongX * (distance + aside) + acrossX * sideways;
-    out.z = EYE.z + alongZ * (distance + aside) + acrossZ * sideways;
-    out.y = between(flock.height, hashed(flock.seed, window, 25)) + climb * (along - 0.5) + 0.25 * Math.sin(bird.rank * 2.1) + 0.12 * Math.sin(time * 0.9 + bird.rank);
-    out.heading = Math.atan2(-acrossZ, acrossX);
-    out.pitch = Math.atan2(climb, 2 * flock.reach * distance);
-    return true;
-  }
-
-  posePass(bird, time) {
-    const { pose } = bird;
-    const kind = BIRD_KINDS[bird.kind];
-    pose.shown = this.passAt(bird, time, pose);
-    // Between crossings, nowhere in particular, but the same at any frame rate (its last frame's place would not be).
-    if (!pose.shown) { pose.x = EYE.x; pose.y = 0; pose.z = EYE.z; pose.heading = 0; pose.pitch = 0; }
-    pose.bank = 0;
-    const flapping = FLAPPING[kind.flapping];
-    pose.beat = flapping.steady ? 1 : Math.min(1, this.flapBout(bird, time, flapping) + Math.max(pose.pitch, 0) * flapping.climb);
-    pose.phase = 2 * Math.PI * kind.beat * time + bird.phaseOffset;
-    pose.fold = 0;
-    pose.neck = 0;
-    pose.look = 0;
-    pose.legs = 0;
-    pose.crouch = 0;
-    pose.flying = true;
   }
 
   poseStanding(bird, time) {
@@ -613,6 +727,6 @@ export class BirdPopulation {
 
   /** What tools and probes read: each bird's kind, mode and pose. */
   report() {
-    return this.birds.map((bird) => ({ kind: bird.kind, habit: bird.habit, mode: bird.mode ?? 'patrol', since: bird.since ?? null, returnAt: bird.returnAt ?? null, ...bird.pose, spot: bird.spot ? { ...bird.spot } : null }));
+    return this.birds.map((bird) => ({ kind: bird.kind, habit: bird.habit, mode: bird.mode ?? (bird.pose.shown ? 'visiting' : 'away'), style: bird.style ?? null, since: bird.since ?? null, returnAt: bird.returnAt ?? null, ...bird.pose, spot: bird.spot ? { ...bird.spot } : null }));
   }
 }
