@@ -1029,6 +1029,68 @@ function turnedMesh(attributes, radii, segments) {
   return geometry;
 }
 
+// The water cannon's nozzle (src/things.js 'cannon', src/waterCannon.js): a
+// fire monitor's smooth-bore tip, a lathe about +z in unit radii (its
+// coupling's radius 1, 4 cm), back to front: a stub of red hose, its cut end
+// dark, a chrome
+// coupling, a black rubber grip with its grooves, the brass barrel tapering
+// to a chrome tip band and a black bumper, the bore a dark well set into the
+// end; one closed hull of separate triangles, its colours per vertex (its
+// metal from the material's `look.metalness`), so it shares the stone's
+// program. It is of one size.
+const NOZZLE = {
+  length: 6.4,
+  // The profile, back to front: [radius, z, colour], each stretch a ring of NOZZLE.sides.
+  profile: [
+    [0, -4.0, 'rubber'], [0.66, -4.0, 'rubber'], [0.7, -3.85, 'hose'], [0.7, -1.5, 'hose'],
+    [0.92, -1.5, 'chrome'], [1.0, -1.42, 'chrome'], [1.0, -1.15, 'chrome'], [0.92, -1.1, 'chrome'],
+    [0.9, -1.1, 'rubber'], [0.9, -0.95, 'rubber'], [0.84, -0.93, 'rubber'], [0.84, -0.87, 'rubber'], [0.9, -0.85, 'rubber'],
+    [0.9, -0.65, 'rubber'], [0.84, -0.63, 'rubber'], [0.84, -0.57, 'rubber'], [0.9, -0.55, 'rubber'], [0.9, -0.35, 'rubber'],
+    [0.86, -0.35, 'brass'], [0.56, 1.55, 'brass'],
+    [0.6, 1.55, 'chrome'], [0.6, 2.05, 'chrome'],
+    [0.64, 2.05, 'rubber'], [0.64, 2.3, 'rubber'], [0.6, 2.4, 'rubber'],
+    [0.46, 2.4, 'bore'], [0.46, 1.9, 'bore'], [0, 1.9, 'bore'],
+  ],
+  sides: 32,
+  colours: { hose: [0.5, 0.06, 0.05], chrome: [0.82, 0.84, 0.86], rubber: [0.06, 0.06, 0.065], brass: [0.78, 0.55, 0.22], bore: [0.02, 0.02, 0.02] },
+};
+export function createNozzleGeometry() {
+  const { profile, sides, colours } = NOZZLE;
+  const positions = [], normals = [], colors = [];
+  // A slanted stretch's normal is perpendicular to it; a flat face's (a disc or a step, widening backward or narrowing
+  // forward) its own along z; a straight stretch's outward, or inward where the profile runs back into the bore.
+  const stretchNormal = (index) => {
+    const [radiusA, zA] = profile[index], [radiusB, zB] = profile[index + 1];
+    const flat = Math.abs(zA - zB) < 1e-9, straight = Math.abs(radiusA - radiusB) < 1e-9;
+    if (flat) return [0, -Math.sign(radiusB - radiusA) || -1];
+    if (straight) return [Math.sign(zB - zA) || 1, 0];
+    const dr = radiusB - radiusA, dz = zB - zA, length = Math.hypot(dr, dz);
+    return [dz / length, -dr / length];
+  };
+  for (let index = 0; index < profile.length - 1; index++) {
+    const [radiusA, zA, colourA] = profile[index], [radiusB, zB, colourB] = profile[index + 1];
+    const [radial, along] = stretchNormal(index);
+    const tintA = colours[colourA], tintB = colours[colourB];
+    for (let side = 0; side < sides; side++) {
+      const angle0 = (side / sides) * Math.PI * 2, angle1 = ((side + 1) / sides) * Math.PI * 2;
+      const corner = (radius, z, angle, tint) => ({ position: [radius * Math.cos(angle), radius * Math.sin(angle), z], normal: [radial * Math.cos(angle), radial * Math.sin(angle), along], tint });
+      const a = corner(radiusA, zA, angle0, tintA), b = corner(radiusA, zA, angle1, tintA);
+      const c = corner(radiusB, zB, angle1, tintB), d = corner(radiusB, zB, angle0, tintB);
+      const triangles = radiusA < 1e-9 ? [a, c, d] : radiusB < 1e-9 ? [a, b, c] : [a, b, c, a, c, d];
+      for (const vertex of triangles) {
+        positions.push(...vertex.position);
+        normals.push(...vertex.normal);
+        colors.push(...vertex.tint);
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return facingOut(geometry);
+}
+
 /** `geometry` (separate triangles) made to face out: wound the other way, its normals turned, if its volume came out negative (meshVolume). */
 function facingOut(geometry) {
   if (meshVolume(geometry) >= 0) return geometry;
@@ -3637,6 +3699,8 @@ registerMesh('pan', {
   check: (look) => (PAN_SIZES.includes(look.size) ? [] : [`look.size must be one of ${PAN_SIZES.join(', ')} (cm)`]),
 });
 registerMesh('slide', { build: (definition) => createSlideGeometry(definition), color: () => new THREE.Color(1, 1, 1), fixed: true, length: (definition) => slideLength(definition) });
+// The water cannon's nozzle (src/things.js 'cannon'): its axis along +z, which src/main.js points at the aim.
+registerMesh('nozzle', { build: () => createNozzleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true, length: () => NOZZLE.length });
 // Each shard its own piece's (src/ice.js), so none is fixed; it draws no random numbers. Its volume is the plain one's.
 registerMesh('shard', {
   build: (definition, { piece } = {}) => createShardGeometry(piece), color: () => new THREE.Color(1, 1, 1),

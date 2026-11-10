@@ -26,6 +26,11 @@
 //     gives it) and rings the louder the thinner the ice.
 //   - The ice breaking or starred (src/ice.js events): a crack, a sharp
 //     burst of noise high in the band and a low thump, louder for a break.
+//   - The water cannon's stream (src/waterCannon.js; streamSet, once a
+//     frame): the one sound that lasts, a hiss and a roar, the noise looped
+//     through a band-pass and a low-pass whose pitch and loudness follow
+//     the pressure (STREAM), faded out as the nozzle shuts. It is a voice
+//     of its own, outside the count below.
 //
 // Each is played when it is seen, not when the physics finds it: `after`,
 // the seconds until the frame that shows it reaches the screen (src/main.js
@@ -47,6 +52,8 @@ const KNOCK = { pitch: 35, thud: 0.6, ring: 0.5 };
 const CHIRP = { high: 3500, low: 220, gain: 0.35, loudest: 0.5, modulus: 9e9, poisson: 0.33, density: 917, least: 0.03, points: 24 };
 const CRACK = { band: 3200, seconds: 0.09, thump: 140, gain: 0.5, star: 0.4 };
 const VOICES = { most: 12, quietest: 0.02, longest: 1.5, latest: 0.25 };   // s: no sound here lasts a second, nor waits a quarter of one to be seen
+// The stream's hiss and roar (Hz, at the pressure's least and most), its loudness, how quickly they follow the pressure and how it fades out (s).
+const STREAM = { hiss: [1800, 3600], hissQ: 0.6, roar: [140, 420], gain: [0.08, 0.5], follow: 0.05, fade: 0.08 };
 
 export function createSound() {
   let context = null, master = null, noise = null;
@@ -160,15 +167,61 @@ export function createSound() {
 
   const clamp = (value, least, most) => Math.min(Math.max(value, least), most);
 
+  // The water cannon's stream (the header): its nodes while it sounds, started as the nozzle opens and faded as it shuts.
+  let stream = null;   // { source, hiss, roar, gain }
+  function streamNodes(audio) {
+    const source = audio.createBufferSource();
+    source.buffer = noise;
+    source.loop = true;
+    const hiss = audio.createBiquadFilter();
+    hiss.type = 'bandpass';
+    hiss.Q.value = STREAM.hissQ;
+    const roar = audio.createBiquadFilter();
+    roar.type = 'lowpass';
+    const gain = audio.createGain();
+    gain.gain.value = 0;
+    source.connect(hiss).connect(gain);
+    source.connect(roar).connect(gain);
+    gain.connect(master);
+    source.start(audio.currentTime, offset);
+    return { source, hiss, roar, gain };
+  }
+  function streamStop() {
+    if (!stream) return;
+    const { source, gain } = stream;
+    const now = context.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(0, now, STREAM.fade);
+    try { source.stop(now + 5 * STREAM.fade); } catch { /* stopped already */ }
+    stream = null;
+  }
+
   return {
     /** Start the audio on a gesture (a throw): browsers keep it silent until one. */
     unlock() { ready(true); },
     /** Sound on or off (the setting). */
     setEnabled(on) {
       enabled = Boolean(on);
+      if (!enabled) streamStop();
       if (!enabled && context?.state === 'running') context.suspend().catch(() => {});
       if (enabled && context) ready();
     },
+    /**
+     * The water cannon's stream at `strength`, 0 to 1 (its pressure's share of its slider; 0, or nothing, shuts it), once
+     * a frame (src/main.js render): started when the audio is ready, its hiss, roar and loudness following the strength.
+     */
+    streamSet(strength) {
+      if (!(strength > 0) || !enabled) { streamStop(); return; }
+      const audio = ready();
+      if (!audio) return;
+      stream ??= streamNodes(audio);
+      const now = audio.currentTime;
+      stream.hiss.frequency.setTargetAtTime(STREAM.hiss[0] + (STREAM.hiss[1] - STREAM.hiss[0]) * strength, now, STREAM.follow);
+      stream.roar.frequency.setTargetAtTime(STREAM.roar[0] + (STREAM.roar[1] - STREAM.roar[0]) * strength, now, STREAM.follow);
+      stream.gain.gain.setTargetAtTime(STREAM.gain[0] + (STREAM.gain[1] - STREAM.gain[0]) * strength, now, STREAM.follow);
+    },
+    /** Whether the stream sounds (tools/quality-probe.mjs). */
+    get streaming() { return stream !== null; },
     get enabled() { return enabled; },
     /** How many sounds are playing, and the audio's state ('running', 'suspended', or 'none' before a gesture or without audio): tools/quality-probe.mjs. */
     get playing() { return playing; },

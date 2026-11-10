@@ -131,10 +131,11 @@ export function createThingPage({ root, pond, settings, chip, sizeInput, applySi
     picture.style.visibility = '';
     picture.src = thing.look.thumbnail;
     root.getElementById('inspect-name').textContent = thing.name;
-    root.getElementById('inspect-stats').textContent = `${properties.text} · ${Math.round(properties.density)} kg/m\u00b3`;
+    // A thing with a stream (the water cannon, src/things.js) is fired, not thrown: its line is its nozzle's, and it neither floats nor sinks.
+    root.getElementById('inspect-stats').textContent = thing.stream ? properties.text : `${properties.text} · ${Math.round(properties.density)} kg/m\u00b3`;
     const badge = (text, has = true) => Object.assign(document.createElement('span'), { textContent: text, className: has ? '' : 'not' });
     root.getElementById('inspect-badges').replaceChildren(
-      badge(floatsOrSinks(properties)),
+      badge(thing.stream ? 'Fires' : floatsOrSinks(properties)),
       badge('Skips', thing.skips),
       // A frozen thing thaws before it bends; anything soft bends.
       ...(thing.water.thaws ? [badge('Thaws')] : thing.body.soft ? [badge('Bends')] : []),

@@ -47,7 +47,8 @@
 //    GitHub's runners' SwiftShader may leave the read unanswered a minute,
 //    and they run no audio.) Throws of every kind, six at a time, more than
 //    low keeps, the pond then cleared, leave no geometry, texture or program
-//    behind. Rain (src/rain.js): each weather in
+//    behind (the water cannon fired once before the count: its meshes are
+//    made once, uploaded when first drawn, and kept). Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, reuses its
 //    programs after the first selection, and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. Snow (src/snow.js), after
@@ -460,6 +461,12 @@ const session = await page.evaluate((names) => {
   const pond = window.__pond, memory = pond.renderer.info.memory;
   pond.pause();
   pond.setQuality('low');
+  pond.clear();
+  // What is made once and kept is not left behind: the water cannon's rope, fan and white water (src/waterCannon.js)
+  // are one mesh each, uploaded the first time they are drawn (the warm-up draws them only with the cannon in hand),
+  // so it is fired once and drawn in the air before the count.
+  pond.throwAt(0, -1.4, { thing: 'cannon' });
+  pond.advance(1.0);
   pond.clear();
   pond.advance(0.5);
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
