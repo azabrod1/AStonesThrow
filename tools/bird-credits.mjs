@@ -45,10 +45,16 @@ const shows = (kind) => `${BIRD_KINDS[kind].name} (${placesByKind.get(kind).join
 const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const INTRO = 'The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record).';
 
-const markdownRows = kinds.flatMap((kind) => creditsByKind.get(kind).map((credit) => `| ${shows(kind)} | [${title(credit)}](${credit.source}) | ${credit.author} | [${credit.licence}](${credit.licenceUrl}) |`));
-const markdown = ['## Birds', '', INTRO, '', '| Shows | Photograph | Author | Licence |', '|---|---|---|---|', ...markdownRows, ''].join('\n');
+// A kind's image made from a CC BY-SA photograph is shared under that licence too (the highest version among them).
+const shareAlike = kinds.filter((kind) => creditsByKind.get(kind).some((credit) => credit.licence.startsWith('CC BY-SA')));
+const shareAlikeLicence = shareAlike.flatMap((kind) => creditsByKind.get(kind)).filter((credit) => credit.licence.startsWith('CC BY-SA')).sort((one, other) => other.licence.localeCompare(one.licence))[0];
+const listed = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`);
+const shareNote = shareAlike.length ? ` Because the ${listed(shareAlike.map((kind) => `${BIRD_KINDS[kind].name.toLowerCase()}'s`))} ${shareAlike.length > 1 ? 'images are' : 'image is'} made from CC BY-SA photographs, ${shareAlike.length > 1 ? 'they are' : 'it is'} shared under [${shareAlikeLicence.licence}](${shareAlikeLicence.licenceUrl}) too.` : '';
 
-const htmlIntro = escape(INTRO).replace(/`([^`]+)`/g, '<code>$1</code>');
+const markdownRows = kinds.flatMap((kind) => creditsByKind.get(kind).map((credit) => `| ${shows(kind)} | [${title(credit)}](${credit.source}) | ${credit.author} | [${credit.licence}](${credit.licenceUrl}) |`));
+const markdown = ['## Birds', '', INTRO + shareNote, '', '| Shows | Photograph | Author | Licence |', '|---|---|---|---|', ...markdownRows, ''].join('\n');
+
+const htmlIntro = escape(INTRO).replace(/`([^`]+)`/g, '<code>$1</code>') + shareNote.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (all, text, url) => `<a href="${escape(url)}">${escape(text)}</a>`);
 const htmlRows = kinds.flatMap((kind) => creditsByKind.get(kind).map((credit) => `<tr><td>${escape(shows(kind))}</td><td><a href="${escape(credit.source)}">${escape(title(credit))}</a></td><td>${escape(credit.author)}</td><td><a href="${escape(credit.licenceUrl)}">${escape(credit.licence)}</a></td></tr>`));
 const html = ['<h2>Birds</h2>', `<p>${htmlIntro}</p>`, '<div class="table"><table>', '<tr><th>Shows</th><th>Photograph</th><th>Author</th><th>Licence</th></tr>', ...htmlRows, '</table></div>', ''].join('\n');
 

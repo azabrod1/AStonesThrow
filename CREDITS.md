@@ -23,7 +23,7 @@ The stitched backdrops' skies are Poly Haven's Qwantani pure skies (below).
 
 ## Birds
 
-The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record).
+The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
 
 | Shows | Photograph | Author | Licence |
 |---|---|---|---|
@@ -57,6 +57,10 @@ The birds are photographs of real ones from Wikimedia Commons, cut out of their 
 | Egyptian goose (Mesas, Pool) | [Egyptian goose, South Luangwa National Park (51871856029)](https://commons.wikimedia.org/wiki/File:Egyptian_goose%2C_South_Luangwa_National_Park_%2851871856029%29.jpg) | I've Got It On Film! | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Egyptian goose (Mesas, Pool) | [Egyptian goose (1)](https://commons.wikimedia.org/wiki/File:Egyptian_goose_%281%29.jpg) | The Blue Rider | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Egyptian goose (Mesas, Pool) | [Nilgans (54254515720)](https://commons.wikimedia.org/wiki/File:Nilgans_%2854254515720%29.jpg) | Ralf Hüsges | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| Blue jay (Reflecting Pool) | [Bluejay (Cyanocitta cristata)](https://commons.wikimedia.org/wiki/File:Bluejay_%28Cyanocitta_cristata%29.jpg) | Sam | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| Blue jay (Reflecting Pool) | [Blue Jay (Jim Ridley 2010.)](https://commons.wikimedia.org/wiki/File:Blue_Jay_%28Jim_Ridley_2010.%29.jpg) | Jim Ridley | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| Northern cardinal (Reflecting Pool) | [Cardinalis cardinalis (northern cardinal) 2](https://commons.wikimedia.org/wiki/File:Cardinalis_cardinalis_%28northern_cardinal%29_2.jpg) | James St. John | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| Northern cardinal (Reflecting Pool) | [Cardinal landing - Texas (55088178980)](https://commons.wikimedia.org/wiki/File:Cardinal_landing_-_Texas_%2855088178980%29.jpg) | Andy Morffew | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 ## Skies
 
