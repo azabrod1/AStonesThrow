@@ -131,7 +131,9 @@ const heronAt = (frame) => frame.birds[0];
   check(frames.every((frame) => heronAt(frame).mode === 'stand' && heronAt(frame).shown), 'left alone, it stays');
   const looks = new Set(frames.map((frame) => heronAt(frame).look.toFixed(2)));
   check(looks.size > 3, `it turns its head now and then (${looks.size} looks)`);
-  check(frames.filter((frame) => heronAt(frame).still).length > frames.length * 0.5, 'and holds still most of the time (its mirror image is not drawn again then)');
+  // What its picture shows (src/birdSprites.js: its posture, where it stands, which way it faces) never changes
+  // while it stands, so its mirror image is not drawn again for its head's turns.
+  check(frames.every((frame) => { const heron = heronAt(frame); return heron.posture === first.posture && heron.x === first.x && heron.y === first.y && heron.z === first.z && heron.heading === first.heading; }), 'and what its picture shows holds still (its mirror image is not drawn again)');
 }
 
 // A splash across the pond: it looks. A stone coming down near it: it goes, and later comes back.

@@ -609,8 +609,6 @@ export class BirdPopulation {
     pose.neck = neck;
     // Resting, its head tucked in, until a splash makes it look (src/birdSprites.js draws it so).
     pose.posture = alerted > 0.5 ? 'stand' : bird.group.postures?.[bird.index] ?? 'stand';
-    // Whether its pose is changing now (its mirror image is drawn again only then: src/main.js).
-    pose.still = share >= 1 && (alerted === 0 || alerted === 1) && pose.fold >= 1;
   }
 
   /** What tools and probes read: each bird's kind, mode and pose. */

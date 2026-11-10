@@ -30,7 +30,9 @@
 // one draw call: `above` in the main scene, and `mirror` on the mirror's
 // layer, alpha-tested, its distance in alpha (as src/boulders.js
 // sceneryShader writes it), which src/main.js draws again only while a bird
-// in its view moves (mirrorBounds); both drop what is under the still
+// in its view changes (mirrorBounds: its frame or its place not last
+// frame's, so a standing bird's head turns, which no photograph draws, cost
+// nothing); both drop what is under the still
 // surface (y < 0). A bird standing in the water (the heron) has a third,
 // `below`, in the under-water pass: the same picture from the waterline
 // down (its corners above the water brought down the picture to it), each
@@ -308,11 +310,12 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     above.add(aboveMesh, shadow);
     mirror.add(mirrorMesh);
     below.add(underMesh);
-    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: underMesh, shadow, uniforms: aboveMesh.material.uniforms, centre: new THREE.Vector3(), radius: 1, shown: false, still: false };
+    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: underMesh, shadow, uniforms: aboveMesh.material.uniforms, centre: new THREE.Vector3(), radius: 1, shown: false, still: false, drawn: { frame: null, flip: 0, roll: 0, x: 0, y: 0, z: 0 } };
   }
 
   function hide(sprite) {
     sprite.shown = false;
+    sprite.drawn.frame = null;
     for (const mesh of sprite.meshes) mesh.visible = false;
     sprite.under.visible = false;
     sprite.shadow.visible = false;
@@ -336,10 +339,11 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
   function place(sprite, at, camera) {
     const ready = Boolean(textures.get(sprite.kind)) && Boolean(catalogue.frames) && at.shown;
     sprite.shown = ready;
-    sprite.still = Boolean(at.still);
+    sprite.still = false;
     for (const mesh of sprite.meshes) mesh.visible = ready;
     sprite.under.visible = false;
     sprite.shadow.visible = false;
+    if (!ready) sprite.drawn.frame = null;   // shown again, it is a change
     if (!ready || !camera) return;
     // Its middle where it flies; standing, its feet (src/birds.js laySpot: the heron's on the bed, under the water).
     const standing = at.flying === false;
@@ -347,6 +351,10 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     for (const mesh of [...sprite.meshes, sprite.under]) mesh.position.copy(sprite.centre);
     const { role, flip, roll } = frameFor(sprite.kind, at, sprite.centre, camera);
     const frame = catalogue.frames[`${sprite.kind}-${role}`];
+    // Still when what is drawn is last frame's: its picture, which way it faces and turns, and where (mirrorBounds).
+    const { drawn } = sprite;
+    sprite.still = drawn.frame === frame && drawn.flip === flip && drawn.roll === roll && drawn.x === at.x && drawn.y === at.y && drawn.z === at.z;
+    Object.assign(drawn, { frame, flip, roll, x: at.x, y: at.y, z: at.z });
     const uniforms = sprite.uniforms;
     // Its bounds about its anchor (src/main.js redraws the mirror image there): to the picture's farthest corner.
     const [anchorX, anchorY] = frame.anchor;
@@ -400,8 +408,8 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
   const sphere = new THREE.Sphere();
   const box = new THREE.Box3();
   /**
-   * The bounds of every shown bird that moves (in flight always, the heron
-   * standing only while it stirs) and that the mirror's camera sees
+   * The bounds of every shown bird whose picture changes (in flight always,
+   * standing only when its frame does: the geese standing up) and that the mirror's camera sees
    * (`frustum`), joined into `into`: how many.
    */
   function mirrorBounds(into, frustum) {
