@@ -58,6 +58,8 @@ const SCENES = [
       { at: 1.6, x: -0.4, z: -1.2, thing: 'apple' },
       { at: 2.4, x: 0.2, z: -2.0, thing: 'basketball' },
       { at: 3.2, x: -0.6, z: -2.2, thing: 'stone', manner: 'skip' },
+      // The water cannon's burst (src/waterCannon.js): its parcels land a step at a time, and its stream frightens the fish and shoves the floaters.
+      { at: 3.6, x: 0.3, z: -1.7, thing: 'cannon' },
       ...Array.from({ length: 14 }, (unused, index) => ({ at: 4 + 0.35 * index, x: -0.9 + 0.13 * index, z: -1.0 - 0.09 * index, thing: 'tennis' })),
     ],
   },
@@ -76,6 +78,7 @@ const SCENES = [
       { at: 0, x: 0.3, z: -1.2, thing: 'pizza' },
       { at: 0.6, x: -0.5, z: -1.5, thing: 'bread' },
       { at: 1.5, x: 0.1, z: -0.8, thing: 'stone' },
+      { at: 2.2, x: -0.3, z: -1.3, thing: 'cannon' },
     ],
   },
   {

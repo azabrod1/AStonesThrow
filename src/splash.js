@@ -296,6 +296,7 @@ import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
+import { WhiteWater } from './whiteWater.js';
 import { SpraySystem, seededRandom, sprayDrops, MIRROR_SPRAY_RADIUS } from './spray.js';
 import { splashRandom, reseedSplashRandom, asSplash } from './splashRandom.js';
 import { RING_SOURCE } from './rings.js';
@@ -857,6 +858,7 @@ export class SplashSystem {
     this.lighting = lighting;
     this.bedAlbedo = SAND_ALBEDO;   // the bed's (setBed)
     this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
+    this.whiteWater = new WhiteWater({ lighting, ambientWaves });   // a stream's churn where it lands (src/whiteWater.js), drawn in the main scene
     // The foam drifts down the wind the ripples blow with (the CPU probes' stand-ins have neither).
     if (ambientWaves.windDirection) water.setWind?.(ambientWaves.windDirection);
 
@@ -1025,7 +1027,8 @@ export class SplashSystem {
   /** Something in the air or in the water is moving: droplets, spray, sheets, columns, an open cavity, bubbles, or a stage still to come. */
   get inMotion() {
     return this.count > 0 || this.spray.alive || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
-      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.poolRings.length > 0 || this.foamStamps.length > 0 || this.bases.length > 0;
+      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.poolRings.length > 0 || this.foamStamps.length > 0 || this.bases.length > 0
+      || this.whiteWater.alive;
   }
 
   /** Nothing of the splash is left, foam specks included. */
@@ -1056,6 +1059,7 @@ export class SplashSystem {
     this.particleGeometry.instanceCount = 0;
     this.bubblePoints.geometry.setDrawRange(0, 0);
     this.foamSpecks.reset();
+    this.whiteWater.reset();
     this.spray.reset();
     this.spray.mesh.layers.disable(MIRROR_LAYER);
     this.time = 0;
@@ -1939,6 +1943,7 @@ export class SplashSystem {
     this.bubbleSizeAttribute.needsUpdate = true;
     this.bubblePoints.geometry.setDrawRange(0, this.bubbleCount);
     this.foamSpecks.commit(this.time);
+    this.whiteWater.commit(this.time);
     this.spray.commit(this.time);
   }
 
@@ -2212,6 +2217,7 @@ export class SplashSystem {
     const inset = DECK_DROPS.wallInset;
     this.groundBox = square ? { maxX: square.minX + (square.sizeX ?? square.size), maxZ: square.minZ + (square.sizeZ ?? square.size) } : null;
     this.walls = square ? { minX: square.minX + inset, maxX: this.groundBox.maxX - inset, minZ: square.minZ + inset, maxZ: this.groundBox.maxZ - inset } : null;
+    this.whiteWater.setWalls(this.walls);   // a stream's churn too (src/whiteWater.js)
   }
 
   /** The bed the splash's water sees through its drops: its depth (m) and albedo (the lake's sand by default; a pool's tiles, src/main.js). */

@@ -297,7 +297,7 @@ function follow(rock, ice, { step = STEP, others = [], pool = false, seconds = L
 // ---- what breaks what ----
 const things = [];
 for (const name of THING_NAMES) {
-  if (THINGS[name].hidden) continue;   // never thrown (src/things.js): the ice's own shards
+  if (THINGS[name].hidden || THINGS[name].stream) continue;   // never thrown (src/things.js): the ice's own shards; the water cannon, fired (src/waterCannon.js)
   if (name === 'stone') for (const value of [1.5, 6, 16, 30]) things.push({ name, value, label: `stone ${value} cm` });
   else if (name === 'bowling') for (const value of [8, 16]) things.push({ name, value, label: `bowling ${value} lb` });
   else things.push({ name, label: THINGS[name].name });

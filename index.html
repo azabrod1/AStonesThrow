@@ -1326,6 +1326,7 @@
     root.addEventListener('click', (event) => {
       const button = event.target.closest('button');
       if (!button) return;
+      if (button.getAttribute('aria-disabled') === 'true') { showHint(button.title); return; }   // greyed out (the strength, with the water cannon in hand): it says why
       for (const other of root.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
       onChange(button.dataset.value);
     });
@@ -1434,7 +1435,7 @@
       const slider = thing.slider ?? { min: 0, max: 1, step: 1, initial: 0 };
       document.getElementById('thing-chip-name').textContent = thing.short;
       chip.setAttribute('aria-label', `What to throw: ${thing.name}`);
-      sizeInput.setAttribute('aria-label', `${thing.short}'s size`);
+      sizeInput.setAttribute('aria-label', thing.stream ? `${thing.short}'s pressure` : `${thing.short}'s size`);   // a stream's slider is its pressure (src/things.js)
       sizeInput.min = String(slider.min);
       sizeInput.max = String(slider.max);
       sizeInput.step = String(slider.step);
@@ -1480,6 +1481,9 @@
     // skipping goes back to Toss (updateThing).
     const manners = document.getElementById('manner');
     const skipButton = manners.querySelector('[data-value="skip"]');
+    const lobButton = manners.querySelector('[data-value="lob"]');
+    const powerButtons = [...document.querySelectorAll('#power button')];
+    for (const button of powerButtons) button.dataset.title = button.title;   // its own tip, to come back to once a thrown thing is in hand again (updateThing)
     const showManner = (value) => {
       for (const button of manners.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.value === value));
     };
@@ -1594,6 +1598,16 @@
       const lands = floatsOrSinks(thing.properties(thing.slider ? Number(sizeInput.value) : undefined)).toLowerCase();
       skipButton.title = thing.skips ? `Skip ${thing.called} across the water` : `${called} does not skip: it ${lands} where it lands.`;
       if (!thing.skips && pond.manner === 'skip') setManner('toss');
+      // A thing with a stream (the water cannon, src/waterCannon.js) is fired, not thrown, and its slider is its pressure:
+      // Lob and the strength are greyed out, and say so; firing goes the one way, Toss.
+      const streams = Boolean(thing.stream);
+      lobButton.setAttribute('aria-disabled', String(streams));
+      lobButton.title = streams ? `${called} is fired, not thrown: the slider is its pressure.` : 'Thrown high';
+      for (const button of powerButtons) {
+        button.setAttribute('aria-disabled', String(streams));
+        button.title = streams ? `${called} is fired, not thrown: the slider is its pressure.` : button.dataset.title;
+      }
+      if (streams && pond.manner !== 'toss') setManner('toss');
       showManner(pond.manner);
       // The throw button names what it throws (the thing's `called`: a rock, a ball, a gem, an apple…).
       const thrown = thing.called;
