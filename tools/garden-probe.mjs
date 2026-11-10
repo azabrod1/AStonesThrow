@@ -177,7 +177,7 @@ console.log('\nthe planting catches:');
   const inSector = (angle) => { const into = (((angle - GARDEN.from) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); return into > 0.05 && into < (((GARDEN.to - GARDEN.from) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - 0.05; };
   for (const name of THING_NAMES) {
     const thing = THINGS[name];
-    if (thing.hidden) continue;
+    if (thing.hidden || thing.stream) continue;   // never thrown: the ice's shards; the water cannon, fired (src/waterCannon.js)
     const measured = thing.byDiameter ? { radius: 0.03, mass: thing.measure(6).mass } : thing.measure(thing.slider?.initial);
     for (let angle = -3.1; angle < 3.1; angle += 0.37) {
       if (!inSector(angle)) continue;

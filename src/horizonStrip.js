@@ -14,6 +14,14 @@
 // JavaScript, and the two textures hold 15 MB and 3.7 MB (the gain map one
 // byte a texel) against the 30 MB of half floats.
 //
+// The landmarks' insets (assets/sky/<file>_insets.jpg, src/sky.js Insets)
+// are coded the same way and taken apart by decodeHorizonStrip too, but
+// decoded once, when they come: INSET_DECODE_PASS (gainMapTexel over each
+// texel) writes the atlas's radiance into a texture of half floats with mip
+// levels, which the dome reads in one trilinear lookup (INSET_SAMPLE), each
+// window's texels clamped to its own place. The strip, eight times the
+// texels, stays coded on the GPU, as above.
+//
 // The file's layout (the encoder writes it; "Ultra HDR"): the base JPEG,
 // with a Multi-Picture Format directory (an APP2 segment, 'MPF\0') whose
 // second entry says where the gain map's JPEG starts and how long it is;
@@ -40,12 +48,15 @@ uniform vec4 uHorizonBand;        // the strip's width and height (texels; width
 float horizonLinear(float coded) {
   return min(coded < 10.31475 ? coded * 0.000303527 : pow(coded * 0.003717127 + 0.0521327014, 2.4), 65504.0);   // the loader clamps to half floats' range
 }
+// The radiance of a gain map's texel at uv (its centre): the base bytes raised by the gain byte, as the loader would.
+vec3 gainMapTexel(sampler2D baseImage, sampler2D gainMap, vec2 meta, vec2 uv) {
+  vec3 base = texture2D(baseImage, uv).rgb * 255.0;
+  float boost = exp2(meta.x + meta.y * texture2D(gainMap, uv).r);
+  return vec3(horizonLinear(base.r * boost), horizonLinear(base.g * boost), horizonLinear(base.b * boost));
+}
 // The radiance of one texel (x wrapping with the azimuth, y clamped to the strip).
 vec3 horizonTexel(vec2 texel) {
-  vec2 uv = (vec2(texel.x, clamp(texel.y, 0.0, uHorizonBand.y - 1.0)) + 0.5) / uHorizonBand.xy;
-  vec3 base = texture2D(uHorizon, uv).rgb * 255.0;
-  float boost = exp2(uHorizonMeta.x + uHorizonMeta.y * texture2D(uHorizonGain, uv).r);
-  return vec3(horizonLinear(base.r * boost), horizonLinear(base.g * boost), horizonLinear(base.b * boost));
+  return gainMapTexel(uHorizon, uHorizonGain, uHorizonMeta, (vec2(texel.x, clamp(texel.y, 0.0, uHorizonBand.y - 1.0)) + 0.5) / uHorizonBand.xy);
 }
 // The strip's radiance at uv (0 to 1 across and down it), bilinear in the linear values: each texel is
 // decoded with its own gain, so the base bytes of two blocks coded for different gains never mix.
@@ -56,6 +67,31 @@ vec3 horizonRadiance(vec2 uv) {
   vec3 lower = mix(horizonTexel(corner), horizonTexel(corner + vec2(1.0, 0.0)), within.x);
   vec3 upper = mix(horizonTexel(corner + vec2(0.0, 1.0)), horizonTexel(corner + vec2(1.0, 1.0)), within.x);
   return mix(lower, upper, within.y);
+}
+`;
+
+/** The insets' atlas decoded, once (src/sky.js Insets): a full-screen pass over a target the atlas's size. */
+export const INSET_DECODE_PASS = /* glsl */`
+${HORIZON_DECODE}
+uniform sampler2D uInsetBase;     // the atlas's base image, bytes
+uniform sampler2D uInsetGain;     // its gain map
+uniform vec2 uInsetMeta;          // as uHorizonMeta
+varying vec2 vUv;                 // a texel's centre
+void main() {
+  gl_FragColor = vec4(gainMapTexel(uInsetBase, uInsetGain, uInsetMeta, vUv), 1.0);
+}
+`;
+
+/** The decoded atlas read by the dome (src/sky.js Insets). */
+export const INSET_SAMPLE = /* glsl */`
+uniform sampler2D uInset;         // the atlas's radiance, half floats with mip levels (INSET_DECODE_PASS)
+uniform vec2 uInsetSize;          // its width and height, texels (width 0: no insets)
+// The radiance at a position in the atlas (texels, a texel's centre at its index + 0.5) for a screen pixel spanning
+// footprint texels across and down: one trilinear lookup, its position never past its window's place (x, y, width,
+// height). The gradients are given, so the lookup is defined in the dome's loop over the windows.
+vec3 insetRadiance(vec2 position, vec2 footprint, vec4 place) {
+  vec2 uv = clamp(position, place.xy + 0.5, place.xy + place.zw - 0.5) / uInsetSize;
+  return textureGrad(uInset, uv, vec2(footprint.x / uInsetSize.x, 0.0), vec2(0.0, footprint.y / uInsetSize.y)).rgb;
 }
 `;
 

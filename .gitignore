@@ -4,3 +4,5 @@ _site/
 __pycache__/
 assets/sky/*_8k.hdr
 tools/.bird-photos/
+tools/.mall-photos/
+assets/sky/*_insets.hdr

@@ -48,6 +48,13 @@
 // the start of the frames (__pond.touchWater), draws it to (x1, z1) at an
 // even speed over `seconds`, a step every frame, and lifts it out there; the
 // times count from the dip.
+// --stream=x0:z0:x1:z1:seconds fires the water cannon (--thing=cannon, its
+// pressure --thing=cannon:bar) at (x0, z0) at the start of the frames
+// (__pond.startStream), sweeps it to (x1, z1) at an even speed over `seconds`
+// and shuts it there; with --throws=none the times count from the start.
+// A --throws of x:z with --thing=cannon is a burst of it at (x, z) instead
+// (src/waterCannon.js CANNON.burstSeconds), the times counting from its
+// first landing.
 // --power=soft|normal|hard throws as the strip's Soft, Medium and Hard do
 // (src/main.js ARC: a soft toss is a higher arc, so a steeper entry, about
 // 33° from vertical against 42°; a hard one is fast and flat, twice as fast
@@ -125,6 +132,7 @@ const windStrength = arg('wind-strength', '');
 const seed = arg('seed', '');
 const viewName = arg('view', '');
 const touchArgument = arg('touch', '');
+const streamArgument = arg('stream', '');
 const orbitArgument = arg('orbit', '');
 const [thingName, thingValue] = arg('thing', '').split(':');
 const fishArgument = arg('fish', '');
@@ -274,21 +282,34 @@ if (touchArgument) {
     window.__pond.touchWater(x0, z0);
   }, touchArgument);
 }
+if (streamArgument) {
+  await page.evaluate((text) => {
+    const [x0, z0, x1, z1, seconds] = text.split(':').map(Number);
+    window.__streamPath = { x0, z0, x1, z1, seconds, clock: 0 };
+    window.__pond.startStream(x0, z0);
+  }, streamArgument);
+}
 for (const t of times) {
   // A one-pixel read-back waits for the GPU to finish the steps just queued:
   // under SwiftShader seconds of solver steps can outlast the screenshot's timeout.
   await page.evaluate(([seconds, follow]) => {
-    const path = window.__touchPath;
-    // The finger's place before each frame: along its path at an even speed, lifted at the end.
-    const moveFinger = path && ((sinceCall) => {
-      const share = Math.min((path.clock + sinceCall) / path.seconds, 1);
-      if (window.__pond.touching) {
+    const path = window.__touchPath, stream = window.__streamPath;
+    // The finger's place before each frame: along its path at an even speed, lifted at the end; the cannon's aim likewise, shut at the end.
+    const moveFinger = (path || stream) && ((sinceCall) => {
+      if (path && window.__pond.touching) {
+        const share = Math.min((path.clock + sinceCall) / path.seconds, 1);
         window.__pond.dragTouch(path.x0 + (path.x1 - path.x0) * share, path.z0 + (path.z1 - path.z0) * share);
         if (share >= 1) window.__pond.liftTouch();
+      }
+      if (stream && window.__pond.streaming) {
+        const share = Math.min((stream.clock + sinceCall) / stream.seconds, 1);
+        window.__pond.aimStream(stream.x0 + (stream.x1 - stream.x0) * share, stream.z0 + (stream.z1 - stream.z0) * share);
+        if (share >= 1) window.__pond.stopStream();
       }
     });
     window.__pond.advance(seconds, moveFinger);
     if (path) path.clock += seconds;
+    if (stream) stream.clock += seconds;
     if (follow !== null) {
       const one = window.__pond.birds.birds[follow];
       if (one?.shown) { window.__pond.lookAt(one.x, one.y + (one.flying === false ? 0.45 : 0), one.z); window.__pond.advance(0.0001); }

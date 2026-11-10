@@ -76,7 +76,7 @@ full screen, which only a press or a key may ask for):
   (diamond, emerald, ruby, sapphire), food (an apple, a watermelon, a
   pizza, a frozen pizza, a pie, a banana, a slice of bread, a birthday cake),
   toys (a rubber duck, a toy slide), electronics (a TV, an iPhone, an iPad)
-  and others (a brick, a snowball, a frying pan, roses), each
+  and others (a brick, a snowball, a frying pan, roses, a water cannon), each
   the size, weight and density of the real thing (`src/things.js`). The page
   shows one group at a time under a row of tabs, one for each group, so it
   fits a phone however many groups there are. The ⓘ on the strip's
@@ -165,7 +165,50 @@ full screen, which only a press or a key may ask for):
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
   9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
-  way up, and the roses' with `--seed=5` at 11°, on which they stand).
+  way up, and the roses' with `--seed=5` at 11°, on which they stand). The
+  water cannon's is a frame of its stream landing in the lake instead
+  (`--thing=cannon --throws=0:-1.4:0 --times=0.6 --w=320 --h=180`).
+- The water cannon (`src/waterCannon.js`; `cannon` in `src/things.js`, a
+  thing with a `stream`) is held, not thrown: a fire truck's monitor nozzle,
+  and a press fires a stream of water at the spot under the pointer for as
+  long as it lasts, so a tap is a squirt (the water already out flies on
+  and lands after), and moving the pointer sweeps it (its landing follows a
+  flight later); with it in hand the view turns by the mouse's right button
+  or by two fingers moved together (spread, they still zoom). The slider is
+  its pressure, 0.5 to 10 bar: the exit speed is Bernoulli's, sqrt(2P/ρ),
+  10 to 45 m/s, and the bore grows with it, 5 to 25 mm in radius, so the
+  flow runs from under a litre a second to some ninety, a deck gun's; Lob,
+  Skip and the strength are greyed out. The stream is no solver: each
+  physics step while it fires records a parcel let out then on the low
+  parabola to the aim (the farthest arc when the aim is out of reach, so it
+  falls short), and the stream in the air is the curve of the parcels not
+  yet down, drawn once a frame as a white rope (`src/streamSheath.js`: a
+  stream under pressure is rough-skinned and wears a sheath of drops, so it
+  is shaded as a cloud round its axis, opaque down its middle, soft and
+  ragged at its limb, streaked the way it flows, widening and thinning as
+  it goes), holed past much of its breakup length (35·d·We^0.2: a metre or
+  two for the weakest jet, tens of metres for the deck gun) and then only
+  drops: mist off its skin, and now and then a drop big enough to land and
+  ring on its own. Each step every parcel that comes down pushes the solver down
+  over its footprint (a crater with a rim, its centre wandering with the
+  turbulence), stamps foam in a streak onward of it, heaps up a small boil
+  of white water at its foot (`src/whiteWater.js`: soft puffs written once
+  and flown in the vertex shader, gone in a third of a second) and, coming
+  in low, glances: a rooster tail, drawn as the stream is (each landing
+  parcel thrown again off the water as a line across one fan, each part of
+  it on a parabola of its own, highest and farthest down the middle;
+  `src/sprayFan.js`, one sheet on the stream's program, lopsided and
+  shifting at random, never twice alike, torn into tongues long and short
+  that come and go, and coming apart into fine streaks and then drops,
+  which stream off the tongues, fly on and within half a second
+  rain into the water: a chop of small ripples there, and froth that
+  gathers in a second or so and goes as slowly),
+  rings the water about with stray drops, frightens the fish and shoves a
+  floater in its way along the stream; the Throw button, Space and the
+  harness fire a 1.5 s burst of it. On ice it wets the ice and the sheet
+  bounces. Its sound is the one that lasts: a hiss and a roar following the
+  pressure while it fires. `tools/thing-probe.mjs` checks its aim, its
+  seeded draws and its cost, and `tools/frame-rate-probe.mjs` plays a burst.
 - View: Shore, standing on the bank as the page opens; Behind, over the
   thrower's shoulder, a metre back and a little above the shore's eye, so
   the hand with the preview of the thing in it, the arc of the throw and
@@ -229,6 +272,7 @@ full screen, which only a press or a key may ask for):
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
   Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`),
+  Reflecting Pool (`?sky=mall`, below),
   Polynesian lagoon (`?sky=lagoon`): white coral sand, palms and reef fish
   under a pure sky (below, the tropics); or Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
@@ -1117,6 +1161,47 @@ The curated locations include:
   panoramas from one spot at water level: a 2024 morning and golden hour,
   a 2019 sunset and dusk. Faces the flat-topped hills across the water, the
   sun's path on it. Starts at the golden hour.
+- **Reflecting Pool** (`?sky=mall`): the Lincoln Memorial Reflecting Pool
+  in Washington, D.C., seen from its west wall down its 618 m to the
+  Washington Monument, at three hours of a September day in 2026: late
+  morning, sunset and night. That June its bed was coated in a navy
+  polyurea ("American flag blue", `MALL_BED` in `src/shaders/scene.js`),
+  so the water is blue near the eye and a mirror farther off. No one has published a free panorama taken there, so
+  each hour's sky is stitched from photographs on Wikimedia Commons over
+  one of Poly Haven's Qwantani pure skies (`tools/mall-backdrop.py`, its
+  plan `tools/mall-backdrop.json`, which lists each photo, its licence and
+  where it is aimed). The elms are our own: five single elms cut from Marty
+  Aligata's photographs (CC BY-SA 4.0) against their own skies, planted in
+  four rows along the pool and in groves out to 1.5 km, each stood upright
+  where it grows, sized by its distance and hazed by its air. Over them the
+  landmarks, cut from photographs and traced by hand where marble meets sky,
+  with the people taken off the Memorial's steps, and the steps, which its
+  photograph sees from off their axis, set square under it, and Lincoln's
+  statue, which the dusk photograph sees off its axis too, set back on its
+  bay's middle: the Monument down the pool
+  (Kenrick95, CC BY-SA 4.0) and the Lincoln Memorial behind the eye
+  (Jmarcosny, CC BY-SA 4.0), joined to the elms along minimum-cost seams.
+  The other hours are the day's graded to a photograph of that hour, with
+  its landmarks laid over in their own light: at sunset the Monument lit by
+  the low sun (Gregg L. Davis, CC BY-SA 4.0), the trees toward the sun
+  darkened as backlit, and behind the eye the Memorial floodlit (John
+  Brighenti, CC BY 2.0); at sunset the sun is behind the Memorial and the
+  eye in its shade. At night the pool's own night photograph (Ramakrishna
+  Gundra, CC BY-SA 4.0) is laid over the day's graded to its dark trees,
+  under a dim, nearly grey city glow; the hour's light never falls below the
+  floodlights' (`lit`, `src/sky.js`), so the eye keeps its colours. Zoomed
+  in, the Monument and the Memorial come from patches at their photographs'
+  own resolution, 96 and 57 pixels a degree against the horizon strip's 23
+  (`insets` in `src/sky.js`, `<file>_insets.jpg`). The
+  backdrop is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks,
+  the west plaza and the lawn are drawn (`src/mallPool.js`), the lawn out to
+  the horizon, where the elms stand on it; the water stops at the granite walls (`setBounds` in
+  `src/waterSurface.js`), and what reaches them comes back off them or
+  lies on the coping, as do the splash's drops (`tools/mall-probe.mjs`);
+  a stone's ring comes back off them as its mirror image across the wall
+  (`setWalls` in `src/rings.js`), and under the water they stand from the
+  bed to the coping (the bed's own mesh, `mallBedGeometry` in
+  `src/pondFloor.js`).
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
 
@@ -1162,6 +1247,11 @@ node tools/sky-probe.mjs assets/sky/small_harbour_sunset_2k.hdr --taken=2024-08-
 node tools/sky-probe.mjs assets/sky/small_harbor_01_2k.hdr --taken=2019-05-02T17:04:00+02:00 --at=-28.492189,29.002458 --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
 node tools/sky-probe.mjs assets/sky/small_harbor_02_2k.hdr --taken=2019-05-01T17:50:00+02:00 --at=-28.492613,29.002165 --align=assets/sky/small_harbour_morning_2k.hdr --band=1,5
 node tools/sky-probe.mjs assets/sky/radkow_lake_2k.hdr
+# the Reflecting Pool's hours (stitched by tools/mall-backdrop.py; each sky's sun turned to the true sun's place then)
+M=--at=38.8893,-77.0464
+node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2026-09-20T10:38:00-04:00 $M
+node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2026-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
+node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2026-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -1926,12 +2016,33 @@ farther out, so it rises into the view rather than filling its corner.
   size in metres and packed into one image a kind (30 to 330 KB), fetched
   only when a place with that kind is first shown. Needs numpy, scipy,
   Pillow and opencv-python-headless.
+- `node tools/bird-credits.mjs` writes the Birds section of `CREDITS.md`
+  and `credits.html` from the credits `birds.json` and `models.json`
+  record; rerun it after either bird tool (`--check`, in `npm test`, fails
+  if either file is not as it would write it).
+- `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
+  Reflecting Pool's skies, one an hour, from its plan,
+  `tools/mall-backdrop.json`: it fetches the photographs (cached in
+  `tools/.mall-photos/`, gitignored), projects each to the panorama where
+  the plan aims it, mattes out its sky, matches its colour to the hour's
+  reference photograph, fills the gaps between them with copies of their
+  land cut along minimum-cost seams, lays the hour's own landmarks over
+  them, grades the land to the measured skies' brightness and lays it over
+  the hour's sky. For each hour it writes `assets/sky/<file>_2k.hdr` and the
+  8k file the horizon strip is cut from (`<file>_8k.hdr`, never committed),
+  and the landmarks' insets, their photographs worked at full size
+  (`<file>_insets.hdr`, never committed: the encoder makes the page's
+  `<file>_insets.jpg` from it); then run `tools/sky-probe.mjs` (with the hour's time and place: the runs
+  are under Reproduce the new measurements) and `tools/sky-encode.mjs
+  --verify` on each, as for any sky. About a minute an hour; needs numpy,
+  SciPy and Pillow.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
-  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon to 3°
-  below cut from Poly Haven's 8k file (downloaded beside it when missing,
-  never committed; `--no-horizon` skips it), which the page fetches after
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for the
+  Reflecting Pool, its `stripAbove`) to 3° below cut from Poly Haven's 8k file (downloaded beside it when missing,
+  never committed; `--no-horizon` skips it, and the insets), and a sky's insets
+  (`assets/sky/name_insets.jpg`, from `name_insets.hdr` where it is), which the page fetches after
   the sky and decodes on the GPU (`src/horizonStrip.js`; `--verify` checks
   that decode too): a base image and a gain map, matched
   to the arithmetic of Three.js's UltraHDRLoader so that it decodes to the
@@ -2052,6 +2163,12 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/mall-probe.mjs` checks the Reflecting Pool on the CPU: its
+  bed's GLSL twin is `MALL_POOL`, the walls that hold things and the water's
+  bounds stand at its walls; every thing sent at a wall or a corner, slow or
+  fast, or lobbed over it, never goes into the granite and never ends under
+  the coping's top; the ground leaves the pool open and reaches the horizon,
+  under its triangle bound.
 - `node tools/visitor-probe.mjs` checks whatever is out on Loch Ness
   (`src/lochVisitor.js`) on the CPU: over two hours it comes up within its
   first minute and every one to two and a half minutes after, every form
@@ -2177,6 +2294,8 @@ farther out, so it rises into the view rather than filling its corner.
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
+  `startStream(x, z)`, `aimStream(x, z)` and `stopStream()` (the water cannon in hand, fired at world (x, z) as a
+  press fires it, swept and shut; `streaming` while it is on, and `cannon` the cannon itself),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
   drawn), `restartFish()` (the place's fish as they start), `holdThing(rock)`, `carryHeld(x, y, z)` and

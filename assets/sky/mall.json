@@ -1,0 +1,42 @@
+{
+  "source": "mall_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 40.15,
+    "azimuth": 129.93,
+    "direction": [
+      0.49061,
+      0.64475,
+      -0.58617
+    ],
+    "pixels": 11
+  },
+  "sunIrradiance": [
+    7.8714,
+    7.3815,
+    6.6974
+  ],
+  "skyRadiance": [
+    0.28792,
+    0.33813,
+    0.43765
+  ],
+  "horizonRadiance": {
+    "median": 0.053822,
+    "p90": 0.26205
+  },
+  "maxLuminance": 145370,
+  "taken": "2026-09-20T10:38:00-04:00",
+  "at": [
+    38.8893,
+    -77.0464
+  ],
+  "solar": {
+    "elevation": 39.84,
+    "azimuth": 130.22
+  },
+  "light": "sun",
+  "north": 359.71,
+  "northFrom": "sun"
+}

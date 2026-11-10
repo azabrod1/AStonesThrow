@@ -1,0 +1,48 @@
+{
+  "source": "mall_night_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 84.11,
+    "azimuth": 359.92,
+    "direction": [
+      -0.1026,
+      0.99472,
+      0.00014
+    ],
+    "pixels": 3
+  },
+  "sunIrradiance": [
+    0.000095371,
+    0.000056229,
+    0.000013815
+  ],
+  "skyRadiance": [
+    0.12191,
+    0.12711,
+    0.14547
+  ],
+  "horizonRadiance": {
+    "median": 0.019609,
+    "p90": 0.3201
+  },
+  "maxLuminance": 30.285,
+  "taken": "2026-09-20T21:30:00-04:00",
+  "at": [
+    38.8893,
+    -77.0464
+  ],
+  "solar": {
+    "elevation": -27.49,
+    "azimuth": 296.03
+  },
+  "light": "none",
+  "alignment": {
+    "reference": "mall_2k.hdr",
+    "turn": 360,
+    "peak": 13.36,
+    "nextBest": 1.78
+  },
+  "north": 359.71,
+  "northFrom": "skyline"
+}

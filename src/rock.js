@@ -1524,7 +1524,7 @@ export class Rock {
       vertexColors: true,
       ...(map ? { map } : {}),
       roughness: look.roughness,
-      metalness: 0.0,
+      metalness: look.metalness ?? 0,   // a metal thing's (the cannon's nozzle): a uniform, so the program stays shared
       envMap: envTexture,
       envMapIntensity: look.reflection,
       clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, clipNormalY, 0), 0)],   // at the water's height under the stone (syncMeshes)

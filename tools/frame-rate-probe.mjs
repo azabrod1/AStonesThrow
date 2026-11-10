@@ -32,6 +32,10 @@
 //   - loch: a stone and a skipped stone at Loch Ness, then left past its
 //     first sighting (src/lochVisitor.js), whose state must match too: what
 //     it is, where, how far up, and when it comes and goes.
+//   - mall: a stone, a skipped stone, a duck and a basketball in the
+//     Reflecting Pool, inside its walls (src/mallPool.js), then by its west
+//     wall a duck and a bowling ball, whose drops reach the coping, whose
+//     ring comes back off the wall and whose splash pushes the duck into it.
 // Prints each scene's comparison and exits with status 1 if any differs.
 //
 //   node tools/frame-rate-probe.mjs [--scene=koi,pool]   (only these scenes, in this order)
@@ -54,6 +58,8 @@ const SCENES = [
       { at: 1.6, x: -0.4, z: -1.2, thing: 'apple' },
       { at: 2.4, x: 0.2, z: -2.0, thing: 'basketball' },
       { at: 3.2, x: -0.6, z: -2.2, thing: 'stone', manner: 'skip' },
+      // The water cannon's burst (src/waterCannon.js): its parcels land a step at a time, and its stream frightens the fish and shoves the floaters.
+      { at: 3.6, x: 0.3, z: -1.7, thing: 'cannon' },
       ...Array.from({ length: 14 }, (unused, index) => ({ at: 4 + 0.35 * index, x: -0.9 + 0.13 * index, z: -1.0 - 0.09 * index, thing: 'tennis' })),
     ],
   },
@@ -72,6 +78,7 @@ const SCENES = [
       { at: 0, x: 0.3, z: -1.2, thing: 'pizza' },
       { at: 0.6, x: -0.5, z: -1.5, thing: 'bread' },
       { at: 1.5, x: 0.1, z: -0.8, thing: 'stone' },
+      { at: 2.2, x: -0.3, z: -1.3, thing: 'cannon' },
     ],
   },
   {
@@ -81,6 +88,19 @@ const SCENES = [
       { at: 0.5, x: 0.2, z: -1.3, thing: 'stone', manner: 'skip' },
       // More than Low keeps at rest (20): the one that comes to rest past it, between throws, fades the oldest.
       ...Array.from({ length: 22 }, (unused, index) => ({ at: 1 + 0.25 * index, x: -0.5 + 0.045 * index, z: -0.9 - 0.035 * index, thing: 'stone' })),
+    ],
+  },
+  {
+    name: 'mall', place: 'mall', ice: 'none', until: 12,
+    throws: [
+      { at: 0, x: 0, z: -1.4, thing: 'stone' },
+      { at: 0.6, x: 0.4, z: -1.8, thing: 'stone', manner: 'skip' },
+      { at: 1.4, x: -0.3, z: -1.2, thing: 'duck' },
+      { at: 2.2, x: 0.6, z: -1.0, thing: 'basketball' },
+      // By the west wall (z 2.75): a duck afloat 35 cm off it, then a bowling ball 85 cm off it, whose drops reach the
+      // coping, whose ring comes back off the wall and whose splash pushes the duck against it (it ends held there).
+      { at: 3.0, x: 0.1, z: 2.4, thing: 'duck' },
+      { at: 4.2, x: 0.05, z: 1.9, thing: 'bowling' },
     ],
   },
   {
