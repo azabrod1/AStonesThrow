@@ -24,8 +24,14 @@
 // Each kind's numbers are its FLIGHT entry; angles in radians.
 import * as THREE from 'three';
 
-export const JOINTS = { body: 0, head: 1, tail: 2, rightShoulder: 3, rightElbow: 4, rightWrist: 5, leftShoulder: 6, leftElbow: 7, leftWrist: 8 };
-export const JOINT_COUNT = 9;
+export const JOINTS = {
+  body: 0, head: 1, tail: 2, rightShoulder: 3, rightElbow: 4, rightWrist: 5, leftShoulder: 6, leftElbow: 7, leftWrist: 8,
+  // A standing bird's (poseStanding): each leg's hip, heel and foot, and its neck's chain from the breast up (six
+  // joints, so that between any two its photographed S is nearly straight and the neck can be laid in any line).
+  rightHip: 12, rightHeel: 13, rightFoot: 14, leftHip: 15, leftHeel: 16, leftFoot: 17,
+  neck: [9, 10, 11, 18, 19, 20],
+};
+export const JOINT_COUNT = 21;
 
 const degrees = THREE.MathUtils.degToRad;
 
@@ -38,6 +44,9 @@ const degrees = THREE.MathUtils.degToRad;
 export const FLIGHT = {
   fishEagle: { amplitude: degrees(32), centre: degrees(6), down: 0.52, lag: 0.1, handSwing: 0.45, flex: 0.25, pronation: degrees(10), rise: 0.012,
     glide: { dihedral: degrees(7), hand: degrees(-3), sweep: degrees(6) } },
+  // A heron: deep, slow, bowed beats (its wings arched down in a glide), hardly any flex.
+  heron: { amplitude: degrees(36), centre: degrees(-2), down: 0.55, lag: 0.12, handSwing: 0.5, flex: 0.12, pronation: degrees(8), rise: 0.015,
+    glide: { dihedral: degrees(-3), hand: degrees(-12), sweep: degrees(4) } },
 };
 
 const scratch = { matrix: new THREE.Matrix4(), rotation: new THREE.Matrix4(), quaternion: new THREE.Quaternion(), euler: new THREE.Euler(), vector: new THREE.Vector3() };
@@ -123,6 +132,148 @@ export function poseJoints(out, model, flight, pose) {
     about(wristMatrix, at(wrist), AXIS_X, raise * angles.hand);
     wristMatrix.multiply(about(local, at(wrist), AXIS_Y, -side * angles.handSweep));
     wristMatrix.multiply(about(local, at(wrist), AXIS_Z, angles.twist));
+    step.multiplyMatrices(elbowWorld, wristMatrix).toArray(out, (side > 0 ? JOINTS.rightWrist : JOINTS.leftWrist) * 16);
+  }
+  return out;
+}
+
+// ---- a standing bird (the heron) -----------------------------------------------------------------------------------
+//
+// Its model (src/birdMeshes.js buildStandingModel) is its photograph's pose: neck in a loose S, legs straight down, wings
+// folded (its side picture shows them). poseStanding moves it from there:
+//   - the body placed at its hips: standing, its feet's height (pose.y) and its legs' (lower as it crouches); flying, pose.y;
+//   - the neck: each link's direction in the side's plane eased between drawn in onto the shoulders (neck 0), the
+//     photograph's (NECK_PHOTO) and stretched up (1) (NECK_POSES); a strike (pose.strike, 0 to 1) throws it forward and
+//     down in one line, the bill to the water before its feet; the head turned to look (pose.look);
+//   - the legs: standing, each foot set where it should be (planted, or swung forward a step: pose.stride, pose.walking)
+//     and the hip and heel solved to reach it (two bones in the side's plane, the heel bending back as a heron's does);
+//     flying, swung back to trail straight behind (pose.legs 0), the toes curled;
+//   - the wings: folded away into the body (pose.fold 1: shrunk to the shoulder and swept back, inside the trunk's
+//     picture of its folded wings), spread and beating as FLIGHT's wingbeat (src/birdRig.js flapAngles) as they open.
+const NECK_PHOTO = 0.55;
+// The neck's links' directions in the side's plane (degrees from forward, up positive), from the breast up to the
+// nape (JOINTS.neck's six), and the head's (nape to bill): drawn in (an S folded down onto the shoulders, as a heron
+// rests and flies), stretched up, and striking (one line forward and down, the bill pointing down at the water).
+const NECK_POSES = {
+  drawnIn: [58, 40, -8, -14, 70, 135, 0],
+  stretched: [72, 80, 88, 90, 86, 80, -4],
+  strike: [-34, -38, -42, -46, -50, -53, -70],
+};
+const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
+const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
+const STEP_LIFT = 0.07;        // m a walking foot is lifted at the middle of its swing
+export const STEP_LENGTH = 0.13;   // m a foot moves a step (two steps a stride), src/birds.js walks it so
+
+const legScratch = { solved: new THREE.Vector2(), heel: new THREE.Vector2() };
+const bodyWorld = new THREE.Matrix4();
+
+/** The angle of a 2D vector (x, y), from +x toward +y. */
+const angleOf = (x, y) => Math.atan2(y, x);
+
+/**
+ * Two bones from `hip` reaching `target` (model x, y): tibia `upper` long, tarsus `lower`; the heel behind the line from
+ * hip to target. Returns the tibia's and the tarsus's angles (angleOf).
+ */
+function solveLeg(hip, target, upper, lower) {
+  let reachX = target.x - hip.x, reachY = target.y - hip.y;
+  let reach = Math.hypot(reachX, reachY);
+  const most = (upper + lower) * 0.999;
+  if (reach > most) { reachX *= most / reach; reachY *= most / reach; reach = most; }
+  const toTarget = angleOf(reachX, reachY);
+  const atHip = Math.acos(THREE.MathUtils.clamp((upper * upper + reach * reach - lower * lower) / (2 * upper * reach), -1, 1));
+  // The heel behind: for a leg reaching down (toTarget about −π/2), the tibia turned clockwise... toward −x.
+  const tibia = toTarget - atHip;
+  const heelX = hip.x + Math.cos(tibia) * upper, heelY = hip.y + Math.sin(tibia) * upper;
+  return { tibia, tarsus: angleOf(target.x - heelX, target.y - heelY) };
+}
+
+/**
+ * The joints' matrices (into `out`) for a standing kind's model (src/birdMeshes.js buildStandingModel: its `skeleton`)
+ * posed as `pose` (src/birds.js), with its kind's `flight` for its wingbeat.
+ */
+export function poseStanding(out, model, flight, pose) {
+  const { skeleton } = model;
+  const flying = pose.flying !== false;
+  const legsDown = THREE.MathUtils.clamp(pose.legs ?? (flying ? 0 : 1), 0, 1);
+  const crouch = pose.crouch ?? 0;
+  const angles = flapAngles(flight, pose.phase ?? 0, pose.beat ?? 0);
+  // The body: at its hips.
+  const hipsY = (flying ? pose.y : pose.y + skeleton.hipsHeight) - CROUCH_DROP * crouch + (flying ? angles.rise * flight.rise * model.span * (1 - (pose.fold ?? 0)) : 0);
+  scratch.euler.set(pose.bank ?? 0, pose.heading ?? 0, pose.pitch ?? 0, 'YZX');
+  bodyWorld.makeRotationFromEuler(scratch.euler);
+  bodyWorld.setPosition(pose.x, hipsY, pose.z);
+  bodyWorld.toArray(out, JOINTS.body * 16);
+  bodyWorld.toArray(out, JOINTS.tail * 16);
+  // The neck's chain: each link's direction (the photograph's, or toward a pose's), bent at its joint by what turns its
+  // rest direction to that, less what the links before it turned already.
+  const neck = THREE.MathUtils.clamp(pose.neck ?? NECK_PHOTO, 0, 1);
+  const strike = THREE.MathUtils.clamp(pose.strike ?? 0, 0, 1);
+  const chain = [...JOINTS.neck, JOINTS.head];
+  step.copy(bodyWorld);
+  let turned = 0;
+  chain.forEach((joint, index) => {
+    const rest = skeleton.neckRest[index];
+    let direction = neck < NECK_PHOTO ? degrees(NECK_POSES.drawnIn[index]) + (rest - degrees(NECK_POSES.drawnIn[index])) * (neck / NECK_PHOTO)
+      : rest + (degrees(NECK_POSES.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
+    direction += (degrees(NECK_POSES.strike[index]) - direction) * strike;
+    const bend = direction - rest - turned;
+    turned += bend;
+    const point = skeleton.neck[index];
+    about(local, jointPoint.set(point.x, point.y, 0), AXIS_Z, bend);
+    if (joint === JOINTS.head) local.multiply(about(world, jointPoint, AXIS_Y, (pose.look ?? 0) * (1 - strike)));
+    step.multiply(local);
+    step.toArray(out, joint * 16);
+  });
+  // The legs.
+  skeleton.legs.forEach((leg, index) => {
+    const [hipJoint, heelJoint, footJoint] = index === 0 ? [JOINTS.rightHip, JOINTS.rightHeel, JOINTS.rightFoot] : [JOINTS.leftHip, JOINTS.leftHeel, JOINTS.leftFoot];
+    // Where its foot should be (model space): planted where it stood, the hips sunk over it; walking, a step forward or
+    // back of it (the stance foot sliding back under the body as it goes on, the other swung forward and lifted).
+    const walking = pose.walking ?? 0;
+    const cycle = (((pose.stride ?? 0) + index * 0.5) % 1 + 1) % 1;
+    let footX = leg.foot.x, footY = leg.foot.y + CROUCH_DROP * crouch;
+    if (walking > 0) {
+      const half = STEP_LENGTH / 2;
+      if (cycle < 0.5) footX += walking * (half - cycle * 2 * STEP_LENGTH);
+      else {
+        const swing = (cycle - 0.5) * 2;
+        const eased = swing * swing * (3 - 2 * swing);
+        footX += walking * (-half + eased * STEP_LENGTH);
+        footY += walking * STEP_LIFT * Math.sin(Math.PI * swing);
+      }
+    }
+    const solved = solveLeg(leg.hip, { x: footX, y: footY }, leg.upper, leg.lower);
+    // Trailing: the whole leg swung back from its rest, straight.
+    const trailTibia = leg.restTibia + TRAIL, trailTarsus = trailTibia;
+    const tibia = trailTibia + (solved.tibia - trailTibia) * legsDown;
+    const tarsus = trailTarsus + (solved.tarsus - trailTarsus) * legsDown;
+    const hipTurn = tibia - leg.restTibia, heelTurn = tarsus - leg.restTarsus - hipTurn;
+    about(local, jointPoint.set(leg.hip.x, leg.hip.y, leg.z), AXIS_Z, hipTurn);
+    shoulderWorld.multiplyMatrices(bodyWorld, local).toArray(out, hipJoint * 16);
+    about(local, jointPoint.set(leg.heel.x, leg.heel.y, leg.z), AXIS_Z, heelTurn);
+    elbowWorld.multiplyMatrices(shoulderWorld, local).toArray(out, heelJoint * 16);
+    // The toes level with the body standing; curled back along the tarsus trailing.
+    const toes = -(hipTurn + heelTurn) * legsDown + degrees(-60) * (1 - legsDown);
+    about(local, jointPoint.set(leg.foot.x, leg.foot.y, leg.z), AXIS_Z, toes);
+    step.multiplyMatrices(elbowWorld, local).toArray(out, footJoint * 16);
+  });
+  // The wings: folded (shrunk to the shoulder and swept back) as `fold`, and beating as they open.
+  const fold = THREE.MathUtils.clamp(pose.fold ?? 0, 0, 1);
+  const { shoulder, elbow, wrist } = skeleton.wing;
+  for (const side of [1, -1]) {
+    const raise = side > 0 ? -1 : 1;
+    const shoulderPoint = new THREE.Vector3(shoulder.x, shoulder.y, shoulder.z * side);
+    about(shoulderMatrix, shoulderPoint, AXIS_X, raise * angles.shoulder * (1 - fold));
+    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Y, side * degrees(70) * fold));
+    const shrink = 1 - 0.94 * fold;
+    shoulderMatrix.multiply(local.makeTranslation(shoulderPoint.x, shoulderPoint.y, shoulderPoint.z).scale(scratch.vector.set(shrink, shrink, shrink)).multiply(world.makeTranslation(-shoulderPoint.x, -shoulderPoint.y, -shoulderPoint.z)));
+    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Z, angles.twist * 0.4));
+    shoulderWorld.multiplyMatrices(bodyWorld, shoulderMatrix).toArray(out, (side > 0 ? JOINTS.rightShoulder : JOINTS.leftShoulder) * 16);
+    about(elbowMatrix, jointPoint.set(elbow.x, elbow.y, elbow.z * side), AXIS_Y, side * angles.elbowSweep);
+    elbowWorld.multiplyMatrices(shoulderWorld, elbowMatrix).toArray(out, (side > 0 ? JOINTS.rightElbow : JOINTS.leftElbow) * 16);
+    about(wristMatrix, jointPoint.set(wrist.x, wrist.y, wrist.z * side), AXIS_X, raise * angles.hand);
+    wristMatrix.multiply(about(local, jointPoint, AXIS_Y, -side * angles.handSweep));
+    wristMatrix.multiply(about(local, jointPoint, AXIS_Z, angles.twist));
     step.multiplyMatrices(elbowWorld, wristMatrix).toArray(out, (side > 0 ? JOINTS.rightWrist : JOINTS.leftWrist) * 16);
   }
   return out;

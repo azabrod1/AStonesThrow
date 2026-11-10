@@ -629,9 +629,13 @@ a side-on outline and painted from that photograph, its wings rectified flat
 from a photograph from below, slotted primaries and all, on a skeleton
 (`src/birdRig.js`) whose wingbeat is a bird's (a cosine stroke, the hand
 lagging the arm, twisting on the downstroke), so it beats, glides and banks
-smoothly from any side. `tools/bird-look.mjs` shoots a model alone through
-its wingbeat. The other kinds are still pictures, as follows, until each has
-its model.
+smoothly from any side. The grey heron is one too: its trunk, six-jointed
+neck and legs shaped from a side-on photograph, so it stands, looks about,
+draws its neck in or stretches it, walks the bank, strikes at fish, crouches
+and takes off trailing its legs, its legs seen through the water
+(`poseStanding` in `src/birdRig.js`). `tools/bird-look.mjs` shoots a model
+alone through its wingbeat (`--poses=standing`: a standing kind's ways). The
+other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
 or public domain; the credits are in `CREDITS.md` and in

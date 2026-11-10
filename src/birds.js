@@ -61,6 +61,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiFloorDepthAt } from './pondFloor.js';
+import { STEP_LENGTH } from './birdRig.js';
 
 const GRAVITY = 9.81;
 const NIGHT_SUN = THREE.MathUtils.degToRad(4);   // the sun this far below the horizon: no bird is about
@@ -84,7 +85,7 @@ const FLAPPING = {
 export const BIRD_KINDS = {
   herring: { name: 'Herring gull', span: 1.4, length: 0.6, beat: 2.9, cruise: 8.5, flapping: 'gull', stand: 0 },
   kelp: { name: 'Kelp gull', span: 1.4, length: 0.6, beat: 2.8, cruise: 8.5, flapping: 'gull', stand: 0 },
-  heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 9, flapping: 'steady', stand: 0.62 },
+  heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 9, flapping: 'steady', stand: 0.421 },   // stand: its model's hips (src/birdMeshes.js)
   goose: { name: 'Egyptian goose', span: 1.45, length: 0.7, beat: 3.8, cruise: 14, flapping: 'steady', stand: 0.32 },
   ibis: { name: 'African sacred ibis', span: 1.15, length: 0.7, beat: 3.6, cruise: 12, flapping: 'corvid', stand: 0 },
   fishEagle: { name: 'African fish eagle', span: 2.1, length: 0.72, beat: 2.2, cruise: 10, flapping: 'fishing', stand: 0 },
@@ -147,7 +148,14 @@ const HERON = {
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 9, far: 38, climb: 13, hard: 1.8, legsUp: 1.2, neckIn: 1.0 },
   away: { absent: [45, 90], retry: 12, quiet: 8 },
   land: { glide: 10, from: 34, high: 11, flare: 1.4, fold: 0.9 },
-  tilt: THREE.MathUtils.degToRad(22),   // its body standing, nose up from level
+  tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
+  // walk: its standing cut into `every`-second spells from when it began to stand; in each it may walk to one of
+  //   `spots` (m along the bank either way from its own spot) at `speed`, turning to go over `turn` s first and back to
+  //   face as it stood after; none in the first spell (it has just come down).
+  walk: { every: 10, spots: [-0.35, -0.12, 0.2, 0.45], speed: 0.17, turn: 0.9 },
+  // strike: in a `share` of its spells, `at` s into it (once it has walked, if it walks): it draws its neck back over `coil` s,
+  //   throws its bill into the water in `throw`, holds it there `hold`, and brings it back over `back`, swallowing.
+  strike: { share: 0.5, at: 7.4, coil: 0.7, throw: 0.14, hold: 0.35, back: 0.9 },
 };
 // An Egyptian goose's, on a lawn: warier of what comes near (it is on open ground), quicker off and back sooner, and
 // level standing. Its head's turns and neck are not drawn (one picture each), but they keep it from being still.
@@ -240,6 +248,7 @@ function splineAt(path, parameter, out, first, second) {
 }
 
 const scratchSample = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };
+const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, walked: 0, walking: 0, spell: 0, walks: false, walkEnds: 0 };
 
 /**
  * Where a path is `along` m along it (into `out`): its point, its direction (velocity: its derivative there) and its
@@ -324,7 +333,9 @@ export class BirdPopulation {
       if (bird.visitor) { bird.visitor.since = time; bird.visitor.visits.length = 0; }
       if (!STANDING_HABITS.has(bird.habit)) continue;
       bird.mode = 'stand';
-      bird.since = time - STANDING[bird.kind].land.fold;   // standing a while already: its wings folded
+      bird.since = time;
+      bird.standSince = time;   // its walks' spells from now (src/birds.js standingPlace)
+      bird.foldSince = time - STANDING[bird.kind].land.fold;   // standing a while already: its wings folded
       bird.alertAt = -Infinity;
       bird.alertToward = 0;
       bird.returnAt = Infinity;
@@ -366,6 +377,8 @@ export class BirdPopulation {
       if (bird.mode === 'land' && time >= bird.since + ways.land.glide) {
         bird.mode = 'stand';
         bird.since = time;
+        bird.standSince = time;
+        bird.foldSince = time;
         bird.alertAt = -Infinity;
       }
     }
@@ -395,7 +408,7 @@ export class BirdPopulation {
    * (src/birdSprites.js). The rest of its group, standing, go with it.
    */
   flush(bird, time, x, z) {
-    const { spot } = bird;
+    const spot = { ...this.standingPlace(bird, time, scratchPlace) };   // where it stands now (it may have walked)
     const ways = STANDING[bird.kind];
     const fromEyeX = spot.x - EYE.x, fromEyeZ = spot.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
     const fromThingX = spot.x - x, fromThingZ = spot.z - z;
@@ -413,6 +426,7 @@ export class BirdPopulation {
     };
     bird.mode = 'flee';
     bird.since = time;
+    bird.fleeHeading = spot.heading;   // it turns from where it faced as it springs off
     bird.returnAt = time + ways.flush.crouch + ways.flush.flight + between(ways.away.absent, hashed(bird.groupSeed, Math.floor(time * 10), 3));
     for (const other of this.birds) if (other.group === bird.group && other.mode === 'stand') this.flush(other, time, x, z);
   }
@@ -623,14 +637,14 @@ export class BirdPopulation {
     pose.phase = 2 * Math.PI * kind.beat * time;
     pose.crouch = 0;
     if (bird.mode === 'stand') {
-      this.standing(bird, time, since);
+      this.standing(bird, time);
       return;
     }
     if (bird.mode === 'flee') {
       const { crouch, flight, hard, legsUp, neckIn } = ways.flush;
       if (since < crouch) {
         // It crouches, its neck drawn in, its wings starting to open.
-        this.standing(bird, bird.since, Infinity);
+        this.standing(bird, bird.since);
         const share = smoother(0, crouch, since);
         pose.crouch = share;
         pose.neck *= 1 - 0.7 * share;
@@ -642,8 +656,12 @@ export class BirdPopulation {
       // Off from a standstill, faster and faster.
       const along = share ** 1.25;
       this.flyAlong(bird, along, Math.min(along + 0.01, 1), along > 0.99);
+      pose.heading = bird.fleeHeading + turnBetween(bird.fleeHeading, pose.heading) * smoother(0, 0.45, flying);
       // Off the bed: its feet leave the water as it springs, so its middle starts where its standing middle was.
       pose.beat = 1 - 0.45 * smoother(hard, hard + 2, flying);
+      pose.crouch = 1 - smoother(0, 0.2, flying);   // springing up out of its crouch
+      pose.walking = 0;
+      pose.strike = 0;
       pose.fold = 0.5 * (1 - smoother(0, 0.25, flying));
       pose.legs = 1 - smoother(0.15, legsUp, flying);
       pose.neck = 0.3 * (1 - smoother(0, neckIn, flying));
@@ -668,6 +686,8 @@ export class BirdPopulation {
       pose.neck = 0.35 * flaring;
       pose.fold = 0;
       pose.look = 0;
+      pose.walking = 0;
+      pose.strike = 0;
       return;
     }
     // Away: unseen.
@@ -689,19 +709,71 @@ export class BirdPopulation {
     pose.flying = true;
   }
 
-  /** A heron standing at its spot, `since` s after it began to (its wings folding as it lands, its idle turns). */
-  standing(bird, time, since) {
-    const { pose, spot } = bird;
+  /**
+   * Where a standing bird is at `time` and which way it faces: at its spot, or walking along the bank to another (its
+   * kind's `walk`) or there, from when it began to stand (bird.standSince). Each spell's place is drawn from its seed
+   * and the spell's number (the first's its own spot), so it is the same at any frame rate. Also how far it is along
+   * its walk (m, for its stride) and how much it is walking.
+   */
+  standingPlace(bird, time, out) {
+    const { spot } = bird;
+    const walk = STANDING[bird.kind].walk;
+    out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.walked = 0; out.walking = 0; out.spell = 0; out.walks = false; out.walkEnds = 0;
+    if (!walk) { out.y = spot.y; return out; }
+    const since = time - bird.standSince;
+    const spell = Math.max(0, Math.floor(since / walk.every));
+    const offsetOf = (index) => (index <= 0 ? 0 : walk.spots[Math.floor(hashed(bird.seed, index, 11) * walk.spots.length)]);
+    const from = offsetOf(spell - 1), to = offsetOf(spell);
+    const into = since - spell * walk.every;
+    // Along the bank (the pond's tangent at the spot), the way that runs to the eye's right.
+    const tangentX = -(spot.z - KOI_SHORE.centre[1]), tangentZ = spot.x - KOI_SHORE.centre[0];
+    const tangentLength = Math.hypot(tangentX, tangentZ);
+    const alongX = tangentX / tangentLength, alongZ = tangentZ / tangentLength;
+    const distance = Math.abs(to - from), way = Math.sign(to - from);
+    let offset = from;
+    out.spell = spell;
+    out.walks = distance > 0.01;
+    out.walkEnds = out.walks ? distance / walk.speed + 2 * walk.turn : 0;   // s into the spell it has walked and turned back
+    if (out.walks) {
+      const duration = distance / walk.speed;
+      const going = into - walk.turn;
+      // Turned to go, walked (eased in and out over its first and last steps), turned back.
+      const walkHeading = Math.atan2(-alongZ * way, alongX * way);
+      const turnedTo = smoother(0, walk.turn, into), turnedBack = smoother(walk.turn + duration, 2 * walk.turn + duration, into);
+      out.heading = spot.heading + turnBetween(spot.heading, walkHeading) * (turnedTo - turnedBack);
+      const ease = 0.6 / duration;   // a share of the walk spent getting going and stopping
+      const share = THREE.MathUtils.clamp(going / duration, 0, 1);
+      // Distance along: constant speed with its ends eased (a smootherstep blended in over `ease`).
+      const eased = share < ease ? share * share / (2 * ease * (1 - ease)) : share > 1 - ease ? 1 - (1 - share) * (1 - share) / (2 * ease * (1 - ease)) : (share - ease / 2) / (1 - ease);
+      out.walked = eased * distance;
+      offset = from + way * out.walked;
+      out.walking = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
+    }
+    out.x = spot.x + alongX * offset;
+    out.z = spot.z + alongZ * offset;
+    out.y = bird.habit === 'wade' ? -koiFloorDepthAt(out.x, out.z) : spot.y;
+    return out;
+  }
+
+  /** A bird standing (or crouching to go, frozen at `time`): its place, its wings folding as it lands, its idle ways. */
+  standing(bird, time) {
+    const { pose } = bird;
     const ways = STANDING[bird.kind];
     const { slot, turn, looks, necks, still } = ways.idle;
-    pose.x = spot.x; pose.y = spot.y; pose.z = spot.z;
-    pose.heading = spot.heading;
+    const since = time - bird.standSince;
+    const place = this.standingPlace(bird, time, scratchPlace);
+    pose.x = place.x; pose.y = place.y; pose.z = place.z;
+    pose.heading = place.heading;
     pose.pitch = ways.tilt;
     pose.bank = 0;
     pose.flying = false;
     pose.legs = 1;
     pose.beat = 0;
-    pose.fold = smoother(0, ways.land.fold, since);
+    pose.crouch = 0;
+    pose.fold = smoother(0, ways.land.fold, time - bird.foldSince);
+    // Walking: its stride's phase from how far it has gone (two steps a stride), so its feet never slide.
+    pose.walking = place.walking;
+    pose.stride = place.walked / (2 * STEP_LENGTH);
     // Its idle spells: in each it may turn its head and set its neck at the spell's start, then holds still.
     const spell = Math.floor(time / slot);
     const target = (index) => {
@@ -714,15 +786,34 @@ export class BirdPopulation {
     const share = smoother(0, turn, time - spell * slot);
     let look = from.look + (to.look - from.look) * share;
     let neck = from.neck + (to.neck - from.neck) * share;
+    // Walking, it looks ahead, its neck at its ease.
+    look *= 1 - place.walking;
+    neck += (0.5 - neck) * place.walking;
+    // A strike at a fish, once it has walked if it walks (its kind's `strike`): neck coiled back and low, thrown
+    // forward into the water, held, brought back up.
+    pose.strike = 0;
+    const strike = ways.strike;
+    if (strike && place.walkEnds < strike.at - 0.3 && place.spell > 0 && hashed(bird.seed, place.spell, 12) < strike.share) {
+      const into = since - place.spell * ways.walk.every - strike.at;
+      const coiled = smoother(0, strike.coil, into) * (1 - smoother(strike.coil, strike.coil + strike.throw, into));
+      const thrown = smoother(strike.coil, strike.coil + strike.throw, into) * (1 - smoother(strike.coil + strike.throw + strike.hold, strike.coil + strike.throw + strike.hold + strike.back, into));
+      neck += (0.15 - neck) * coiled;
+      look *= 1 - Math.max(coiled, thrown);
+      pose.crouch = 0.35 * coiled + 0.2 * thrown;
+      pose.strike = thrown;
+    }
     // A splash in sight: up and looking, for a while, then back to its spells.
     const { hold, turn: alertTurn } = ways.alert;
     const alerted = smoother(0, alertTurn, time - bird.alertAt) * (1 - smoother(hold, hold + 1, time - bird.alertAt));
     look += (bird.alertToward - look) * alerted;
     neck += (1 - neck) * alerted;
+    pose.strike *= 1 - alerted;
+    pose.pitch = ways.tilt - 0.3 * pose.strike;   // tipped forward into its strike
     pose.look = look;
     pose.neck = neck;
     // Resting, its head tucked in, until a splash makes it look (src/birdSprites.js draws it so).
     pose.posture = alerted > 0.5 ? 'stand' : bird.group.postures?.[bird.index] ?? 'stand';
+    void since;
   }
 
   /** What tools and probes read: each bird's kind, mode and pose. */
