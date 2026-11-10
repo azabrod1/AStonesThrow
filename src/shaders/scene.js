@@ -2329,6 +2329,7 @@ uniform float uShoreKind;   // SHORE_LAKE, SHORE_KOI (the Koi pond's), SHORE_LAG
 #define MALL_COPING 0.3
 #define MALL_EDGE 0.6
 #define MALL_DEEP 0.88
+#define MALL_WALL_FACE vec3(0.05, 0.065, 0.04)   // the walls' granite where the water films it with algae: under the water (mallWallFace) and at the coping's waterline (MALL_GROUND_FRAGMENT)
 `;
 
 // The lake bed's depth at a world XZ point, as floorDepthAt in
@@ -2630,6 +2631,14 @@ vec3 mallBed(vec2 point, float footprint) {
   bed = mix(bed, vec3(0.16, 0.1, 0.045) * (0.7 + 0.6 * fract(chance * 17.0)), 0.8 * leaf * (1.0 - smoothstep(0.01, 0.04, footprint)));
   return bed / PATTERN_RANGE;
 }
+// A wall's face under the water at a point just outside the basin, depth (m) down: MALL_WALL_FACE mottled by the
+// run of the wall and the depth. The floor draws it (FLOOR_FRAGMENT) and the underside sees it in its mirror
+// (WATER_UNDER_FRAGMENT), the one look.
+vec3 mallWallFace(vec2 point, float depth) {
+  float beside = abs(point.x) - MALL_HALF_WIDTH, behind = max(point.y - MALL_WEST, (MALL_WEST - MALL_LENGTH) - point.y);
+  float along = beside > behind ? point.y : point.x;
+  return MALL_WALL_FACE * (0.75 + 0.5 * valueNoise(vec2(along * 1.7, depth * 7.0))) * (0.9 + 0.2 * valueNoise(vec2(along * 0.3, 2.0)));
+}
 `;
 
 export const WATER_UNDER_FRAGMENT = /* glsl */`
@@ -2736,8 +2745,12 @@ void main() {
       float depth = max(-bed.y, 0.0);
       vec3 light = uSunIrradiance * exp(-uAbsorb * depth / max(uSunDir.y, 0.2)) * max(uSunDir.y, 0.0) + uSkyAmbient * exp(-uAbsorb * depth) * 1.4;
       vec3 ground;
-      if (isShore(SHORE_MALL)) ground = mallBed(bed.xz, TILE_BLUR * (along + length(vWorld - cameraPosition)));
-      else ground = floorSand(bed.xz);
+      if (isShore(SHORE_MALL)) {
+        // Outside the basin the march stops at a wall's plane (floorDepthAt is the coping's there): a wall's face,
+        // drawn as the floor draws it (FLOOR_FRAGMENT: mallWallFace, lit as a wall).
+        if (shoreDistance(bed.xz) < 0.0) { ground = mallWallFace(bed.xz, depth); light *= 0.75; }
+        else ground = mallBed(bed.xz, TILE_BLUR * (along + length(vWorld - cameraPosition)));
+      } else ground = floorSand(bed.xz);
       color = mix(color, ground * PATTERN_RANGE * light, exp(-uExtinction * along));
     }
   }
@@ -2997,7 +3010,6 @@ ${SHORE_KIND}
 ${PALM_SHADOW}
 ${MALL_BED}
 #define KOI_BED vec3(0.46, 0.45, 0.38)   // the Koi pond's bed against the lake's sand: grey gravel, silt and a film of algae
-#define MALL_WALL_FACE vec3(0.05, 0.062, 0.04)   // the Reflecting Pool's walls under the water: granite filmed with algae (as at the coping's waterline, MALL_GROUND_FRAGMENT)
 void main() {
   // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts; the
   // Reflecting Pool's blue-coated concrete (mallBed).
@@ -3015,8 +3027,7 @@ void main() {
     float beside = abs(point.x) - MALL_HALF_WIDTH, behind = max(point.y - MALL_WEST, (MALL_WEST - MALL_LENGTH) - point.y);
     if (max(beside, behind) > 1e-5) {
       wallFace = 1.0;
-      float along = beside > behind ? point.y : point.x;
-      sand = MALL_WALL_FACE * (0.75 + 0.5 * valueNoise(vec2(along * 1.7, vDepth * 7.0))) * (0.9 + 0.2 * valueNoise(vec2(along * 0.3, 2.0)));
+      sand = mallWallFace(point, vDepth);
     }
   }
   if (isShore(SHORE_KOI)) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
@@ -4215,7 +4226,7 @@ void main() {
     if (face) {
       // At the waterline the face is wet and filmed with algae.
       float waterline = 1.0 - smoothstep(0.02, 0.12, vWorld.y);
-      albedo = mix(albedo, vec3(0.05, 0.065, 0.04) * (0.8 + 0.4 * grain), 0.8 * waterline);
+      albedo = mix(albedo, MALL_WALL_FACE * (0.8 + 0.4 * grain), 0.8 * waterline);
     } else {
       // The arris along the water rounded down, darker.
       albedo *= mix(0.75, 1.0, smoothstep(0.0, 0.03, outside));
