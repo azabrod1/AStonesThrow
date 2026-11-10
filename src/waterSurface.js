@@ -52,6 +52,11 @@
 // shore (setSheetReach): beyond the land's edge the dome stands on the
 // ground, and water there would show past it, mirroring the photo.
 //
+// Water held in walls of its own (setBounds: the Reflecting Pool's,
+// src/mallPool.js MALL_BOUNDS) stops at them: WATER_VERTEX draws the sheet's
+// vertices outside the walls on their faces, so the ground beyond is the
+// ground's and no water shows past the coping.
+//
 // A frozen lake (src/ice.js, `ice`: its uniforms) is the same surface frozen:
 // the shaders draw the ice where its mask says there is ice and the water in
 // its holes (ICE_COMMON in src/shaders/scene.js), the patch held flat under
@@ -234,6 +239,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ...(visitor ? visitor.uniforms : NO_VISITOR()),   // the thing in the loch's wake (src/lochVisitor.js); off without it
     uPool: { value: new THREE.Vector4() },   // the pool's corner (x, z), side and depth; depth 0 in a lake (setPool)
     uDeck: { value: 0 },
+    uWaterBounds: { value: new THREE.Vector4() },   // walls round the water (setBounds); all 0 for none
   };
   // Two materials sharing every uniform object but uInner.
   const material = (inner) => new THREE.ShaderMaterial({
@@ -393,6 +399,14 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
       inner.geometry = square ? poolGeometry : patchGeometry;
       uniforms.uPool.value.set(square?.minX ?? 0, square?.minZ ?? 0, square?.size ?? 0, square?.depth ?? 0);
       uniforms.uDeck.value = square?.deck ?? 0;
+    },
+    /**
+     * The walls that hold the water ({ minX, minZ, maxX, maxZ }, m: the Reflecting Pool's, src/mallPool.js
+     * MALL_BOUNDS), or null for none: the sheet's corners outside them are drawn on their faces (WATER_VERTEX), so
+     * the water stops there and the ground beyond is the ground's.
+     */
+    setBounds(bounds) {
+      uniforms.uWaterBounds.value.set(bounds?.minX ?? 0, bounds?.minZ ?? 0, bounds?.maxX ?? 0, bounds?.maxZ ?? 0);
     },
     /** Whether the surface is a pool's (setPool). */
     get pooled() { return pool !== null; },

@@ -3,3 +3,5 @@ shots/
 _site/
 __pycache__/
 assets/sky/*_8k.hdr
+tools/.mall-photos/
+assets/sky/*_insets.hdr

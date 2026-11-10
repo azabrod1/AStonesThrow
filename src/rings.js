@@ -128,6 +128,25 @@
 // the reference stone, 2.8 s for a 30 cm rock). It needs its release to be
 // the solver's: src/splash.js hands both the same source in the same frame.
 //
+// At the Reflecting Pool (setWalls: src/mallPool.js MALL_BOUNDS) the ring
+// stays analytic, since its walls are 50 m apart and the solver's patch is
+// 6 m, and comes back off a wall as a wall's image would send it: once its
+// drawn annulus reaches a wall, the same profile layer is drawn again about
+// the source's mirror image across that wall's line, its direction turned
+// over, so at the wall the two add (a crest meets its own reflection) and
+// past it the water stops (src/waterSurface.js setBounds). Each image is one
+// more slot of uRingPlaces and uRingShapes, ahead of the sources so the
+// caustics' youngest rings are still sources (an image's caustic share is
+// 0). The images have a budget of their own, IMAGE_SHARE of the live limit
+// (12 on High, 6 on Medium, 5 on Low), so the loops over the rings run at
+// most that many more times than the preset's sources, and they take only
+// slots the sources leave. An image once drawn keeps its slot for as long as
+// its source lives (its reflected train fades with it, in its layer); a new
+// one is drawn only where there is room, and when the sources crowd the
+// slots the images of the ring that would stop being drawn soonest (the
+// faintest, as a rule) go first. A wall's second reflection (a corner's, or
+// off the far wall) is left out.
+//
 // A source (one throw's ring) is up to MAX_GROUPS groups, each a splat and
 // its pair released together; a splat joins the source started at most
 // MERGE.seconds earlier within MERGE.reach of its σ (the pushes down an
@@ -309,6 +328,7 @@ import { FullscreenPass, createFloatTarget } from './gpu.js';
 export const MAX_RINGS = 32;          // layers of the profile texture: live and fading sources together
 export const DEFAULT_LIVE_LIMIT = 24; // sources that count as live at once (setLiveLimit; the quality presets set it), so the rings leaving have MAX_RINGS − this layers to fade out in
 export const FADE_SECONDS = 8;        // a ring pushed out by a newer one fades out over this long unless the preset says otherwise (setLiveLimit): slowly enough that nobody sees it go (the header)
+export const IMAGE_SHARE = 0.5;       // the walls' images (setWalls) drawn at most this share of the live limit, in slots the sources leave
 export const CAUSTIC_RINGS = 6;       // the floor's caustics take the youngest this many live rings (ringLaplacian in src/shaders/scene.js)...
 export const CAUSTIC_FADE_SECONDS = 3;   // ...and an older one leaves them over this long
 export const MAX_GROUPS = 4;          // splat groups a source holds (an oblique entry's cavity uses three)
@@ -1081,6 +1101,8 @@ export class Rings {
       uRow: { value: 0 },
     }, { defines: { SLICES: this.slices } });
 
+    this.walls = null;      // the walls the rings come back off (setWalls), or none
+    this.imageCount = 0;    // their images drawn this frame
     this.sharedUniforms = {
       uRingCount: { value: 0 },
       uRingPlaces: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
@@ -1100,6 +1122,15 @@ export class Rings {
 
   /** Rings drawn: the live ones and those fading out. */
   get live() { return this.book.sources.length; }
+
+  /** Mirror images drawn this frame, a ring's reflection off a wall (setWalls). */
+  get images() { return this.imageCount; }
+
+  /**
+   * The walls the rings come back off (the header): the water's rectangle ({ minX, maxX, minZ, maxZ }, the Reflecting
+   * Pool's MALL_BOUNDS), or null for open water.
+   */
+  setWalls(bounds) { this.walls = bounds; }
 
   /** Rings fading out, pushed out by newer ones (RingSources). */
   get fading() { return this.book.sources.filter((source) => source.fading).length; }
@@ -1123,6 +1154,7 @@ export class Rings {
   hide() {
     this.sharedUniforms.uRingCount.value = 0;
     this.sharedUniforms.uCausticRings.value = 0;
+    this.imageCount = 0;
     this.passesRun = 0;
     this.fetchesRun = 0;
   }
@@ -1131,6 +1163,7 @@ export class Rings {
   reset() {
     this.book.reset();
     this.sharedUniforms.uRingCount.value = 0;
+    this.imageCount = 0;
   }
 
   /** A ring source (RingSources.add) at splash time `time`. */
@@ -1149,6 +1182,7 @@ export class Rings {
     shared.uCausticRings.value = this.book.updateCaustics(time);
     this.passesRun = 0;
     this.fetchesRun = 0;
+    this.imageCount = 0;
     if (this.sources.length === 0) return;
 
     // Each source's annulus, wavenumbers in use, near field and fade this frame (the header).
@@ -1199,6 +1233,39 @@ export class Rings {
     this.partialTarget.viewport.set(0, 0, PROFILE_TEXELS, this.sources.length * this.slices);
     this.partialPass.render(renderer, this.partialTarget);
 
+    // The walls' images (the header): each source's mirror across each wall its annulus reaches, within their budget,
+    // those drawn last frame first, then by when their source stops being drawn, latest first.
+    const images = [];
+    if (this.walls) {
+      const { minX, maxX, minZ, maxZ } = this.walls;
+      const wanted = [];
+      this.sources.forEach((source, index) => {
+        const held = source.images;
+        source.images = null;
+        if (source.nearOnly) return;
+        const reach = frames[index].outer;
+        [[minX, true], [maxX, true], [minZ, false], [maxZ, false]].forEach(([line, acrossX], wall) => {
+          if (Math.abs((acrossX ? source.centreX : source.centreZ) - line) >= reach) return;
+          wanted.push({ source, index, wall, line, acrossX, held: held?.has(wall) ? 1 : 0, end: endOf(source) });
+        });
+      });
+      wanted.sort((first, second) => second.held - first.held || second.end - first.end);
+      const budget = Math.max(0, Math.min(MAX_RINGS - this.sources.length, Math.floor(this.liveLimit * IMAGE_SHARE)));
+      const drawn = wanted.slice(0, budget).sort((first, second) => first.index - second.index || first.wall - second.wall);
+      for (const { source, index, wall, line, acrossX } of drawn) {
+        (source.images ??= new Set()).add(wall);
+        images.push(acrossX
+          ? { centreX: 2 * line - source.centreX, centreZ: source.centreZ, directionX: -source.directionX, directionZ: source.directionZ, of: index }
+          : { centreX: source.centreX, centreZ: 2 * line - source.centreZ, directionX: source.directionX, directionZ: -source.directionZ, of: index });
+      }
+    }
+    this.imageCount = images.length;
+    images.forEach(({ centreX, centreZ, directionX, directionZ, of }, slot) => {
+      const source = this.sources[of], frame = frames[of];
+      shared.uRingPlaces.value[slot].set(centreX, centreZ, directionX, directionZ);
+      shared.uRingShapes.value[slot].set(source.plan.reach, frame.outer, source.layer, frame.inner);
+      shared.uRingCaustics.value[Math.floor(slot / 4)].setComponent(slot % 4, 0);
+    });
     const resolve = this.resolvePass.material.uniforms;
     const texture = this.profileTarget.texture;
     this.sources.forEach((source, index) => {
@@ -1208,10 +1275,12 @@ export class Rings {
       texture.generateMipmaps = index === this.sources.length - 1;
       renderer.setRenderTarget(this.profileTarget, source.layer);
       renderer.render(this.resolvePass.scene, this.passCamera);
-      shared.uRingPlaces.value[index].set(source.centreX, source.centreZ, source.directionX, source.directionZ);
-      shared.uRingShapes.value[index].set(source.plan.reach, frame.outer, source.layer, frame.inner);
-      shared.uRingCaustics.value[Math.floor(index / 4)].setComponent(index % 4, source.caustic);
+      const slot = images.length + index;   // after the images (the header)
+      shared.uRingPlaces.value[slot].set(source.centreX, source.centreZ, source.directionX, source.directionZ);
+      shared.uRingShapes.value[slot].set(source.plan.reach, frame.outer, source.layer, frame.inner);
+      shared.uRingCaustics.value[Math.floor(slot / 4)].setComponent(slot % 4, source.caustic);
     });
+    shared.uRingCount.value = images.length + this.sources.length;
     texture.generateMipmaps = true;
     this.passesRun = 2 + this.sources.length;
     renderer.setRenderTarget(previousTarget);

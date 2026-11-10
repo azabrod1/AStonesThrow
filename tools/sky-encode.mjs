@@ -5,12 +5,19 @@
 // src/sky.js loads: a JPEG gain map that Three.js's UltraHDRLoader decodes
 // to half floats; and its horizon strip, assets/sky/<name>_horizon.jpg, the
 // same coding of the band about the horizon (HORIZON_STRIP in src/sky.js:
-// 17° up to 3° down) cut from the 8k panorama, assets/sky/<name>_8k.hdr,
+// 17° up to 3° down, or higher for a sky with a `stripAbove`) cut from the 8k panorama, assets/sky/<name>_8k.hdr,
 // which this tool downloads from Poly Haven when it is missing (never kept
-// in the repository: 100 MB each). The 2k photo gives the dome 5.7 pixels a
+// in the repository: 100 MB each). A sky tools/mall-backdrop.py builds (an
+// hour's `file` in tools/mall-backdrop.json) is no Poly Haven file: its 8k is
+// that tool's, written locally, so where it is missing the committed strip and
+// insets are kept as they are, not re-encoded, and the rest go on; --verify
+// still checks the committed files (committedFile). The 2k photo gives the dome 5.7 pixels a
 // degree, the strip 23, so the land on the skyline is sharp at a desktop's
 // or a phone's pixels (src/sky.js, Horizon, which decodes the strip on the
-// GPU).
+// GPU). A sky with `insets` (src/sky.js Insets: the Reflecting Pool's
+// landmarks) has its atlas too, assets/sky/<name>_insets.jpg, coded as the
+// strip is from assets/sky/<name>_insets.hdr (tools/mall-backdrop.py writes
+// it; gitignored, as the 8k sources are), wherever that file is.
 //
 //   node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--quality=n] [--no-horizon]
 //
@@ -20,7 +27,7 @@
 // half floats this tool's model of it gives, and each strip with the page's
 // own decoder (src/horizonStrip.js) within the GPU's arithmetic; rerun it
 // after a Three.js upgrade. --quality=n tries another quality for the base
-// image. --no-horizon leaves the strips alone (no 8k download).
+// image. --no-horizon leaves the strips and the insets alone (no 8k download).
 //
 // The format ("Ultra HDR"): a JPEG of 8-bit values, the base image, and after
 // it a second JPEG, the gain map, that says how far to raise each pixel; a
@@ -113,12 +120,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { HORIZON_STRIP, horizonRows } from '../src/sky.js';
+import { HORIZON_STRIP, horizonRows, stripAbove } from '../src/sky.js';
+import { parseHorizonStrip } from '../src/horizonStrip.js';
 import encodeJpeg, { init as initEncoder } from '@jsquash/jpeg/encode.js';
 import decodeJpeg, { init as initDecoder } from '@jsquash/jpeg/decode.js';
 
 const SDR_QUALITY = 95;        // mozjpeg's quality for the base image (chosen from sizes and frames: below)
 const HORIZON_QUALITY = 85;    // the horizon strip's (the header)
+const INSET_QUALITY = 90;      // the insets': seen close, where the strip is far
 const STRIP_LEVELS = 2;        // coded levels the page's GPU decode of a strip may differ from the loader's by (verify: the table's level and the half floats' rounding; 1.88 at worst, in a sunrise's disc)...
 const STRIP_RELATIVE = 5e-4;   // ...plus this share of the coded value (the GPU's pow against the loader's, in the sun's disc: up to 3 levels of 30 000, varying run to run)
 const HORIZON_URL = (name) => `https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/${HORIZON_STRIP.source}/${name}_${HORIZON_STRIP.source}.hdr`;
@@ -288,8 +297,8 @@ function container(baseJpeg, gainJpeg, metadata) {
 }
 
 /** The band about the horizon of a panorama, as the page's strip shows it (horizonRows). */
-function cropHorizon({ width, height, pixels, fileBytes }) {
-  const rows = horizonRows(height);
+function cropHorizon({ width, height, pixels, fileBytes }, aboveDegrees) {
+  const rows = horizonRows(height, aboveDegrees);
   const firstRow = height / 2 - rows.above;
   const stripHeight = rows.above + rows.below;
   return { width, height: stripHeight, pixels: pixels.slice(3 * firstRow * width, 3 * (firstRow + stripHeight) * width), fileBytes, horizonRow: rows.above };
@@ -387,20 +396,60 @@ async function encodeImage(name, panorama, measurement, quality, horizonRow = pa
   return { name, file, report, decoded, width, height };
 }
 
-/** The panorama's horizon strip (the header): its 8k source, downloaded if missing, cut to the band and encoded. */
+// The skies tools/mall-backdrop.py builds, its hours' files: their 8k sources are its own, never Poly Haven's.
+const BUILT_SKIES = new Set(Object.values(JSON.parse(await readFile(path.join(root, 'tools/mall-backdrop.json'), 'utf8')).hours).map((hour) => hour.file));
+
+/**
+ * The panorama's horizon strip (the header): its 8k source, downloaded if missing, cut to the band and encoded; or
+ * null for a built sky (BUILT_SKIES) whose source is not here, its committed strip left as it is.
+ */
 async function encodeHorizon(hdrPath, measurement) {
   const name = path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '');
   const sourcePath = path.join(path.dirname(hdrPath), `${name}_${HORIZON_STRIP.source}.hdr`);
   try {
     await access(sourcePath);
   } catch {
+    if (BUILT_SKIES.has(name)) {
+      console.log(`${name}: no ${path.basename(sourcePath)} (tools/mall-backdrop.py writes it): the committed strip and insets kept, not re-encoded`);
+      return null;
+    }
     console.log(`${name}: downloading ${HORIZON_URL(name)}`);
     const response = await fetch(HORIZON_URL(name));
     if (!response.ok) throw new Error(`${name}: ${HORIZON_URL(name)} answered ${response.status}`);
     await writeFile(sourcePath, Buffer.from(await response.arrayBuffer()));
   }
-  const strip = cropHorizon(await readPanorama(sourcePath));
+  const strip = cropHorizon(await readPanorama(sourcePath), stripAbove(name));
   return encodeImage(`${name}_horizon`, strip, measurement, HORIZON_QUALITY, strip.horizonRow);
+}
+
+/** The sky's insets (the header), if its atlas's source is there: no ground to blur (its horizon row past its foot). */
+async function encodeInsets(hdrPath, measurement) {
+  const name = path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '');
+  const sourcePath = path.join(path.dirname(hdrPath), `${name}_insets.hdr`);
+  try { await access(sourcePath); } catch { return null; }
+  const atlas = await readPanorama(sourcePath);
+  return encodeImage(`${name}_insets`, atlas, measurement, INSET_QUALITY, atlas.height);
+}
+
+/**
+ * A committed strip or atlas this run does not encode (a built sky's, its
+ * source not here), for verify: { name, file, decoded, width, height }, its
+ * half floats as this tool models the loader's decode of the file's own two
+ * JPEGs; null if there is no such file.
+ */
+async function committedFile(folder, name) {
+  let file;
+  try { file = await readFile(path.join(folder, `${name}.jpg`)); } catch { return null; }
+  const { base, gain, metadata } = parseHorizonStrip(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+  const decodeBytes = (jpeg) => decodeJpeg(jpeg.buffer.slice(jpeg.byteOffset, jpeg.byteOffset + jpeg.length));
+  const [baseBack, gainBack] = await Promise.all([decodeBytes(base), decodeBytes(gain)]);
+  const { width, height } = baseBack;
+  const decoded = new Float32Array(width * height * 3);
+  for (let index = 0; index < width * height; index++) {
+    const boost = boostOf(gainBack.data[4 * index], metadata);
+    for (let channel = 0; channel < 3; channel++) decoded[3 * index + channel] = THREE.DataUtils.fromHalfFloat(THREE.DataUtils.toHalfFloat(decodeChannel(baseBack.data[4 * index + channel], boost)));
+  }
+  return { name, file, decoded, width, height };
 }
 
 /**
@@ -424,7 +473,7 @@ async function verify(results) {
   });
   await page.setContent(`<script type="importmap">{"imports":{"three":"${origin}/build/three.module.js"}}</script>`);
   for (const { name, file, decoded } of results) {
-    const strip = name.endsWith('_horizon');
+    const strip = name.endsWith('_horizon') || name.endsWith('_insets');   // decoded on the GPU by the page
     const { halves: fromBrowser, gpu } = await page.evaluate(async ([base64, loaderUrl, stripUrl, strip, stripLevels, stripRelative]) => {
       const { UltraHDRLoader } = await import(loaderUrl);
       const THREE = await import('three');
@@ -507,8 +556,23 @@ for (const input of inputs) {
   results.push(result);
   if (argumentsGiven.includes('--no-horizon')) continue;
   const horizon = await encodeHorizon(input, measurement);
+  if (!horizon) {
+    // A built sky without its source: its committed strip and insets are still verified.
+    if (!argumentsGiven.includes('--verify')) continue;
+    const name = path.basename(input, '.hdr').replace(/_\d+k$/, '');
+    for (const kept of [`${name}_horizon`, `${name}_insets`]) {
+      const committed = await committedFile(path.dirname(input), kept);
+      if (committed) { console.log(`${kept}: the committed file, to be verified`); results.push(committed); }
+    }
+    continue;
+  }
   await writeFile(path.join(path.dirname(input), `${horizon.name}.jpg`), horizon.file);
   console.log(horizon.report);
   results.push(horizon);
+  const insets = await encodeInsets(input, measurement);
+  if (!insets) continue;
+  await writeFile(path.join(path.dirname(input), `${insets.name}.jpg`), insets.file);
+  console.log(insets.report);
+  results.push(insets);
 }
 if (argumentsGiven.includes('--verify')) await verify(results);

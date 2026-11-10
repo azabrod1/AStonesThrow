@@ -272,6 +272,7 @@ full screen, which only a press or a key may ask for):
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
   Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`),
+  Reflecting Pool (`?sky=mall`, below),
   Polynesian lagoon (`?sky=lagoon`): white coral sand, palms and reef fish
   under a pure sky (below, the tropics); or Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
@@ -1084,6 +1085,47 @@ The curated locations include:
   panoramas from one spot at water level: a 2024 morning and golden hour,
   a 2019 sunset and dusk. Faces the flat-topped hills across the water, the
   sun's path on it. Starts at the golden hour.
+- **Reflecting Pool** (`?sky=mall`): the Lincoln Memorial Reflecting Pool
+  in Washington, D.C., seen from its west wall down its 618 m to the
+  Washington Monument, at three hours of a September day in 2026: late
+  morning, sunset and night. That June its bed was coated in a navy
+  polyurea ("American flag blue", `MALL_BED` in `src/shaders/scene.js`),
+  so the water is blue near the eye and a mirror farther off. No one has published a free panorama taken there, so
+  each hour's sky is stitched from photographs on Wikimedia Commons over
+  one of Poly Haven's Qwantani pure skies (`tools/mall-backdrop.py`, its
+  plan `tools/mall-backdrop.json`, which lists each photo, its licence and
+  where it is aimed). The elms are our own: five single elms cut from Marty
+  Aligata's photographs (CC BY-SA 4.0) against their own skies, planted in
+  four rows along the pool and in groves out to 1.5 km, each stood upright
+  where it grows, sized by its distance and hazed by its air. Over them the
+  landmarks, cut from photographs and traced by hand where marble meets sky,
+  with the people taken off the Memorial's steps, and the steps, which its
+  photograph sees from off their axis, set square under it, and Lincoln's
+  statue, which the dusk photograph sees off its axis too, set back on its
+  bay's middle: the Monument down the pool
+  (Kenrick95, CC BY-SA 4.0) and the Lincoln Memorial behind the eye
+  (Jmarcosny, CC BY-SA 4.0), joined to the elms along minimum-cost seams.
+  The other hours are the day's graded to a photograph of that hour, with
+  its landmarks laid over in their own light: at sunset the Monument lit by
+  the low sun (Gregg L. Davis, CC BY-SA 4.0), the trees toward the sun
+  darkened as backlit, and behind the eye the Memorial floodlit (John
+  Brighenti, CC BY 2.0); at sunset the sun is behind the Memorial and the
+  eye in its shade. At night the pool's own night photograph (Ramakrishna
+  Gundra, CC BY-SA 4.0) is laid over the day's graded to its dark trees,
+  under a dim, nearly grey city glow; the hour's light never falls below the
+  floodlights' (`lit`, `src/sky.js`), so the eye keeps its colours. Zoomed
+  in, the Monument and the Memorial come from patches at their photographs'
+  own resolution, 96 and 57 pixels a degree against the horizon strip's 23
+  (`insets` in `src/sky.js`, `<file>_insets.jpg`). The
+  backdrop is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks,
+  the west plaza and the lawn are drawn (`src/mallPool.js`), the lawn out to
+  the horizon, where the elms stand on it; the water stops at the granite walls (`setBounds` in
+  `src/waterSurface.js`), and what reaches them comes back off them or
+  lies on the coping, as do the splash's drops (`tools/mall-probe.mjs`);
+  a stone's ring comes back off them as its mirror image across the wall
+  (`setWalls` in `src/rings.js`), and under the water they stand from the
+  bed to the coping (the bed's own mesh, `mallBedGeometry` in
+  `src/pondFloor.js`).
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
 
@@ -1129,6 +1171,11 @@ node tools/sky-probe.mjs assets/sky/small_harbour_sunset_2k.hdr --taken=2024-08-
 node tools/sky-probe.mjs assets/sky/small_harbor_01_2k.hdr --taken=2019-05-02T17:04:00+02:00 --at=-28.492189,29.002458 --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
 node tools/sky-probe.mjs assets/sky/small_harbor_02_2k.hdr --taken=2019-05-01T17:50:00+02:00 --at=-28.492613,29.002165 --align=assets/sky/small_harbour_morning_2k.hdr --band=1,5
 node tools/sky-probe.mjs assets/sky/radkow_lake_2k.hdr
+# the Reflecting Pool's hours (stitched by tools/mall-backdrop.py; each sky's sun turned to the true sun's place then)
+M=--at=38.8893,-77.0464
+node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2026-09-20T10:38:00-04:00 $M
+node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2026-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
+node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2026-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -1882,12 +1929,29 @@ farther out, so it rises into the view rather than filling its corner.
   never kept): each photoscan's normal and the detail of its colour packed
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
+- `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
+  Reflecting Pool's skies, one an hour, from its plan,
+  `tools/mall-backdrop.json`: it fetches the photographs (cached in
+  `tools/.mall-photos/`, gitignored), projects each to the panorama where
+  the plan aims it, mattes out its sky, matches its colour to the hour's
+  reference photograph, fills the gaps between them with copies of their
+  land cut along minimum-cost seams, lays the hour's own landmarks over
+  them, grades the land to the measured skies' brightness and lays it over
+  the hour's sky. For each hour it writes `assets/sky/<file>_2k.hdr` and the
+  8k file the horizon strip is cut from (`<file>_8k.hdr`, never committed),
+  and the landmarks' insets, their photographs worked at full size
+  (`<file>_insets.hdr`, never committed: the encoder makes the page's
+  `<file>_insets.jpg` from it); then run `tools/sky-probe.mjs` (with the hour's time and place: the runs
+  are under Reproduce the new measurements) and `tools/sky-encode.mjs
+  --verify` on each, as for any sky. About a minute an hour; needs numpy,
+  SciPy and Pillow.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
-  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon to 3°
-  below cut from Poly Haven's 8k file (downloaded beside it when missing,
-  never committed; `--no-horizon` skips it), which the page fetches after
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for the
+  Reflecting Pool, its `stripAbove`) to 3° below cut from Poly Haven's 8k file (downloaded beside it when missing,
+  never committed; `--no-horizon` skips it, and the insets), and a sky's insets
+  (`assets/sky/name_insets.jpg`, from `name_insets.hdr` where it is), which the page fetches after
   the sky and decodes on the GPU (`src/horizonStrip.js`; `--verify` checks
   that decode too): a base image and a gain map, matched
   to the arithmetic of Three.js's UltraHDRLoader so that it decodes to the
@@ -2008,6 +2072,12 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/mall-probe.mjs` checks the Reflecting Pool on the CPU: its
+  bed's GLSL twin is `MALL_POOL`, the walls that hold things and the water's
+  bounds stand at its walls; every thing sent at a wall or a corner, slow or
+  fast, or lobbed over it, never goes into the granite and never ends under
+  the coping's top; the ground leaves the pool open and reaches the horizon,
+  under its triangle bound.
 - `node tools/visitor-probe.mjs` checks whatever is out on Loch Ness
   (`src/lochVisitor.js`) on the CPU: over two hours it comes up within its
   first minute and every one to two and a half minutes after, every form

@@ -302,6 +302,7 @@ import { splashRandom, reseedSplashRandom, asSplash } from './splashRandom.js';
 import { RING_SOURCE } from './rings.js';
 import { DROP_RING } from './dropRings.js';
 import { STONE_DENSITY } from './things.js';
+import { basinBounds, basinDeck } from './basin.js';
 import { PARTICLE_VERTEX, SPRAY_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
@@ -843,6 +844,7 @@ export class SplashSystem {
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
+    this.groundBox = null;   // their far sides, x and z (setGround)
     this.ice = null;     // the ice over the water (setIce, src/ice.js), or none
     this.wetIce = null;  // its wetting where a drop lands on it (setIce)
     this.walls = null;   // the box the sheets and columns are held in (setGround)
@@ -1819,7 +1821,7 @@ export class SplashSystem {
       // coping, even if it ends the step below it, and one rising past the deck's top in the step crossed below it.
       if (this.ground) {
         const { square, deck } = this.ground;
-        const maxX = square.minX + square.size, maxZ = square.minZ + square.size;
+        const { maxX, maxZ } = this.groundBox;
         const inside = (pointX, pointZ) => pointX > square.minX && pointX < maxX && pointZ > square.minZ && pointZ < maxZ;
         const previousX = this.positions[p], previousY = this.positions[p + 1], previousZ = this.positions[p + 2];
         const was = inside(previousX, previousZ);
@@ -2201,17 +2203,22 @@ export class SplashSystem {
 
   /**
    * The ground round the water the drops can meet (null: none, the lake):
-   * a pool's `square` and its `deck`'s height (src/pool.js). A drop that
+   * a pool's `square` and its `deck`'s height (src/pool.js; the square's own
+   * `deck` unless given): the Pool's
+   * ({ minX, minZ, size }) or the Reflecting Pool's, a rectangle ({ minX,
+   * minZ, sizeX, sizeZ }, src/mallPool.js MALL_BASIN). A drop that
    * meets a wall's side below its top comes back off it (DECK_DROPS.wall of
    * its speed across it) into the pool; one that comes down on the deck lands
    * there, a big one splattering (DECK_DROPS.splatter), and `onWet(x, z,
    * radius)` marks the paving wet where it fell.
    */
   setGround(ground) {
-    this.ground = ground;
+    this.ground = ground ? { ...ground, deck: ground.deck ?? basinDeck(ground.square) } : null;
     const square = ground?.square;
     const inset = DECK_DROPS.wallInset;
-    this.walls = square ? { minX: square.minX + inset, maxX: square.minX + square.size - inset, minZ: square.minZ + inset, maxZ: square.minZ + square.size - inset } : null;
+    const bounds = square ? basinBounds(square) : null;
+    this.groundBox = bounds && { maxX: bounds.maxX, maxZ: bounds.maxZ };
+    this.walls = bounds && { minX: bounds.minX + inset, maxX: bounds.maxX - inset, minZ: bounds.minZ + inset, maxZ: bounds.maxZ - inset };
     this.whiteWater.setWalls(this.walls);   // a stream's churn too (src/whiteWater.js)
   }
 
