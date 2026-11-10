@@ -98,7 +98,8 @@
 //     water and takes normal drag, its edge skin drag; the flow turns it.
 //   - look: `mesh`, the kind of mesh it is drawn with (src/thingMeshes.js,
 //     registerMesh), that kind's own parameters, and the material's
-//     `roughness` and `reflection`; `wet`, how much `darker` and `glossier`
+//     `roughness`, `reflection` and `metalness` (0 unless it says: a brass
+//     nozzle's 0.7, the same program); `wet`, how much `darker` and `glossier`
 //     it looks wet (out of the water it dries, src/rock.js showWet; a stone
 //     darkens most, a gem not at all); `thumbnail`, its card's picture;
 //     `seenThrough`, clear (a shard of ice): afloat, what lies under it shows
@@ -118,6 +119,14 @@
 //   - edible: fish eat it (src/fish.js): once it has settled in the water they
 //     come to it and bite, and after as many bites as its mass says
 //     (edibleBites) it is gone (a frozen one only once thawed).
+//   - stream: a thing that is not thrown but held, and shoots a stream of
+//     water where it is aimed for as long as the press lasts (the water
+//     cannon, src/waterCannon.js): `pressure`, { unit, min, max, step,
+//     initial } in bar, is what the strip's slider sets in place of its size
+//     (its body is then of one size, `size.by` 'fixed': the nozzle in the
+//     hand), and `nozzle`, [least, most] m, the bore's radius at the
+//     slider's ends. It never skips, lobs or has a strength: the slider is
+//     its one control.
 // Besides: `name`, `short` (the strip's name for it), `group` (the setting's
 // heading), `note` (the card's line, one line on it: some 40 characters fit
 // a phone's card whole, a longer one is cut short) and `called` (the throw button's
@@ -207,6 +216,7 @@
 // compiles a program of its own (src/main.js warmUp).
 import { meshKind, unitVolume, unitLength } from './thingMeshes.js';
 import { withRandom } from './withRandom.js';
+import { nozzle } from './waterCannon.js';
 
 export const WATER_DENSITY = 1000;
 export const STONE_DENSITY = 2600;   // a river stone's: the splash and the cavity were fitted to it (tools/basilisk)
@@ -240,6 +250,7 @@ const LIMITS = {
   columns: [8, 60],            // its buoyancy's columns across its widest (water.columns)
   restingHeight: [0.001, 2],   // its centre over the bed at rest, in radii
   ballast: 4,                  // radii: the farthest its weight may be from its volume's middle (body.ballast; a long-stemmed rose's is far down its stem in its small radii)
+  nozzle: [0.001, 0.05],       // m: a stream's bore's radius (stream.nozzle)
   text: 120,                   // characters in a name, group or note
 };
 
@@ -332,10 +343,24 @@ function definitionProblems(key, definition) {
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
   need(definition.hidden === undefined || typeof definition.hidden === 'boolean', 'hidden must be true or false');
   need(definition.edible === undefined || typeof definition.edible === 'boolean', 'edible must be true or false');
+  // A stream (the header): its pressure's slider and its bore; its body of one size, its nozzle.
+  const stream = definition.stream;
+  if (stream !== undefined) {
+    const pressure = isObject(stream) ? stream.pressure : undefined;
+    need(isObject(stream) && isObject(pressure) && typeof pressure.unit === 'string' && pressure.unit.length > 0 && pressure.unit.length <= 10
+      && isNumber(pressure.min) && isNumber(pressure.max) && isNumber(pressure.step) && pressure.min > 0 && pressure.max > pressure.min && pressure.step > 0 && (pressure.max - pressure.min) / pressure.step <= 10000
+      && isNumber(pressure.initial) && pressure.initial >= pressure.min && pressure.initial <= pressure.max,
+    'stream.pressure needs a unit and min < max, a step and an initial within them, all above 0 (at most 10000 steps)');
+    need(isObject(stream) && Array.isArray(stream.nozzle) && stream.nozzle.length === 2 && stream.nozzle.every((radius) => within(radius, LIMITS.nozzle)) && stream.nozzle[0] <= stream.nozzle[1],
+      `stream.nozzle must be [least, most] radii of ${LIMITS.nozzle.join(' to ')} m`);
+    need(size.by === 'fixed', 'a thing with a stream has a body of one size (body.size.by fixed): its nozzle');
+    need(abilities.skips !== true, 'a thing with a stream does not skip');
+  }
   need(body.meetsAtRim === undefined || typeof body.meetsAtRim === 'boolean', 'body.meetsAtRim must be true or false');
   const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
   need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
   for (const field of ['roughness', 'reflection']) need(look[field] === undefined || within(look[field], [0, 4]), `look.${field} must be 0 to 4`);
+  need(look.metalness === undefined || within(look.metalness, [0, 1]), 'look.metalness must be 0 to 1');
   need(look.thumbnail === undefined || typeof look.thumbnail === 'string', 'look.thumbnail must be a path');
   need(look.wet === undefined || (isObject(look.wet) && within(look.wet.darker, [0, 1]) && within(look.wet.glossier, [0, 1])), 'look.wet needs darker and glossier, each 0 to 1');
   need(look.seenThrough === undefined || typeof look.seenThrough === 'boolean', 'look.seenThrough must be true or false');
@@ -397,6 +422,7 @@ function measureFor(definition) {
 /** The strip's text for a definition's slider `value`. */
 function readoutFor(definition) {
   const size = definition.body.size;
+  if (definition.stream) return (value) => `${Number(value ?? definition.stream.pressure.initial).toFixed(1)} ${definition.stream.pressure.unit}`;
   switch (size.by) {
     case 'diameter': return (value) => `${value % 1 === 0 ? value : value.toFixed(1)} cm`;
     case 'mass': return (value) => `${value} ${size.unit}`;
@@ -429,7 +455,10 @@ function propertiesFor(definition, measure, readout) {
     // Its size as its length: its diameter, or, where its mesh says its nominal radius is not half its length (a
     // banana's is its ball's of like volume), its mesh's own length (src/thingMeshes.js unitLength).
     const length = unitLength(definition) * radius;
-    const text = size.by === 'fixed' ? `${centimetres(length)} · ${grams(mass)}`
+    // A stream's line is its nozzle's at that pressure: "2.0 bar · ⌀ 20 mm · 20 m/s" (src/waterCannon.js nozzle).
+    const made = definition.stream ? nozzle(value ?? definition.stream.pressure.initial, definition.stream) : null;
+    const text = made ? `${readout(value)} · ⌀ ${Math.round(2000 * made.radius)} mm · ${made.speed.toFixed(0)} m/s`
+      : size.by === 'fixed' ? `${centimetres(length)} · ${grams(mass)}`
       : preset?.name ? `${preset.name} · ${preset.label}`
         : size.by === 'mass' ? `${readout(value)} · ${centimetres(length)}`
           : `${readout(value)} · ${grams(mass)}`;
@@ -479,9 +508,11 @@ export function defineThing(key, definition, { trial = true } = {}) {
     sphere: definition.body.shape === 'sphere',
     byDiameter: size.by === 'diameter',
     sizeShare: size.share ?? null,
-    slider: size.by === 'fixed' ? null
-      : size.by === 'preset' ? { min: size.presets[0].value, max: size.presets.at(-1).value, step: 1, initial: size.initial, unit: size.unit }
-        : { min: size.min, max: size.max, step: size.step, initial: size.initial, unit: size.unit },
+    // A stream's slider is its pressure (the header), its body of one size.
+    slider: definition.stream ? { ...definition.stream.pressure }
+      : size.by === 'fixed' ? null
+        : size.by === 'preset' ? { min: size.presets[0].value, max: size.presets.at(-1).value, step: 1, initial: size.initial, unit: size.unit }
+          : { min: size.min, max: size.max, step: size.step, initial: size.initial, unit: size.unit },
     measure: measureFor(definition),
     readout: readoutFor(definition),
   };
@@ -916,4 +947,18 @@ defineBuiltIn('roses', {
   air: { drag: 1.0, spin: [1.5, 6] },
   water: { restingHeight: 0.5, columnsAlong: [0, 1, 0] },
   look: { mesh: 'roses', count: 12, roughness: 0.75, reflection: 0.7, wet: { darker: 0.1, glossier: 0.4 } },
+});
+// A water cannon (the header's `stream`; src/waterCannon.js): a fire truck's monitor nozzle held in the hand, which
+// shoots a stream of water where it is aimed for as long as the press lasts. The slider is its pressure, 0.5 to 10 bar:
+// the exit speed is Bernoulli's, sqrt(2P/ρ), 10 to 45 m/s, and the bore grows with it, 5 to 25 mm in radius, so the
+// flow runs from under a litre a second to some ninety, a deck gun's. The nozzle itself (src/thingMeshes.js
+// createNozzleGeometry) is a brass monitor tip on a stub of red hose, 26 cm long, 8 cm across its coupling, of one size.
+defineBuiltIn('cannon', {
+  name: 'Water cannon', short: 'Cannon', group: 'Other', note: 'Hold to fire; the slider is its pressure', called: 'a jet of water',
+  body: { shape: 'mesh', size: { by: 'fixed', diameter: 0.08, mass: 1.6 } },
+  material: { bounce: [0.15, 0.3], friction: 0.5 },
+  water: { restingHeight: 0.75 },
+  look: { mesh: 'nozzle', roughness: 0.3, reflection: 1.4, metalness: 0.7, wet: { darker: 0.05, glossier: 0.3 } },
+  abilities: { skips: false },
+  stream: { pressure: { unit: 'bar', min: 0.5, max: 10, step: 0.1, initial: 3 }, nozzle: [0.005, 0.025] },
 });
