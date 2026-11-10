@@ -4,7 +4,8 @@
 # assets/birds/models.json. Run it again to rebuild them all (never edit
 # any):
 #
-#   python3 tools/bird-models.py          (numpy, scipy, Pillow with WebP, opencv-python-headless)
+#   python3 tools/bird-models.py [kind ...]   (numpy, scipy, Pillow with WebP, opencv-python-headless; the kinds named,
+#                                             else all)
 #
 # A bird is a 3D model shaped and painted from photographs (KINDS): the
 # photographs are Wikimedia Commons files under licences that let them be
@@ -39,6 +40,7 @@
 # kind's image, padded and bled so its mip levels never borrow a neighbour's
 # edge.
 import json
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -54,7 +56,7 @@ CACHE = ROOT / 'tools' / '.bird-photos'
 OUT = ROOT / 'assets' / 'birds'
 USER_AGENT = 'AStonesThrowBirdSprites/1.0 (https://github.com/azabrod1/AStonesThrow)'
 PADDING = 6
-PIXELS_PER_METRE = 420    # every part's picture: about this sharp (a 2 m eagle's wing 420 px out)
+PIXELS_PER_METRE = 420    # every part's picture: about this sharp (a 2 m eagle's wing 420 px out), but a kind's own `pixelsPerMetre`
 STATIONS = 48             # the outlines' samples along the body and the span
 
 CC_BY_2 = ('CC BY 2.0', 'https://creativecommons.org/licenses/by/2.0/')
@@ -116,6 +118,43 @@ KINDS = {
                   points=[(643, 523), (760, 577), (723, 337), (868, 347)],
                   at=[(0.08, 0.06), (0.08, -0.27), (0.49, 0.06), (0.56, -0.24)],
                   low=20, high=48, gamma=1.0, gain=(1.08, 1.0, 0.9), neutral=True, upper=dict(tint=(1.0, 1.0, 1.0)), under=dict(tint=(0.9, 0.9, 0.9))),
+    ),
+    # Blue jay (the Reflecting Pool): its body side on, foraging on the ground (its head raised, so levelled along its
+    # body: `level`), its wing from above as one came in to land, wings spread (its underside made from it: a jay's
+    # blue is its upper side's only, the feathers grey beneath). That photograph is CC BY-SA, so this kind's image is
+    # shared so too.
+    'blueJay': dict(
+        length=0.28, span=0.40, pixelsPerMetre=1500,
+        body=dict(file='Bluejay (Cyanocitta cristata).jpg', author='Sam', licence=CC_BY_2, flip=True, cut='outline', inset=3,
+                  bill=(208, 62), tail=(1114, 494), level=[(330, 250), (870, 400)],
+                  outline=[(208, 62), (240, 61), (275, 64), (300, 58), (330, 52), (370, 52), (405, 62), (431, 93), (455, 127), (510, 155), (570, 195), (620, 232), (660, 258), (710, 272), (760, 298), (800, 328), (840, 358), (875, 382), (920, 400), (990, 428), (1055, 458), (1100, 480), (1114, 494), (1095, 507), (1040, 494), (970, 470), (905, 447), (850, 425), (800, 413), (745, 422), (690, 440), (640, 470), (600, 492), (556, 490), (507, 482), (466, 463), (428, 434), (397, 400), (370, 358), (345, 310), (333, 255), (322, 215), (306, 180), (290, 145), (270, 112), (252, 90), (228, 76)]),
+        wing=dict(file='Blue Jay (Jim Ridley 2010.).jpg', author='Jim Ridley', licence=CC_BY_SA_4, face='upper', cut='grabcut',
+                  side='right', crop=(80, 220, 410, 425),
+                  mask=[(228, 236), (300, 232), (370, 236), (400, 244), (400, 262), (385, 290), (365, 320), (340, 345), (312, 362), (290, 380),
+                        (260, 398), (225, 408), (185, 412), (140, 416), (100, 416), (92, 408), (110, 390), (135, 365), (150, 345), (165, 322),
+                        (185, 295), (205, 268), (220, 250)],
+                  points=[(225, 246), (392, 252), (168, 318), (318, 352)],
+                  at=[(0.025, 0.012), (0.025, -0.063), (0.099, 0.012), (0.109, -0.055)],
+                  gain=(1.0, 1.0, 1.0), under=dict(grey=0.85, tint=(0.92, 0.93, 0.97))),
+        tailColour='body',
+    ),
+    # Northern cardinal, a male (the Reflecting Pool): side on on a branch, perched upright (levelled along its body),
+    # its tail swung back into line and its head back up (`swing`), as it holds them in flight; a wing raised as one landed, its underside
+    # to the camera (its upper side tinted from it). That photograph is CC BY-SA, so this kind's image is shared so too.
+    'cardinal': dict(
+        length=0.22, span=0.29, pixelsPerMetre=1500,
+        body=dict(file='Cardinalis cardinalis (northern cardinal) 2.jpg', author='James St. John', licence=CC_BY_2, flip=True, cut='outline', inset=2, gain=(0.9, 0.9, 0.92),
+                  bill=(172, 216), tail=(566, 632), level=[(235, 300), (480, 455)],
+                  swing=[dict(part='tail', hinge=(495, 470), turn=-33), dict(part='head', hinge=(262, 262), turn=-26, blend=30)],
+                  outline=[(172,216), (191,200), (209,178), (216,137), (228,97), (244,61), (259,84), (275,125), (291,153), (300,169), (337,197), (381,228), (425,259), (462,294), (487,325), (512,356), (534,387), (550,425), (562,462), (569,500), (572,550), (575,600), (566,631), (537,634), (500,569), (475,525), (459,491), (437,482), (410,476), (373,465), (346,451), (306,415), (271,377), (250,327), (242,275), (236,250), (232,232), (222,226), (200,226), (180,221)]),
+        wing=dict(file='Cardinal landing - Texas (55088178980).jpg', author='Andy Morffew', licence=CC_BY_SA_4,
+                  side='right', crop=(270, 140, 440, 490),
+                  mask=[(410, 400), (412, 330), (410, 275), (398, 240), (380, 205), (360, 175), (340, 155), (320, 150), (300, 160), (288, 185),
+                        (285, 230), (288, 280), (292, 330), (300, 380), (314, 435), (328, 475), (360, 482), (398, 445)],
+                  points=[(405, 395), (325, 468), (408, 280), (295, 300)],
+                  at=[(0.022, 0.010), (0.022, -0.060), (0.095, 0.010), (0.100, -0.055)],
+                  cut='grabcut', gain=(0.95, 0.72, 0.7), upper=dict(tint=(1.0, 0.62, 0.6))),
+        tailColour='body',
     ),
 }
 SIDE_PIXELS_PER_METRE = 600   # a standing bird's side picture: sharper, as it is seen near
@@ -180,24 +219,93 @@ def cut_from_sky(image, low, high):
     return alpha, colour
 
 
-def body_part(spec, length):
-    """The body side on: its picture (RGBA, PIXELS_PER_METRE), and its outline's top and bottom along it (m)."""
+def mended(image, spec, outline=None):
+    """The photo with what lies across the bird painted out (OpenCV's inpainting): `mend`, strokes (points, thickness)
+    over a twig or a branch; `despeckle`, inside the outline, specks brighter than their surroundings by that much
+    (snowflakes on a red bird)."""
+    if not spec.get('mend') and not spec.get('despeckle'):
+        return image
+    mask = np.zeros(image.shape[:2], np.uint8)
+    for points, thickness in spec.get('mend', []):
+        cv2.polylines(mask, [np.array(points, np.int32)], False, 255, thickness)
+    if spec.get('despeckle') and outline is not None:
+        inside = np.zeros(image.shape[:2], np.uint8)
+        cv2.fillPoly(inside, [np.round(outline).astype(np.int32)], 1)
+        green = image[..., 1].astype(np.float32)
+        surroundings = cv2.medianBlur(image[..., 1].astype(np.uint8), 15).astype(np.float32)
+        specks = (green - surroundings > spec['despeckle']) & (inside > 0)
+        mask |= cv2.dilate(specks.astype(np.uint8) * 255, np.ones((5, 5), np.uint8))
+    painted = cv2.inpaint(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, 5, cv2.INPAINT_TELEA)
+    return cv2.cvtColor(painted, cv2.COLOR_BGR2RGB).astype(np.float64)
+
+
+def tail_turned(image, spec, points):
+    """A perched bird's tail and head as it holds them in flight (`swing`, each a hinge, a turn in degrees and its
+    `part`: the tail behind the hinge along the body's axis, or the head ahead of it): the photo warped, blended in over a
+    few pixels at the hinge, and the traced points with it."""
+    for turn in spec.get('swing', []):
+        image, points = swung(image, spec, points, turn)
+    return image, points
+
+
+def swung(image, spec, points, turn):
+    """One of tail_turned's swings."""
+    hinge = np.array(turn['hinge'], np.float64)
+    (front_x, front_y), (back_x, back_y) = spec['level'] if 'level' in spec else (spec['bill'], spec['tail'])
+    axis = np.array([back_x - front_x, back_y - front_y], np.float64)
+    axis /= np.hypot(*axis)
+    if turn.get('part') == 'head':   # ahead of the hinge, not behind it
+        axis = -axis
+    angle = np.radians(turn['turn'])
+    blend = turn.get('blend', 12)
+    def weight(along):
+        share = np.clip(along / blend, 0, 1)
+        return share * share * (3 - 2 * share)
+    def rotate(offsets, angles):
+        cos, sin = np.cos(angles), np.sin(angles)
+        return np.stack([offsets[..., 0] * cos - offsets[..., 1] * sin, offsets[..., 0] * sin + offsets[..., 1] * cos], axis=-1)
+    # The photo: each pixel behind the hinge taken from where it was before the swing.
+    height, width, _ = image.shape
+    columns, rows = np.meshgrid(np.arange(width, dtype=np.float64), np.arange(height, dtype=np.float64))
+    offsets = np.stack([columns - hinge[0], rows - hinge[1]], axis=-1)
+    along = offsets @ axis
+    source = rotate(offsets, -angle * weight(along)) + hinge
+    warped = cv2.remap(image.astype(np.float32), source[..., 0].astype(np.float32), source[..., 1].astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    # The points: swung likewise.
+    point_offsets = np.asarray(points, np.float64) - hinge
+    moved = rotate(point_offsets, angle * weight(point_offsets @ axis)) + hinge
+    return warped.astype(np.float64), moved
+
+
+def body_part(spec, length, pixels=PIXELS_PER_METRE):
+    """The body side on: its picture (RGBA, pixels), and its outline's top and bottom along it (m)."""
     image = photo(spec['file'])
-    alpha, colour = cut_from_sky(image, spec['low'], spec['high'])
-    colour = np.clip(colour * np.array(spec['gain']), 0, 255)
-    outline = np.array(spec['outline'], np.float64)
+    traced = np.array(spec['outline'], np.float64)
+    image = mended(image, spec, traced)
+    image, moved = tail_turned(image, spec, np.vstack([traced, [spec['bill'], spec['tail']]]))
+    outline, (bill_point, tail_point) = moved[:-2], moved[-2:]
+    if spec.get('cut') == 'outline':   # not against a sky: GrabCut started from the outline (what of the ground or a
+        alpha, colour = cut_traced(image, outline), image   # branch lies inside it takes the bird's nearest colour)
+    else:
+        alpha, colour = cut_from_sky(image, spec['low'], spec['high'])
+    colour = np.clip(colour * np.array(spec.get('gain', (1.0, 1.0, 1.0))), 0, 255)
     if spec.get('flip'):
         width = image.shape[1]
         outline[:, 0] = width - 1 - outline[:, 0]
         alpha, colour = alpha[:, ::-1], colour[:, ::-1]
-    bill, tail = np.array(spec['bill'], np.float64), np.array(spec['tail'], np.float64)
+    bill, tail = bill_point.copy(), tail_point.copy()
+    level = np.array(spec['level'], np.float64) if 'level' in spec else np.array([bill, tail])
     if spec.get('flip'):
         bill[0], tail[0] = image.shape[1] - 1 - bill[0], image.shape[1] - 1 - tail[0]
+        level[:, 0] = image.shape[1] - 1 - level[:, 0]
     # Photo px to metres: the bill's tip at x = +length/2, the tail's tip at −length/2, up the photo's up, turned so
-    # the line between them is level.
+    # the line between them is level (or `level`'s two points, front then back, the body's own axis where the head is
+    # raised: the bill and the tail then set only the length, along that axis).
+    axis = level[0] - level[1]
+    axis /= np.hypot(*axis)
     along = bill - tail
-    scale = length / np.hypot(*along)
-    angle = np.arctan2(along[1], along[0])
+    scale = length / abs(along @ axis)
+    angle = np.arctan2(axis[1], axis[0])
     rotation = np.array([[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]])
     middle = (bill + tail) / 2
     def to_metres(points):
@@ -205,23 +313,26 @@ def body_part(spec, length):
         return np.stack([local[:, 0], -local[:, 1]], axis=1)
     outline_m = to_metres(outline)
     # The picture: the photo turned level and scaled, cut to the outline.
+    # Its extent: the outline's (an upright bird levelled along its body may reach past its bill's tip with its crest).
     top, bottom = outline_m[:, 1].max(), outline_m[:, 1].min()
-    left, right = -length / 2, length / 2
-    width_px = int(round((right - left) * PIXELS_PER_METRE)) + 1
-    height_px = int(round((top - bottom) * PIXELS_PER_METRE)) + 1
+    left, right = min(-length / 2, outline_m[:, 0].min()), max(length / 2, outline_m[:, 0].max())
+    width_px = int(round((right - left) * pixels)) + 1
+    height_px = int(round((top - bottom) * pixels)) + 1
     # Picture px (column, row) to photo px: metres, then back through the rotation.
     inverse = np.linalg.inv(rotation)
     columns, rows = np.meshgrid(np.arange(width_px), np.arange(height_px))
-    metres_x = left + columns / PIXELS_PER_METRE
-    metres_y = top - rows / PIXELS_PER_METRE
+    metres_x = left + columns / pixels
+    metres_y = top - rows / pixels
     local = np.stack([metres_x / scale, -metres_y / scale], axis=-1) @ inverse.T + middle
     map_x, map_y = local[..., 0].astype(np.float32), local[..., 1].astype(np.float32)
     rgba = np.dstack([colour, alpha * 255]).astype(np.float32)
     picture = cv2.remap(rgba, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     inside = np.zeros((height_px, width_px), np.uint8)
-    polygon = np.stack([(outline_m[:, 0] - left) * PIXELS_PER_METRE, (top - outline_m[:, 1]) * PIXELS_PER_METRE], axis=1)
+    polygon = np.stack([(outline_m[:, 0] - left) * pixels, (top - outline_m[:, 1]) * pixels], axis=1)
     cv2.fillPoly(inside, [np.round(polygon).astype(np.int32)], 1)
     inside = cv2.dilate(inside, np.ones((3, 3), np.uint8))
+    if spec.get('inset'):   # the outline pulled in this many of the picture's pixels (the ground's fringe left outside)
+        inside = cv2.erode(inside, np.ones((2 * spec['inset'] + 1, 2 * spec['inset'] + 1), np.uint8))
     # Solid inside its outline (the loft is closed): where the photo's bird is faint there (a white tail against a pale
     # sky), its nearest solid pixel's colour.
     solid = picture[..., 3] > 160
@@ -247,12 +358,15 @@ def body_part(spec, length):
     }
 
 
-def wing_part(spec, span):
+def wing_part(spec, span, pixels=PIXELS_PER_METRE):
     """A wing from below, rectified flat: its picture (RGBA), its edges along the span (m), and the rect it covers."""
     image = photo(spec['file'])
     left, top, right, bottom = spec['crop']
-    piece = image[top:bottom, left:right]
-    alpha, colour = cut_from_sky(piece, spec['low'], spec['high'])
+    piece = mended(image, spec)[top:bottom, left:right]
+    if spec.get('cut') == 'grabcut':   # not against a sky (grass, a lawn): GrabCut, started from the traced `mask`
+        alpha, colour = cut_traced(piece, np.array(spec['mask'], np.float64) - np.array([left, top])), piece
+    else:
+        alpha, colour = cut_from_sky(piece, spec['low'], spec['high'])
     colour = 255 * (colour / 255) ** spec.get('gamma', 1.0)   # a backlit underwing's shadows lifted
     colour = np.clip(colour * np.array(spec['gain']), 0, 255)
     if spec.get('neutral'):   # a grey wing's sky-blue cast (its edge un-mixed from a blue sky, light bounced off it) taken out
@@ -266,16 +380,16 @@ def wing_part(spec, span):
     points = np.array(spec['points'], np.float64) - np.array([left, top])
     at = np.array(spec['at'], np.float64)
     semispan = span / 2
-    chord_front, chord_back = 0.25, -0.75   # the flat wing's rect: forward of the shoulder to behind it (m)
-    width_px = int(round(semispan * PIXELS_PER_METRE)) + 1
-    height_px = int(round((chord_front - chord_back) * PIXELS_PER_METRE)) + 1
+    chord_front, chord_back = 0.125 * span, -0.375 * span   # the flat wing's rect: forward of the shoulder to behind it (m; an eagle's 0.25 to −0.75)
+    width_px = int(round(semispan * pixels)) + 1
+    height_px = int(round((chord_front - chord_back) * pixels)) + 1
     # Flat wing px: column = m out from the axis, row = m back from chord_front.
-    target = np.stack([at[:, 0] * PIXELS_PER_METRE, (chord_front - at[:, 1]) * PIXELS_PER_METRE], axis=1)
+    target = np.stack([at[:, 0] * pixels, (chord_front - at[:, 1]) * pixels], axis=1)
     homography = cv2.getPerspectiveTransform(points.astype(np.float32), target.astype(np.float32))
     rgba = np.dstack([colour, alpha * 255]).astype(np.float32)
     flat = cv2.warpPerspective(rgba, homography, (width_px, height_px), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     # Only the wing: what lies inboard of the shoulder (the body) is cut away.
-    root_px = int(round(at[0, 0] * PIXELS_PER_METRE))
+    root_px = int(round(at[0, 0] * pixels))
     flat[:, :root_px, 3] = 0
     # Its outline a pixel inside the cut-out's (the sky un-mixed from the edge leaves a pale fringe), solid within.
     solid = ndimage.binary_erosion(largest(flat[..., 3] > 128), iterations=2)
@@ -285,17 +399,42 @@ def wing_part(spec, span):
     stations = np.linspace(at[0, 0], semispan, STATIONS)
     leads, trails = [], []
     for s in stations:
-        column = min(int(round(s * PIXELS_PER_METRE)), width_px - 1)
+        column = min(int(round(s * pixels)), width_px - 1)
         rows = np.nonzero(flat[:, column, 3] > 128)[0]
         if len(rows) == 0:
             leads.append(None); trails.append(None); continue
-        leads.append(round(float(chord_front - rows.min() / PIXELS_PER_METRE), 4))
-        trails.append(round(float(chord_front - rows.max() / PIXELS_PER_METRE), 4))
+        leads.append(round(float(chord_front - rows.min() / pixels), 4))
+        trails.append(round(float(chord_front - rows.max() / pixels), 4))
     tip = max((s for s, lead in zip(stations, leads) if lead is not None), default=semispan)
     return Image.fromarray(flat.clip(0, 255).astype(np.uint8)), {
         'stations': [round(float(s), 4) for s in stations], 'lead': leads, 'trail': trails, 'tip': round(float(tip), 4),
         'rect': [0.0, chord_back, semispan, chord_front],
     }
+
+
+def cut_traced(image, polygon):
+    """OpenCV's GrabCut started from a traced outline: surely the bird well inside it, surely not well outside, and
+    either way across its edge."""
+    height, width, _ = image.shape
+    inside = np.zeros((height, width), np.uint8)
+    cv2.fillPoly(inside, [np.round(polygon).astype(np.int32)], 1)
+    mask = np.full((height, width), cv2.GC_BGD, np.uint8)
+    mask[cv2.dilate(inside, np.ones((13, 13), np.uint8)) > 0] = cv2.GC_PR_BGD
+    mask[inside > 0] = cv2.GC_PR_FGD
+    mask[cv2.erode(inside, np.ones((13, 13), np.uint8)) > 0] = cv2.GC_FGD
+    models = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
+    cv2.grabCut(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, None, *models, 6, cv2.GC_INIT_WITH_MASK)
+    bird = ndimage.binary_fill_holes(largest((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)))
+    return np.clip((ndimage.gaussian_filter(bird.astype(np.float64), 0.7) - 0.2) / 0.6, 0, 1)
+
+
+def underside(picture, under):
+    """A wing's underside from its upper side's picture (`face='upper'`): greyed by `grey` (0 to 1: a jay's blue is
+    on its upper side only) and tinted, its outline the same."""
+    array = np.asarray(picture).astype(np.float64)
+    grey = array[..., :3].mean(axis=2, keepdims=True)
+    array[..., :3] = (array[..., :3] * (1 - under.get('grey', 0)) + grey * under.get('grey', 0)) * np.array(under.get('tint', (1, 1, 1)))
+    return Image.fromarray(array.clip(0, 255).astype(np.uint8))
 
 
 def cut_grabcut(image, spec):
@@ -514,8 +653,18 @@ def credit(spec):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    # Only the kinds named (python3 tools/bird-models.py blueJay cardinal), the others' as they were; else all.
+    wanted = set(sys.argv[1:]) or set(KINDS)
+    unknown = wanted - set(KINDS)
+    if unknown:
+        raise SystemExit(f'no such kind: {", ".join(sorted(unknown))}')
+    known = json.loads((OUT / 'models.json').read_text()) if (OUT / 'models.json').exists() else {}
     models = {}
     for kind, spec in KINDS.items():
+        if kind not in wanted:
+            if kind in known:
+                models[kind] = known[kind]
+            continue
         if spec.get('standing'):
             side_picture, legs_picture, side = side_part(spec['side'], spec['length'])
             wing_picture, wing = wing_part(spec['wing'], spec['span'])
@@ -528,11 +677,16 @@ def main():
                             'side': side, 'wing': wing, 'uv': uv, 'credits': [credit(spec['side']), credit(spec['wing'])]}
             print(f'{kind}: {atlas.size[0]}×{atlas.size[1]}, {(OUT / file).stat().st_size // 1024} KB; wing tip {wing["tip"]} m; hips {-min(leg["foot"][1] for leg in side["legs"]):.3f} m up')
             continue
-        body_picture, body = body_part(spec['body'], spec['length'])
-        wing_picture, wing = wing_part(spec['wing'], spec['span'])
-        upper = spec['wing'].get('upper', {})
-        upper_picture = tinted(wing_picture, upper.get('tint', (0.85, 0.85, 0.85)))
-        parts = {'body': body_picture, 'under': wing_picture, 'upper': upper_picture, 'tail': tail_part(body_picture, body)}
+        # A small bird, seen near, sharper (`pixelsPerMetre`).
+        pixels = spec.get('pixelsPerMetre', PIXELS_PER_METRE)
+        body_picture, body = body_part(spec['body'], spec['length'], pixels)
+        wing_picture, wing = wing_part(spec['wing'], spec['span'], pixels)
+        if spec['wing'].get('face') == 'upper':   # a photograph of its upper side: the underside made from it
+            under_picture, upper_picture = underside(wing_picture, spec['wing']['under']), wing_picture
+        else:
+            upper = spec['wing'].get('upper', {})
+            under_picture, upper_picture = wing_picture, tinted(wing_picture, upper.get('tint', (0.85, 0.85, 0.85)))
+        parts = {'body': body_picture, 'under': under_picture, 'upper': upper_picture, 'tail': tail_part(body_picture, body)}
         atlas, uv = pack(parts)
         atlas = bleed(atlas)
         file = f'{kind}-model.webp'   # beside tools/bird-sprites.py's pictures (assets/birds/<kind>.webp)
