@@ -610,9 +610,13 @@ the view from beyond a side of the frame, goes about over the water and
 leaves, and is away a while before it comes again. Each visit is a path of
 its own, drawn from the bird's seed and the visit's number: across from one
 side to the other, wandering nearer and farther; in, round in a wide turn
-and back out; or, for the eagles, gulls and frigatebirds, round and round in
-a thermal, rising, and off. The path is a smooth spline flown at the bird's
-speed, so it banks into its turns as a glider does and never jerks; each
+and back out; or, for the eagles and frigatebirds, round and round in a
+thermal, rising, and off. The path is a smooth spline flown at the bird's
+speed, laid out so that no turn on it needs more than 28° of bank, so it
+banks into its turns gently, as a glider does, and never jerks. A place
+shown finds its birds anywhere in their comings and goings, and every visit
+to the page has its own seed (`?birdSeed=` chooses one; a page driven by a
+tool has seed 1, so frames are reproducible). Each
 kind flaps as it does (a gull a few beats now and then, a fish eagle in
 bouts, an eagle hardly, a raven mostly). The
 heron and the geese stand: a splash nearby makes them look; a thing thrown

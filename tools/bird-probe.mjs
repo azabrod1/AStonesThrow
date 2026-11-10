@@ -85,7 +85,7 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
   if (!groups.some((group) => group.habit === 'visit')) continue;
   const { frames } = run(place, 600, 1 / 60);
   const cruise = BIRD_KINDS[groups[0].kind].cruise;
-  let nearest = Infinity, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, biggestJump = 0;
+  let nearest = Infinity, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, fastestRoll = 0, biggestJump = 0;
   let visits = 0, inside = 0, styles = new Set(), entries = [];
   for (let index = 1; index < frames.length; index++) {
     frames[index].birds.forEach((bird, which) => {
@@ -105,6 +105,7 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
       if (!before.shown) return;
       const speed = Math.hypot(bird.x - before.x, bird.y - before.y, bird.z - before.z) * 60;
       fastest = Math.max(fastest, speed); slowest = Math.min(slowest, speed);
+      fastestRoll = Math.max(fastestRoll, Math.abs(bird.bank - before.bank) * 60);
       biggestJump = Math.max(biggestJump, Math.abs(Math.atan2(Math.sin(bird.heading - before.heading), Math.cos(bird.heading - before.heading))));
     });
   }
@@ -113,7 +114,10 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
   check(lowest > 1.2, `${place}: they stay over the water: lowest ${lowest.toFixed(2)} m`);
   check(highestElevation < FRAME_TOP, `${place}: they stay in the home view's sky (but in a thermal): highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
   check(slowest > 0.4 * cruise && fastest < 2.2 * cruise, `${place}: they fly at their speed: ${slowest.toFixed(1)} to ${fastest.toFixed(1)} m/s (cruising ${cruise})`);
-  check(steepestBank <= THREE.MathUtils.degToRad(50) + 1e-9, `${place}: banked at most 50°: ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
+  // Gliding turns, unhurried: a visit laid out within 28° of bank for its speed (a flock's outer birds a little more)
+  // and rolled into over a second, never flicked over.
+  check(steepestBank <= THREE.MathUtils.degToRad(35) + 1e-9, `${place}: banked at most 35°: ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
+  check(fastestRoll < THREE.MathUtils.degToRad(40), `${place}: they roll into a turn slowly: at most ${THREE.MathUtils.radToDeg(fastestRoll).toFixed(0)}°/s`);
   check(biggestJump < 0.05, `${place}: no bird's heading jumps between frames: ${biggestJump.toFixed(3)} rad at most`);
   check(visits >= 8 && seen > 0.2 && seen < 0.9, `${place}: they come and go: ${visits} visits in ten minutes, one in view ${(seen * 100).toFixed(0)}% of the time`);
   check(inside === 0, `${place}: every visit begins and ends out of the frame, beyond its sides (${inside} inside)`);

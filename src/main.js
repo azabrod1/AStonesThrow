@@ -1118,7 +1118,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The birds (src/birds.js; drawn by src/birdSprites.js): the place's, over its water or at its edge (applyBirds);
   // ?birds=off or none, or the Effects setting's Off remembered on this device, leaves every place without (setBirds).
   let birdsOn = !['none', 'off'].includes(pageParameters.get('birds') ?? storedChoice(BIRDS_STORAGE_KEY));
-  const birds = new BirdPopulation({ seed: Number(pageParameters.get('birdSeed') ?? 1) });
+  // Each visit to the page sees its own comings and goings (a seed of its own); ?birdSeed= chooses one, and a page
+  // driven by a tool (navigator.webdriver: the harness, the probes) has seed 1, so its frames are as they were.
+  const birdSeed = pageParameters.get('birdSeed') ?? (navigator.webdriver ? 1 : crypto.getRandomValues(new Uint32Array(1))[0]);
+  const birds = new BirdPopulation({ seed: Number(birdSeed) });
   // Their pictures come after the start (src/birdSprites.js load): the mirror image is drawn whole again when they do,
   // or a still heron would have no reflection until it stirred.
   // A kind with a model (src/birdMeshes.js) is drawn as one; the rest as pictures (src/birdSprites.js), till each has one.
