@@ -348,7 +348,9 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     const { role, flip, roll } = frameFor(sprite.kind, at, sprite.centre, camera);
     const frame = catalogue.frames[`${sprite.kind}-${role}`];
     const uniforms = sprite.uniforms;
-    sprite.radius = 0.5 * Math.max(frame.metres[0], frame.metres[1]);
+    // Its bounds about its anchor (src/main.js redraws the mirror image there): to the picture's farthest corner.
+    const [anchorX, anchorY] = frame.anchor;
+    sprite.radius = Math.hypot(Math.max(anchorX, 1 - anchorX) * frame.metres[0], Math.max(anchorY, 1 - anchorY) * frame.metres[1]);
     uniforms.uRect.value.fromArray(frame.uv);
     uniforms.uSize.value.fromArray(frame.metres);
     uniforms.uAnchor.value.fromArray(frame.anchor);
