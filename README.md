@@ -634,7 +634,7 @@ its wingbeat. The other kinds are still pictures, as follows, until each has
 its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
-or public domain; the credits are under the Birds setting and in
+or public domain; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky (or, for the standing birds,
 its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
 a kind (30 to 330 KB), fetched only when a place with that kind is shown,
@@ -2196,6 +2196,8 @@ Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).
 
 ## Credits
+
+The bird photographs are credited in [CREDITS.md](CREDITS.md).
 
 The sky panoramas are from [Poly Haven](https://polyhaven.com), CC0:
 *Meadow 2* by Sergej Majboroda; *Lakeside* by Greg Zaal; *Lakeside Sunrise*,

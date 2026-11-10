@@ -11,8 +11,7 @@
 # The photographs (PHOTOS) are Wikimedia Commons files under licences that
 # let them be used and changed with credit (CC BY) or freely (CC0, public
 # domain); each
-# frame's credit is written to birds.json, and the page shows them (index.html,
-# the Birds setting's note). They are downloaded once into tools/.bird-photos/
+# frame's credit is written to birds.json (and listed in CREDITS.md). They are downloaded once into tools/.bird-photos/
 # (gitignored), at Commons' 1280-pixel rendering, slowly, as Commons asks of
 # scripts.
 #
