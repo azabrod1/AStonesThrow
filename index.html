@@ -781,6 +781,7 @@
   .menu-seg button + button { border-left: 1px solid var(--line); }
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+  .menu-credit a { color: inherit; }
   /* A page of pictured choices (Location, Water, Weather): a thumbnail, the name and a line on it. */
   .menu-cards { display: grid; gap: 4px; }
   .menu-card {
@@ -1224,6 +1225,9 @@
         <button type="button" class="menu-card" role="radio" data-value="mall"><img loading="lazy" src="assets/sky/thumbs/mall.jpg" alt="" width="80" height="45"><span><b>Reflecting Pool</b><small>Washington, D.C.: the Monument mirrored down the pool, elms either side</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
+      <!-- Credit for what a place shows that its licence asks for (CREDITS.md, published as credits.html): the
+           Reflecting Pool's backdrop's while it is chosen, and the link to every credit always. -->
+      <div class="menu-note menu-credit" id="sky-credit"><span id="mall-credit" hidden>Reflecting Pool backdrop cut, combined and graded from photos by Kenrick95, Jmarcosny, Marty Aligata, Gregg L. Davis and Ramakrishna Gundra (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>) and John Brighenti (<a href="https://creativecommons.org/licenses/by/2.0/" target="_blank" rel="noopener">CC BY 2.0</a>); shared under CC BY-SA 4.0. </span><a href="credits.html" target="_blank" rel="noopener">Credits and licences</a></div>
     </div>
   </div>
   <div class="menu-page" data-page="time" hidden>
@@ -1741,8 +1745,10 @@
         if (shown !== value) skyNote.textContent = 'That place could not be loaded. Check the connection and try again.';
       });
     });
+    const mallCredit = document.getElementById('mall-credit');
     function updateSky() {
       showSky(pond.sky);
+      mallCredit.hidden = pond.sky !== 'mall';
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
       updateTime();
