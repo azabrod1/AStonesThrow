@@ -1032,6 +1032,26 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(200);   // a dialog's close event comes a task later
   const aboutClosed = await page.evaluate(() => ({ open: document.getElementById('about').open, focus: document.activeElement?.id }));
   check(!aboutClosed.open && aboutClosed.focus === 'menu-button', `${framing.touch ? 'Its ×' : 'Escape'} closes it, the focus back on the settings button (open: ${aboutClosed.open}, focus: ${aboutClosed.focus})`);
+  // Its body scrolls, never the dialog (whose scroll bar, pressed, would be a press on the dimmed pond); on a desktop a
+  // drag out of the card (selecting its text) leaves it open, and a press on the dimmed pond closes it.
+  await page.evaluate(() => { document.getElementById('settings').hidden = true; document.getElementById('about').showModal(); });
+  const aboutScroll = await page.evaluate(() => { const about = document.getElementById('about'); return { dialog: about.scrollHeight - about.clientHeight, fits: about.querySelector('.about-body').getBoundingClientRect().bottom <= about.getBoundingClientRect().bottom + 0.5 }; });
+  check(aboutScroll.dialog <= 0.5 && aboutScroll.fits, `the About card's body scrolls, not the dialog (dialog overflows by ${aboutScroll.dialog} px, body inside it: ${aboutScroll.fits})`);
+  if (!framing.touch) {
+    const [aboutText] = await boxes('#about p');
+    await page.mouse.move((aboutText.left + 20) / layout.scale, (aboutText.top + 5) / layout.scale);
+    await page.mouse.down();
+    await page.mouse.move(5 / layout.scale, (layout.screenHeight / 2) / layout.scale, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+    const draggedOut = await page.evaluate(() => document.getElementById('about').open);
+    await page.mouse.click(5 / layout.scale, (layout.screenHeight / 2) / layout.scale);
+    await page.waitForTimeout(200);
+    const pressedOutside = await page.evaluate(() => document.getElementById('about').open);
+    check(draggedOut && !pressedOutside, `a drag out of the About card leaves it open (${draggedOut}), a press on the dimmed pond closes it (open: ${pressedOutside})`);
+  }
+  await page.evaluate(() => document.getElementById('about').close());
+  await page.waitForTimeout(100);
   await press('#menu-button');
   await page.waitForTimeout(400);
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);

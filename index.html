@@ -782,16 +782,16 @@
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
   /* About (a modal <dialog>, opened from the settings' About row): a card of the panel's glass in the middle of the
-     screen, the pond dimmed behind it. A press on the dimmed pond closes it, as Escape and × do; it scrolls when a
-     short screen cannot hold it. */
+     screen, the pond dimmed behind it. A press on the dimmed pond closes it, as Escape and × do. Its body scrolls
+     when a short screen cannot hold it, not the dialog itself: the dialog is the press on the dimmed pond's target,
+     so its own scroll bar would close it. */
   .about {
     width: min(420px, calc(100vw - 32px));
     max-height: calc(100vh - 32px);
     max-height: calc(100dvh - 32px);
     box-sizing: border-box;
     padding: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overflow: hidden;
     border-radius: 16px;
     border: 1px solid rgba(238, 243, 244, 0.12);
     background:
@@ -803,7 +803,8 @@
     color: var(--fg);
   }
   .about::backdrop { background: rgba(0, 0, 0, 0.45); }
-  .about-body { padding: 8px 18px 16px; font-size: 13.5px; line-height: 1.55; }
+  .about[open] { display: flex; flex-direction: column; }
+  .about-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 18px 16px; font-size: 13.5px; line-height: 1.55; }
   .about-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 -10px 0 0; }
   .about h2 { margin: 6px 0 0; font-family: var(--font-display); font-weight: 400; font-style: italic; font-size: 22px; }
   .about h3 { margin: 14px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
@@ -1894,7 +1895,11 @@
       about.showModal();
     });
     document.getElementById('about-close').addEventListener('click', () => about.close());
-    about.addEventListener('click', (event) => { if (event.target === about) about.close(); });   // the dimmed pond around the card
+    // The dimmed pond around the card: a press that starts and ends there (one dragged out of the card, selecting its
+    // text, ends on the dialog too).
+    let pressedOutside = false;
+    about.addEventListener('pointerdown', (event) => { pressedOutside = event.target === about; });
+    about.addEventListener('click', (event) => { if (event.target === about && pressedOutside) about.close(); });
     about.addEventListener('close', () => document.getElementById('menu-button').focus({ preventScroll: true }));
     window.addEventListener('keydown', (event) => { if (about.open) event.stopPropagation(); }, true);
     // Reset all: a first press asks again in the row's own words, and a second within a few seconds sets every
