@@ -3,7 +3,7 @@
 // them, they touch neither the splash nor the water's waves, and they never
 // come within reach of a throw. A thing thrown near a heron puts it up.
 //
-// Who lives where (BIRDS_BY_PLACE): a bird of every place, of where its
+// Who lives where (BIRDS_BY_PLACE): a bird of every place (but the Pool), of where its
 // photograph was taken (Poly Haven's coordinates), a few done well.
 //   - Rocky cove (Cape Town's Atlantic shore): kelp gulls, each coming by
 //     now and then to work the water out past the rocks, mostly gliding, a
@@ -11,15 +11,15 @@
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
 //     bank, as herons stand in every garden pond with fish in it (wade). It
 //     stands still for long spells, its head turning now and then, its neck
-//     drawn in or stretched up; a splash anywhere in the pond makes it
-//     stretch up and look; a thing thrown near it puts it up: it crouches,
+//     drawn in or stretched up; it walks a few steps along the bank, turning
+//     about as it steps, its head first; it peers into the water, holds
+//     still and strikes, and swallows. Each movement settles as a spring
+//     does, each part on its own time (sprung). A splash anywhere in the
+//     pond makes it stretch up and look; a thing thrown near it puts it up: it crouches,
 //     jumps and flies off low over the garden with deep, slow beats, its neck
 //     drawn in and its legs trailing, as herons fly; a minute or so later it
 //     glides back in, flares and lands where it stood.
-//   - The Pool (Sterkfontein Dam's shore, Lakeside's sky): two Egyptian geese
-//     on the lawn past the deck, as they come to every pool in South Africa,
-//     one standing, one resting with its head tucked in (graze); a thing
-//     thrown near puts both up, and they come back together.
+//   - The Pool: none (its view looks down into the water, at no sky).
 //   - Lakeside (Sterkfontein Dam): an African fish eagle, coming over the
 //     open water now and then, sometimes circling up in a thermal; Harbour,
 //     on the same dam: a string of sacred ibises; Mesas, the hill over it: a
@@ -122,10 +122,8 @@ export const BIRD_KINDS = {
 //     home view's line, give or take `spread`. `count` birds, each on its own visits, or with `together` one flock
 //     on its leader's, each `spacing` m behind the one before and a little to one side, as a small flock strings out.
 //   wade: `angle` (rad about the pond's centre, KOI_SHORE) and `offshore` (m out from the waterline) where it stands,
-//     `heading` (rad from +x, turning toward −z) which way it faces: side on to the home view, so its outline reads.
-//   graze: on dry ground `ground` m up, each bird at its own `spots` [x, z, heading] and in its own `postures` (stand,
-//     or rest: its head tucked in, until something makes it look); the group goes together when one is put up, and
-//     comes back together. Standing (wade or graze), a bird's ways are its kind's STANDING.
+//     `heading` (rad from +x, turning toward −z) which way it faces as it comes down: side on to the home view, so its
+//     outline reads. Standing, a bird's ways are its kind's STANDING.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
 // sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
 export const BIRDS_BY_PLACE = {
@@ -140,8 +138,6 @@ export const BIRDS_BY_PLACE = {
   harbour: [{ kind: 'ibis', habit: 'visit', count: 5, together: true, spacing: 3.5, distance: [40, 75], height: [2.5, 4.5], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 0.75, turn: 0.25 } }],
   mesas: [{ kind: 'goose', habit: 'visit', count: 2, together: true, spacing: 2.5, distance: [35, 65], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 0.75, turn: 0.25 } }],
   highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 0.7, turn: 0.3 } }],
-  // On the Pool's lawn (src/pool.js: the deck, POOL.deck up, ends 3.9 m from the pool's middle at (0, −1)), beyond
-  // its far side, where the home view's top sees it; side on to the eye.
   // The Reflecting Pool (Washington, D.C.): a blue jay and a cardinal, birds of the elms either side of it, now and
   // then crossing the pool from one row to the other, low and near (nothing thrown goes past the water's 6 m patch,
   // so they may come within 10 m of the eye, where a songbird shows), the cardinal bounding.
@@ -149,7 +145,6 @@ export const BIRDS_BY_PLACE = {
     { kind: 'blueJay', habit: 'visit', count: 1, distance: [10, 24], height: [1.6, 4], aim: 0, spread: 16, gap: [15, 45], styles: { cross: 1 } },
     { kind: 'cardinal', habit: 'visit', count: 1, distance: [10, 22], height: [1.6, 3.5], aim: 0, spread: 16, gap: [20, 55], styles: { cross: 1 } },
   ],
-  pool: [{ kind: 'goose', habit: 'graze', count: 2, ground: 0.1, spots: [[-1.5, -7.4, 0.2], [0.8, -8.4, Math.PI - 0.3]], postures: ['stand', 'rest'] }],
 };
 
 const BANK_MOST = THREE.MathUtils.degToRad(35);   // no bird is drawn banked more (a visit is laid out within LAID_BANK)
@@ -162,11 +157,12 @@ const LAYOUT_TRIES = 16;
 // side of where it is (five samples), which also keeps the roll's rate down where the path's bend changes fast.
 const ROLL_EASE = 0.5;
 
-// A heron's ways (the header).
-//   idle: its time standing cut into `slot`-second spells, in each of which it may turn its head and set its neck, over
-//     `turn` seconds at the spell's start, then hold: `looks` its head's turn (rad either side), its neck one of
-//     `necks`, a share `still` of spells changing nothing.
-//   alert: a splash within `alert` m: it stretches up and looks toward it for `hold` s, eased over `turn` s.
+// A heron's ways (the header). Every movement is a spring's (sprung: each part settling on its own time, as a muscle
+// brings a limb where it is sent), so its parts overlap rather than moving together and stopping at once.
+//   idle: its head turned now and then (`looks`, rad either side), its spells `lookEvery` s apart, each starting up to
+//     `jitter` s late, a quick turn settling in about `lookSettle` s; its neck set to one of `necks` on spells of its
+//     own (`neckEvery` s), slower (`neckSettle`); a share `still` of spells changing nothing.
+//   alert: a splash within `alert` m: it stretches up and looks toward it for `hold` s, quick to react (`settle`).
 //   flush: a thing thrown coming down within `radius` m of it (and under `height` m), or a splash within `splash` m,
 //     puts it up; it crouches `crouch` s, then flies off over `flight` s along a curve `far` m away and `climb` m up,
 //     beating hard over the first `hard` s, its legs swinging back over `legsUp` s and its neck drawn in over `neckIn`.
@@ -175,32 +171,25 @@ const ROLL_EASE = 0.5;
 //   land: it glides back in over `glide` s from `from` m out and `high` m up, beating `flaps` s of every few and
 //     flaring over the last `flare` s, its wings folding over `fold` s once it stands.
 const HERON = {
-  idle: { slot: 4.2, turn: 0.8, looks: 0.9, necks: [0.12, 0.3, 0.55, 0.85], still: 0.35 },
-  alert: { alert: 9, hold: 4.5, turn: 0.45 },
+  idle: { lookEvery: 4.6, jitter: 1.6, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
+  alert: { alert: 9, hold: 4.5, settle: 0.6 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 9, far: 38, climb: 13, hard: 1.8, legsUp: 1.2, neckIn: 1.0 },
   away: { absent: [45, 90], retry: 12, quiet: 8 },
   land: { glide: 10, from: 34, high: 11, flare: 1.4, fold: 0.9 },
   tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
   // walk: its standing cut into `every`-second spells from when it began to stand; in each it may walk to one of
-  //   `spots` (m along the bank either way from its own spot) at `speed`, turning to go over `turn` s first and back to
-  //   face as it stood after; none in the first spell (it has just come down).
-  walk: { every: 10, spots: [-0.35, -0.12, 0.2, 0.45], speed: 0.17, turn: 0.9 },
-  // strike: in a `share` of its spells, `at` s into it (once it has walked, if it walks): it draws its neck back over `coil` s,
-  //   throws its bill into the water in `throw`, holds it there `hold`, and brings it back over `back`, swallowing.
-  strike: { share: 0.5, at: 7.4, coil: 0.7, throw: 0.14, hold: 0.35, back: 0.9 },
+  //   `spots` (m along the bank either way from its own spot) at `speed`, none in the first spell (it has just come
+  //   down). It looks the way it will go (its head first), turns to it stepping round (`turnSettle` s, `turnStep` m of
+  //   stepping a radian turned), sets off once mostly turned (`setOff` s after it began to turn) and, as it stops,
+  //   turns to face the water a little (`facePond` rad from the bank), facing so until it walks again.
+  walk: { every: 14, spots: [-0.35, -0.12, 0.2, 0.45], speed: 0.17, start: 0.6, turnSettle: 2.2, setOff: 1.5, turnStep: 0.12, facePond: 0.5 },
+  // strike: in a `share` of its spells, `at` s into it (or a moment after its walk): it peers down into the water,
+  //   lowering itself (`stalk` s to settle), holds still `freeze` s (drawn), throws its bill in (`stab` s to settle),
+  //   holds it there `hold` s, brings it up with a little spring (`back`), and swallows: `gulps` jerks of its neck.
+  strike: { share: 0.5, at: 5, stalk: 1.6, freeze: [0.8, 2.2], stab: 0.13, hold: 0.32, back: 0.55, gulps: 3 },
 };
-// An Egyptian goose's, on a lawn: warier of what comes near (it is on open ground), quicker off and back sooner, and
-// level standing. Its head's turns and neck are not drawn (one picture each), but they keep it from being still.
-const GOOSE = {
-  idle: { slot: 5, turn: 0.6, looks: 0.7, necks: [0.2, 0.5, 0.8], still: 0.5 },
-  alert: { alert: 7, hold: 3.5, turn: 0.35 },
-  flush: { radius: 3.4, height: 3, splash: 2.6, crouch: 0.18, flight: 8, far: 40, climb: 11, hard: 2.4, legsUp: 0.8, neckIn: 0.6 },
-  away: { absent: [35, 70], retry: 10, quiet: 8 },
-  land: { glide: 8, from: 30, high: 9, flare: 1.1, fold: 0.6 },
-  tilt: 0,
-};
-const STANDING = { heron: HERON, goose: GOOSE };
-const STANDING_HABITS = new Set(['wade', 'graze']);
+const STANDING = { heron: HERON };
+const STANDING_HABITS = new Set(['wade']);
 
 /** Perlin's smootherstep from edge0 to edge1 (edge0 below edge1). */
 const smoother = (edge0, edge1, value) => { const share = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1); return share * share * share * (share * (share * 6 - 15) + 10); };
@@ -209,6 +198,46 @@ const hashed = (seed, index, salt = 0) => seededRandom(seed, index, salt)();
 const between = ([least, most], share) => least + (most - least) * share;
 /** The angle from `from` to `to`, the short way round (rad). */
 const turnBetween = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+
+/**
+ * A spring's step response `elapsed` s after its target stepped from 0 to 1: a system that settles in about `settle` s
+ * (to within 2%), critically damped, or with `damping` under 1 a little over and back, as a limb sent somewhere by a
+ * muscle gets there: under way at once but gently, slowing as it arrives. Of `order` 3 (critically damped, three
+ * poles), it starts gentler still, as a heavy body does (a heron's whole body turning). Exactly 1 once it has all but
+ * settled (SETTLED: within 0.05% of the step), so a still bird is still to the last bit and its mirror image is not
+ * drawn again.
+ */
+function springStep(elapsed, settle, damping = 1, order = 2) {
+  if (elapsed <= 0) return 0;
+  const phase = SPRING_RATE[order] / settle * elapsed;
+  if (phase > SETTLED[order]) return 1;
+  if (order === 3) return 1 - (1 + phase + phase * phase / 2) * Math.exp(-phase);
+  if (damping >= 1) return 1 - (1 + phase) * Math.exp(-phase);
+  const root = Math.sqrt(1 - damping * damping);
+  return 1 - Math.exp(-damping * phase) * (Math.cos(root * phase) + (damping / root) * Math.sin(root * phase));
+}
+const SPRING_RATE = { 2: 5.83, 3: 7.52 };   // ωt where a critically damped step response of each order is within 2% of the step
+const SETTLED = { 2: 10, 3: 12.5 };         // ωt past which it is taken as there (within 0.05%)
+/** The time (s) after its step a springStep of `settle` and `order` is exactly 1. */
+const settledAfter = (settle, order = 2) => SETTLED[order] / SPRING_RATE[order] * settle;
+
+/** A springStep of order 3's rate (a share a second). */
+function springRate(elapsed, settle) {
+  if (elapsed <= 0) return 0;
+  const omega = SPRING_RATE[3] / settle, phase = omega * elapsed;
+  return phase > SETTLED[3] ? 0 : omega * phase * phase / 2 * Math.exp(-phase);
+}
+
+/**
+ * A value driven by a spring at `time` (closed form, so the same at any frame rate): `from`, then sent to each target
+ * of `steps` ([time, target, settle, damping, order], in time's order) at its time, each step's response (springStep) added to
+ * the last's.
+ */
+function sprung(time, from, steps) {
+  let value = from, before = from;
+  for (const [at, target, settle, damping = 1, order = 2] of steps) { value += (target - before) * springStep(time - at, settle, damping, order); before = target; }
+  return value;
+}
 
 /** A pose, at rest. */
 function freshPose() {
@@ -285,7 +314,7 @@ function splineAt(path, parameter, out, first, second) {
 
 const scratchSample = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };
 const scratchRoll = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };   // the bank's average's samples, and a path's tightest turn's
-const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, walked: 0, walking: 0, spell: 0, walks: false, walkEnds: 0 };
+const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, lead: 0, walked: 0, walking: 0, stride: 0, spell: 0, walks: false, walkEnds: 0 };
 
 /**
  * Where a path is `along` m along it (into `out`): its point, its direction (velocity: its derivative there) and its
@@ -364,11 +393,6 @@ export class BirdPopulation {
    * the water there) and which way it faces.
    */
   laySpot(bird, group) {
-    if (group.habit === 'graze') {
-      const [x, z, heading] = group.spots[bird.index];
-      bird.spot = { x, y: group.ground, z, heading };
-      return;
-    }
     const radius = koiShoreRadius(group.angle) - group.offshore;
     const x = KOI_SHORE.centre[0] + Math.cos(group.angle) * radius;
     const z = KOI_SHORE.centre[1] + Math.sin(group.angle) * radius;
@@ -813,108 +837,158 @@ export class BirdPopulation {
   /**
    * Where a standing bird is at `time` and which way it faces: at its spot, or walking along the bank to another (its
    * kind's `walk`) or there, from when it began to stand (bird.standSince). Each spell's place is drawn from its seed
-   * and the spell's number (the first's its own spot), so it is the same at any frame rate. Also how far it is along
-   * its walk (m, for its stride) and how much it is walking.
+   * and the spell's number (the first's its own spot), so it is the same at any frame rate. Its turns are springs
+   * (sprung), stepped round (`stride` counts its turning's steps with its walk's, so its feet move as it turns), its
+   * head turning first (`lead`, the way its head faces); `walking` is how much it is stepping.
    */
   standingPlace(bird, time, out) {
     const { spot } = bird;
     const walk = STANDING[bird.kind].walk;
-    out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.walked = 0; out.walking = 0; out.spell = 0; out.walks = false; out.walkEnds = 0;
+    out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.lead = spot.heading; out.walked = 0; out.walking = 0; out.stride = 0;
+    out.spell = 0; out.walks = false; out.walkEnds = 0;
     if (!walk) { out.y = spot.y; return out; }
     const since = time - bird.standSince;
     const spell = Math.max(0, Math.floor(since / walk.every));
-    const offsetOf = (index) => (index <= 0 ? 0 : walk.spots[Math.floor(hashed(bird.seed, index, 11) * walk.spots.length)]);
-    const from = offsetOf(spell - 1), to = offsetOf(spell);
     const into = since - spell * walk.every;
-    // Along the bank (the pond's tangent at the spot), the way that runs to the eye's right.
-    const tangentX = -(spot.z - KOI_SHORE.centre[1]), tangentZ = spot.x - KOI_SHORE.centre[0];
-    const tangentLength = Math.hypot(tangentX, tangentZ);
-    const alongX = tangentX / tangentLength, alongZ = tangentZ / tangentLength;
+    const { alongX, alongZ } = this.bank(spot);
+    const from = this.walkOffset(bird, spell - 1), to = this.walkOffset(bird, spell);
+    const facing = this.facingAfter(bird, spell - 1);   // as it stood when the spell began
     const distance = Math.abs(to - from), way = Math.sign(to - from);
     let offset = from;
     out.spell = spell;
     out.walks = distance > 0.01;
-    out.walkEnds = out.walks ? distance / walk.speed + 2 * walk.turn : 0;   // s into the spell it has walked and turned back
+    out.heading = out.lead = facing;
     if (out.walks) {
       const duration = distance / walk.speed;
-      const going = into - walk.turn;
-      // Turned to go, walked (eased in and out over its first and last steps), turned back.
-      const walkHeading = Math.atan2(-alongZ * way, alongX * way);
-      const turnedTo = smoother(0, walk.turn, into), turnedBack = smoother(walk.turn + duration, 2 * walk.turn + duration, into);
-      out.heading = spot.heading + turnBetween(spot.heading, walkHeading) * (turnedTo - turnedBack);
+      // It turns to go (the short way round), sets off once mostly turned, and as it stops turns to face the water.
+      const walkHeading = facing + turnBetween(facing, Math.atan2(-alongZ * way, alongX * way));
+      const faced = walkHeading + turnBetween(walkHeading, this.facingFor(spot, way));
+      const turnAt = walk.start, goAt = turnAt + walk.setOff, faceAt = goAt + duration - 0.5;
+      const settle = walk.turnSettle;
+      out.heading = sprung(into, facing, [[turnAt, walkHeading, settle, 1, 3], [faceAt, faced, settle, 1, 3]]);
+      out.lead = sprung(into, facing, [[turnAt - 0.4, walkHeading, settle * 0.3], [faceAt - 0.4, faced, settle * 0.3]]);
+      const firstTurn = Math.abs(walkHeading - facing), lastTurn = Math.abs(faced - walkHeading);
+      const turned = firstTurn * springStep(into - turnAt, settle, 1, 3) + lastTurn * springStep(into - faceAt, settle, 1, 3);
+      const turning = firstTurn * springRate(into - turnAt, settle) + lastTurn * springRate(into - faceAt, settle);   // rad/s
+      const going = into - goAt;
       const ease = 0.6 / duration;   // a share of the walk spent getting going and stopping
       const share = THREE.MathUtils.clamp(going / duration, 0, 1);
       // Distance along: constant speed with its ends eased (a smootherstep blended in over `ease`).
       const eased = share < ease ? share * share / (2 * ease * (1 - ease)) : share > 1 - ease ? 1 - (1 - share) * (1 - share) / (2 * ease * (1 - ease)) : (share - ease / 2) / (1 - ease);
       out.walked = eased * distance;
       offset = from + way * out.walked;
-      out.walking = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
+      const moving = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
+      // Stepping round as it turns, as much as it is turning (its turn starts gently, so its steps do too).
+      out.walking = Math.max(moving, 0.7 * Math.min(1, turning * turning));
+      out.stride = (out.walked + walk.turnStep * turned) / (2 * STEP_LENGTH);
+      out.walkEnds = faceAt + settledAfter(settle, 3);   // when its last turn has settled (springStep exactly 1)
     }
     out.x = spot.x + alongX * offset;
     out.z = spot.z + alongZ * offset;
-    out.y = bird.habit === 'wade' ? -koiFloorDepthAt(out.x, out.z) : spot.y;
+    out.y = -koiFloorDepthAt(out.x, out.z);
     return out;
+  }
+
+  /** Along the bank at a standing bird's spot (the pond's tangent there), the way that runs to the eye's right. */
+  bank(spot) {
+    const tangentX = -(spot.z - KOI_SHORE.centre[1]), tangentZ = spot.x - KOI_SHORE.centre[0];
+    const length = Math.hypot(tangentX, tangentZ);
+    return { alongX: tangentX / length, alongZ: tangentZ / length };
+  }
+
+  /** Where along the bank a standing bird's walk of spell `index` takes it (m from its spot; the first spell's none). */
+  walkOffset(bird, index) {
+    const { spots } = STANDING[bird.kind].walk;
+    return index <= 0 ? 0 : spots[Math.floor(hashed(bird.seed, index, 11) * spots.length)];
+  }
+
+  /** How a standing bird faces once it has stopped walking `way` (±1 along the bank): that way, turned a little to the water. */
+  facingFor(spot, way) {
+    const { alongX, alongZ } = this.bank(spot);
+    const walkHeading = Math.atan2(-alongZ * way, alongX * way);
+    const inward = Math.atan2(-(KOI_SHORE.centre[1] - spot.z), KOI_SHORE.centre[0] - spot.x);
+    return walkHeading + Math.sign(turnBetween(walkHeading, inward)) * STANDING.heron.walk.facePond;
+  }
+
+  /** How a standing bird faces at the end of spell `index`: as its last walk left it, or as it came down. */
+  facingAfter(bird, index) {
+    for (let spell = index; spell >= 1 && spell > index - 32; spell--) {
+      const from = this.walkOffset(bird, spell - 1), to = this.walkOffset(bird, spell);
+      if (Math.abs(to - from) > 0.01) return this.facingFor(bird.spot, Math.sign(to - from));
+    }
+    return bird.spot.heading;
+  }
+
+  /**
+   * One of a standing bird's idle ways at `time` (its head's turn, its neck): on spells of `every` s, each starting up
+   * to `jitter` s late (never on the beat), a spring to the spell's target (`targetOf` its number, a share `still` of
+   * spells keeping the one before's), settling in `settle` s.
+   */
+  idleWay(bird, time, every, settle, damping, salt, targetOf) {
+    const { jitter, still } = STANDING[bird.kind].idle;
+    const spell = Math.floor(time / every);
+    const kept = (index) => {
+      let at = index;
+      for (let back = 0; back < 4 && hashed(bird.seed, at, salt) < still; back++) at--;
+      return targetOf(at);
+    };
+    const steps = [];
+    for (let index = spell - 2; index <= spell; index++) steps.push([index * every + hashed(bird.seed, index, salt + 20) * jitter, kept(index), settle, damping]);
+    return sprung(time, kept(spell - 3), steps);
   }
 
   /** A bird standing (or crouching to go, frozen at `time`): its place, its wings folding as it lands, its idle ways. */
   standing(bird, time) {
     const { pose } = bird;
     const ways = STANDING[bird.kind];
-    const { slot, turn, looks, necks, still } = ways.idle;
+    const { idle } = ways;
     const since = time - bird.standSince;
     const place = this.standingPlace(bird, time, scratchPlace);
     pose.x = place.x; pose.y = place.y; pose.z = place.z;
     pose.heading = place.heading;
-    pose.pitch = ways.tilt;
     pose.bank = 0;
     pose.flying = false;
     pose.legs = 1;
     pose.beat = 0;
-    pose.crouch = 0;
     pose.fold = smoother(0, ways.land.fold, time - bird.foldSince);
-    // Walking: its stride's phase from how far it has gone (two steps a stride), so its feet never slide.
+    // Stepping: its stride's phase from how far it has gone and turned (two steps a stride), so its feet never slide.
     pose.walking = place.walking;
-    pose.stride = place.walked / (2 * STEP_LENGTH);
-    // Its idle spells: in each it may turn its head and set its neck at the spell's start, then holds still.
-    const spell = Math.floor(time / slot);
-    const target = (index) => {
-      // A spell that changes nothing keeps the one before's (up to a few back).
-      let at = index;
-      for (let back = 0; back < 4 && hashed(bird.seed, at, 7) < still; back++) at--;
-      return { look: (hashed(bird.seed, at, 8) * 2 - 1) * looks, neck: necks[Math.floor(hashed(bird.seed, at, 9) * necks.length)] };
-    };
-    const from = target(spell - 1), to = target(spell);
-    const share = smoother(0, turn, time - spell * slot);
-    let look = from.look + (to.look - from.look) * share;
-    let neck = from.neck + (to.neck - from.neck) * share;
-    // Walking, it looks ahead, its neck at its ease.
-    look *= 1 - place.walking;
+    pose.stride = place.stride;
+    // Its head turned now and then (quick, a little over and back), its neck set on spells of its own (slower).
+    let look = this.idleWay(bird, time, idle.lookEvery, idle.lookSettle, 0.75, 7, (at) => (hashed(bird.seed, at, 8) * 2 - 1) * idle.looks);
+    let neck = this.idleWay(bird, time, idle.neckEvery, idle.neckSettle, 1, 17, (at) => idle.necks[Math.floor(hashed(bird.seed, at, 9) * idle.necks.length)]);
+    // Stepping, it looks where it goes (its head turned ahead of its body), its neck at its ease.
+    look = look * (1 - place.walking) + 1.2 * Math.tanh(turnBetween(place.heading, place.lead) / 1.2);   // as far round as it can look, softly
     neck += (0.5 - neck) * place.walking;
-    // A strike at a fish, once it has walked if it walks (its kind's `strike`): neck coiled back and low, thrown
-    // forward into the water, held, brought back up.
-    pose.strike = 0;
+    // A strike at a fish, in a spell it stands (its kind's `strike`): it peers down, lowering itself, holds still,
+    // throws its bill in, holds it there, brings it up with a little spring and swallows.
+    let thrown = 0, crouch = 0;
     const strike = ways.strike;
-    if (strike && place.walkEnds < strike.at - 0.3 && place.spell > 0 && hashed(bird.seed, place.spell, 12) < strike.share) {
+    if (strike && !place.walks && place.spell > 0 && hashed(bird.seed, place.spell, 12) < strike.share) {
       const into = since - place.spell * ways.walk.every - strike.at;
-      const coiled = smoother(0, strike.coil, into) * (1 - smoother(strike.coil, strike.coil + strike.throw, into));
-      const thrown = smoother(strike.coil, strike.coil + strike.throw, into) * (1 - smoother(strike.coil + strike.throw + strike.hold, strike.coil + strike.throw + strike.hold + strike.back, into));
-      neck += (0.15 - neck) * coiled;
-      look *= 1 - Math.max(coiled, thrown);
-      pose.crouch = 0.35 * coiled + 0.2 * thrown;
-      pose.strike = thrown;
+      const stabAt = 0.9 * strike.stalk + between(strike.freeze, hashed(bird.seed, place.spell, 13));
+      const upAt = stabAt + strike.stab + strike.hold;
+      const engaged = sprung(into, 0, [[0, 1, strike.stalk], [upAt + 0.5, 0, strike.stalk]]);
+      thrown = sprung(into, 0, [[0, 0.3, strike.stalk], [stabAt, 1, strike.stab], [upAt, 0, strike.back, 0.55]]);
+      crouch = sprung(into, 0, [[0, 0.25, strike.stalk], [stabAt, 0.35, strike.stab], [upAt, 0, 2 * strike.back]]);
+      look *= 1 - engaged;
+      neck += (0.3 - neck) * engaged;
+      // Swallowing: its neck jerked up a little and back, `gulps` times.
+      const gulps = [];
+      for (let gulp = 0; gulp < strike.gulps; gulp++) { const at = upAt + 0.7 + gulp * 0.38; gulps.push([at, 0.08, 0.1], [at + 0.14, 0, 0.12]); }
+      neck += sprung(into, 0, gulps);
     }
-    // A splash in sight: up and looking, for a while, then back to its spells.
-    const { hold, turn: alertTurn } = ways.alert;
-    const alerted = smoother(0, alertTurn, time - bird.alertAt) * (1 - smoother(hold, hold + 1, time - bird.alertAt));
+    // A splash in sight: up and looking, quick to react, for a while, then back to its ways.
+    const { hold, settle } = ways.alert;
+    const alerted = sprung(time, 0, [[bird.alertAt, 1, settle], [bird.alertAt + hold, 0, 2 * settle]]);
     look += (bird.alertToward - look) * alerted;
     neck += (1 - neck) * alerted;
-    pose.strike *= 1 - alerted;
-    pose.pitch = ways.tilt - 0.3 * pose.strike;   // tipped forward into its strike
+    thrown *= 1 - alerted;
+    pose.strike = thrown;
+    pose.crouch = crouch * (1 - alerted);
+    pose.pitch = ways.tilt - 0.3 * thrown;   // tipped forward into its strike
     pose.look = look;
     pose.neck = neck;
-    // Resting, its head tucked in, until a splash makes it look (src/birdSprites.js draws it so).
-    pose.posture = alerted > 0.5 ? 'stand' : bird.group.postures?.[bird.index] ?? 'stand';
-    void since;
   }
 
   /** What tools and probes read: each bird's kind, mode and pose. */

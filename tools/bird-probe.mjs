@@ -2,8 +2,8 @@
 //
 //   node tools/bird-probe.mjs
 //
-// - each place's birds (BIRDS_BY_PLACE): some at every place, none for
-//   'none';
+// - each place's birds (BIRDS_BY_PLACE): some at every place but the Pool
+//   (whose view looks down into the water), none for 'none';
 // - ten minutes of every place's flying birds (visit): always low over the
 //   water in the home view's sky (out past THROW_REACH from the eye, between
 //   1.2 m and the frame's top, but in a thermal's turns), at their kind's
@@ -14,8 +14,9 @@
 //   moment each cycle) and its jay beats steadily; a flock flies together;
 // - the heron stands wading at its spot: its feet on the bed, in the water,
 //   a few centimetres to a few tens deep, inside the pond;
-// - the Pool's geese stand on its lawn, past the deck, and a stone coming
-//   down near one puts both up, and both come back;
+// - its ways are smooth: it turns about unhurried, stepping round as it
+//   turns, holds still between its moves, and peers into the water a while
+//   before it strikes;
 // - a splash across the pond makes it look, not go; a stone coming down
 //   near it puts it up before it lands, and it climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
@@ -66,12 +67,12 @@ function run(place, seconds, frame, { things = () => [], splashes = [], conditio
   return { birds, frames };
 }
 
-// Who lives where.
+// Who lives where: some at every place but the Pool (its view looks down into the water, at no sky).
 for (const place of Object.keys(PLACES)) {
   const birds = new BirdPopulation();
   birds.setPlace(place);
   const expected = (BIRDS_BY_PLACE[place] ?? []).reduce((sum, group) => sum + group.count, 0);
-  check(expected > 0 && birds.birds.length === expected, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
+  check((place === 'pool' ? expected === 0 : expected > 0) && birds.birds.length === expected, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
 }
 {
   const none = new BirdPopulation(); none.setPlace('none');
@@ -174,6 +175,28 @@ const heronAt = (frame) => frame.birds[0];
   check(moved.length > 0 && moved.every((frame) => heronAt(frame).walking > 0), `it walks now and then, and moves only as it walks (${moved.length} frames)`);
 }
 
+// The heron's ways, smooth (src/birds.js sprung): it turns about unhurried, stepping round as it turns (never spinning
+// on its feet), holds still between its moves, and peers into the water a while before it strikes.
+{
+  const { frames } = run('koi', 120, 1 / 60);
+  let fastestTurn = 0, spun = 0, still = 0, longestPeer = 0, peering = 0, struck = 0;
+  for (let index = 1; index < frames.length; index++) {
+    const heron = heronAt(frames[index]), before = heronAt(frames[index - 1]);
+    const rate = Math.abs(Math.atan2(Math.sin(heron.heading - before.heading), Math.cos(heron.heading - before.heading))) * 60;
+    fastestTurn = Math.max(fastestTurn, rate);
+    if (rate > 0.6 && heron.walking < 0.15) spun++;
+    if (['heading', 'look', 'neck', 'strike', 'crouch', 'x', 'z'].every((key) => heron[key] === before[key])) still++;
+    // Peering: its strike part way (src/birds.js: 0.3); a stab from it passes through more in a frame or two.
+    if (heron.strike > 0.2 && heron.strike < 0.5) peering++;
+    else if (heron.strike > 0.9 && before.strike <= 0.9) { longestPeer = Math.max(longestPeer, peering); peering = 0; struck++; }
+    else if (heron.strike < 0.2) peering = 0;
+  }
+  check(fastestTurn < 3.2, `it turns about unhurried: at most ${fastestTurn.toFixed(2)} rad/s`);
+  check(spun === 0, `it steps round as it turns (${spun} frames turning on still feet)`);
+  check(still / frames.length > 0.4, `it holds still between its moves (${(100 * still / frames.length).toFixed(0)}% of frames)`);
+  check(struck > 0 && longestPeer / 60 > 0.6, `it peers into the water a while before it strikes (${(longestPeer / 60).toFixed(1)} s)`);
+}
+
 // A splash across the pond: it looks. A stone coming down near it: it goes, and later comes back.
 {
   const probe = new BirdPopulation(); probe.setPlace('koi');
@@ -211,27 +234,6 @@ const heronAt = (frame) => frame.birds[0];
   const busy = run('koi', 140, 1 / 60, { things: pelted, splashes: [{ time: landAt, x: landX, z: landZ }] });
   const busyBack = busy.frames.find((frame) => frame.time > 20 && heronAt(frame).mode === 'land');
   check(!busyBack || busyBack.time > 115, `it is not back while things are thrown near its spot (back at ${busyBack ? busyBack.time.toFixed(0) : 'not yet'} s)`);
-}
-
-// The Pool's geese: on the lawn, past the deck (src/pool.js: 3.9 m out from the pool's middle at (0, −1)); a stone
-// coming down near one puts both up, and both come back to where they stood.
-{
-  const geese = new BirdPopulation(); geese.setPlace('pool'); geese.setConditions(DAY); geese.showAt(0);
-  const onLawn = geese.birds.every(({ spot }) => Math.max(Math.abs(spot.x), Math.abs(spot.z + 1)) > 3.9 + 0.5 && spot.y === 0.1);
-  check(geese.birds.length === 2 && onLawn, 'the Pool: two geese standing on its lawn, past the deck');
-  check(geese.birds.map((bird) => bird.pose.posture).join() === 'stand,rest', 'one standing, one resting');
-  const spot = geese.birds[0].spot;
-  const landAt = 6;
-  const stone = (time) => {
-    const left = landAt - time;
-    if (left < 0 || left > 1.2) return [];
-    return [{ state: 'air', position: new THREE.Vector3(spot.x + 1 + left * 1.5, 0.15 + left * (6 - 4.9 * left), spot.z + left * 1.5), velocity: new THREE.Vector3(-1.5, -6 + 9.8 * left, -1.5) }];
-  };
-  const { frames } = run('pool', 120, 1 / 60, { things: stone });
-  const flushed = frames.find((frame) => frame.birds.some((bird) => bird.mode === 'flee'));
-  check(flushed && flushed.birds.every((bird) => bird.mode === 'flee') && flushed.time < landAt, `a stone coming down near one puts both up together (at ${flushed?.time.toFixed(2)} s)`);
-  const last = frames.at(-1).birds;
-  check(last.every((bird, index) => bird.mode === 'stand' && Math.hypot(bird.x - geese.birds[index].spot.x, bird.z - geese.birds[index].spot.z) < 1e-6), 'and both come back to where they stood');
 }
 
 // After dark: none.

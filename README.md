@@ -630,16 +630,16 @@ bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
 
-**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). Every place has
-its own, the ones that live where its photograph was taken (Poly Haven's
-coordinates put most of the skies in South Africa):
+**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). Every place but
+the Pool (whose view looks down into the water) has its own, the ones that
+live where its photograph was taken (Poly Haven's coordinates put most of
+the skies in South Africa):
 
 | Place | Birds |
 |---|---|
 | Rocky cove (Cape Town) | kelp gulls coming by to work the water past the rocks |
 | Loch Ness | herring gulls, likewise |
 | Koi pond (Nagoya) | a grey heron wading at the far bank |
-| Pool (Sterkfontein Dam) | two Egyptian geese on the lawn, one resting |
 | Lakeside (Sterkfontein Dam) | an African fish eagle coming over the open water |
 | Harbour (Sterkfontein Dam) | a string of five sacred ibises now and then |
 | Mesas (above the dam) | a pair of Egyptian geese now and then |
@@ -666,9 +666,14 @@ kind flaps as it does (a gull a few beats now and then, a fish eagle in
 bouts, an eagle hardly, a raven mostly, a jay steadily, a cardinal in
 bounds: a few beats, then its wings shut a moment as it arcs on, its path
 rising and dipping a few centimetres about the visit's). The
-heron and the geese stand: a splash nearby makes them look; a thing thrown
-near puts them up (the geese together), and they come back a minute or so
-later, gliding in to land where they stood. None are about after dark. They
+heron stands: it looks about, sets its neck, walks a few steps along the
+bank (turning about as it steps, its head first), peers into the water,
+holds still and strikes. Each movement is a spring's, closed form in time
+(`sprung` in `src/birds.js`): every part settles on its own time, so they
+overlap as a bird's do rather than starting and stopping together. A
+splash nearby makes it look; a thing thrown near puts it up, and it comes
+back a minute or so later, gliding in to land where it stood. None are
+about after dark. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out
 of reach and in the home view's sky. Their state changes only in the
 physics steps and they are posed at each frame's time from closed forms,
@@ -714,8 +719,7 @@ is cut out whole, down to its toes: what of it is under the water is drawn
 in the under-water pass, bent at the surface as a reed is, so its legs go
 on down to its feet on the bed; on a frozen pond it stands on the ice. A
 bird on the ground or the ice has a soft shadow under it. Each bird costs 2 draw calls (its picture and its mirror image),
-the heron 3 (and its legs under the water), a goose on the lawn 3 (and its
-shadow);
+the heron 3 (and its legs under the water);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the
 standing birds' flush and return, the frame rate and the cost.
 

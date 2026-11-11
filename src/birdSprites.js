@@ -15,9 +15,9 @@
 //     the picture), for a kind that has one;
 //   - land: its legs let down, taking off or landing (the heron);
 //   - stand: standing in the water or on the ground, whole down to its
-//     feet (the heron's toes on the bed, the geese's soles on the lawn);
-//     rest, its head tucked in (a goose on the Pool's lawn, src/birds.js
-//     `postures`).
+//     feet (the heron's toes on the bed; the goose's frames, standing and
+//     resting, are in its image, though no place has a goose standing now);
+//     rest, its head tucked in (`posture`).
 // Tilted by its climb. Each frame faces left in its image; one flying (or
 // standing) to the right on the screen is drawn mirrored.
 //
