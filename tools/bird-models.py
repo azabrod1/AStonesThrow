@@ -9,7 +9,8 @@
 #
 # A bird is a 3D model shaped and painted from photographs (KINDS): the
 # photographs are Wikimedia Commons files under licences that let them be
-# used and changed with credit (CC BY) or freely (CC0, public domain),
+# used and changed with credit (CC BY, or CC BY-SA, when the kind's image is
+# shared so too) or freely (CC0, public domain),
 # downloaded once into tools/.bird-photos/ (gitignored) at Commons' 1280-pixel
 # rendering, and each one's credit written to models.json (and listed in
 # CREDITS.md).
@@ -25,7 +26,8 @@
 #     from the side. A crested bird's `crown` traces its skull's top under the
 #     crest, from the bill's base to the nape: models.json carries its height
 #     at the same stations, and the head is lofted to it, the crest above it a
-#     thin fin, as a crest is (not a cone as wide as the head).
+#     thin fin, as a crest is (not a cone as wide as the head). What the
+#     photo's own wing hides or shades on the body is painted out (`repaint`).
 #   - a wing, from below: four points on a photograph's wing (`points`: the
 #     shoulder's leading edge, the root's trailing edge, the wrist's leading
 #     edge and the trailing edge where the hand begins) and where they lie on
@@ -35,8 +37,10 @@
 #     cut-out's (the primaries' slots and the trailing edge's feathers in its
 #     alpha), and models.json carries its leading and trailing edges at
 #     stations along the span. The upper side is another photo's, or this one
-#     tinted (`upper`).
-#   - the tail, a fan: its colour the body photo's at the tail.
+#     tinted (`upper`), or for a gull made from it (`upper` with a `mantle`);
+#     the shade the body casts on the wing's root is lifted (`unshade`).
+#   - the tail, a fan: its colour the body photo's at the tail, or its own
+#     feathers drawn from it (`tailFan`).
 # Each is cut out of its sky as tools/bird-sprites.py cuts a bird (a smooth
 # fit of the sky, refitted; the alpha its distance from it), brought to a
 # common light (`gamma`, then `gain` per channel) and packed with the others into the
@@ -65,6 +69,7 @@ STATIONS = 48             # the outlines' samples along the body and the span
 CC_BY_2 = ('CC BY 2.0', 'https://creativecommons.org/licenses/by/2.0/')
 CC_BY_3 = ('CC BY 3.0', 'https://creativecommons.org/licenses/by/3.0/')
 CC_BY_4 = ('CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/')
+CC_BY_SA_3 = ('CC BY-SA 3.0', 'https://creativecommons.org/licenses/by-sa/3.0/')
 CC_BY_SA_4 = ('CC BY-SA 4.0', 'https://creativecommons.org/licenses/by-sa/4.0/')
 CC0 = ('CC0', 'https://creativecommons.org/publicdomain/zero/1.0/')
 PUBLIC_DOMAIN = ('Public domain', 'https://creativecommons.org/publicdomain/mark/1.0/')
@@ -165,6 +170,38 @@ KINDS = {
                   cut='grabcut', gain=(0.95, 0.72, 0.7), upper=dict(tint=(1.0, 0.62, 0.6))),
         tailColour='body',
     ),
+    # Herring gull, an adult (Loch Ness): its body side on against the sky (its near wing, raised, hides its back and
+    # its flank and shades the rest: painted out, `repaint`, the mantle's pale grey over the white flank; its spread
+    # tail cut to the fan's middle, side on, as the tail fan is its own), its left wing from below as it banked overhead
+    # (an American herring gull's, whose underwing is the same; its root's shade from the belly lifted, `unshade`), its
+    # upper side made from it (`mantle`: a photo of a gull's upper side shows the spread wing only foreshortened). Its
+    # photographs are CC BY-SA, so its image is too.
+    'herring': dict(
+        length=0.6, span=1.4,
+        body=dict(file='Silbermöwe (Larus argentatus) im Flug (2007).jpg', author='Jochen Teufel', licence=CC_BY_SA_3,
+                  bill=(1118, 971), tail=(124, 1008),
+                  outline=[(1118, 971), (1113, 957), (1100, 943), (1080, 933), (1053, 927), (1040, 923), (1027, 917), (1007, 900), (980, 885),
+                           (953, 875), (920, 870), (887, 866), (853, 860), (820, 854), (790, 850), (700, 858), (600, 866), (500, 878), (440, 890),
+                           (300, 932), (160, 978), (124, 996), (124, 1016), (200, 1024), (330, 1034), (420, 1040), (500, 1044), (600, 1044),
+                           (700, 1040), (780, 1034), (850, 1020), (900, 1006), (950, 990), (980, 979), (1007, 972), (1033, 964), (1053, 963),
+                           (1080, 967), (1103, 972)],
+                  repaint=[dict(backColour=(160, 167, 177), backShare=0.35, fade=0.3, blend=24, taper=180, flankColour=(236, 239, 242),
+                                polygon=[(290, 915), (440, 880), (560, 856), (800, 836), (885, 836), (895, 900), (880, 960), (850, 1000), (790, 1032),
+                                         (700, 1050), (600, 1056), (500, 1056), (420, 1052), (330, 1050), (290, 1030)]),
+                           dict(blend=8, polygon=[(830, 985), (880, 978), (940, 972), (990, 968), (1005, 978), (990, 990), (950, 998), (900, 1012),
+                                                  (850, 1028), (820, 1036)])],   # the throat, in the head's shadow
+                  low=20, high=48),
+        wing=dict(file='Herring gull in flight (00905).jpg', author='Rhododendrites', licence=CC_BY_SA_4,
+                  side='left', crop=(560, 700, 920, 1340),
+                  mask=[(690, 752), (760, 800), (840, 890), (872, 1000), (878, 1150), (872, 1335), (838, 1335), (800, 1220), (760, 1120),
+                        (728, 1000), (700, 920), (672, 860), (655, 805), (660, 770)],
+                  unshade=[[(640, 760), (705, 758), (745, 815), (772, 848), (760, 880), (720, 898), (690, 885), (668, 850), (650, 805)]],
+                  points=[(710, 772), (650, 795), (864, 1150), (785, 1150)],
+                  at=[(0.07, 0.04), (0.07, -0.17), (0.57, 0.0), (0.57, -0.13)],
+                  cut='grabcut', gain=(1.0, 1.0, 1.0), neutral=True,
+                  upper=dict(mantle=(156, 163, 173), trailing=0.05)),
+        tailFan=(0.3, 12),   # its tail's twelve white feathers, square-ended
+    ),
 }
 SIDE_PIXELS_PER_METRE = 600   # a standing bird's side picture: sharper, as it is seen near
 
@@ -249,14 +286,17 @@ def mended(image, spec, outline=None):
 
 
 def repainted(image, spec, outline):
-    """A perched bird's folded wing painted out of its body (`repaint`: patches, each a `polygon` in photo px): in
-    flight the wing is spread, so what shows there is the back above and the flank below. A patch is filled from the
+    """A wing painted out of the body (`repaint`: patches, each a `polygon` in photo px): a perched bird's folded wing,
+    or a flying bird's near wing lying across its side; in flight the wing is spread, so what shows there is the back
+    above and the flank below. A patch is filled from the
     bird's own pixels round it (well inside the outline, never the background past it or the fringe just inside),
     smoothly (OpenCV's inpainting on a quarter-size image, so it blends over the patch rather than streaking in from
-    its edge); with a `back` (a photo point on the bird's back or mantle), each column of it instead runs from that
-    colour at its top (the back, down to the wing's root) to the flank's colour just under it. Then the photo's feather
+    its edge); with a `back` (a photo point on the bird's back or mantle) or a `backColour` (RGB, where the photo shows
+    none of the back), each column of it instead runs from that (down `backShare` of it, then over `fade`) to the
+    flank's colour just under it, or `flankColour` (where the photo's flank lies in shadow), the back's colour faded
+    out over `taper` px at the patch's ends (a gull's grey mantle into its white nape and rump). Then the photo's feather
     grain is given back (fine noise at the strength of the bird's own fine detail round the patch), and the patch is
-    blended in over several pixels."""
+    blended in over several pixels (`blend`, the blur's radius)."""
     if not spec.get('repaint'):
         return image
     height, width, _ = image.shape
@@ -270,29 +310,39 @@ def repainted(image, spec, outline):
         cv2.fillPoly(patch, [np.array(entry['polygon'], np.int32)], 1)
         known = (inside > 0) & (patch == 0)
         _, (near_rows, near_columns) = ndimage.distance_transform_edt(~known, return_indices=True)
-        filled = np.where(known[..., None], image, image[near_rows, near_columns])
+        filled = np.where(known[..., None], result, result[near_rows, near_columns])   # each patch after the last's paint
         small = cv2.resize(filled.astype(np.uint8), (width // 4, height // 4), interpolation=cv2.INTER_AREA)
         small_patch = cv2.dilate(cv2.resize(patch * 255, (width // 4, height // 4), interpolation=cv2.INTER_NEAREST), np.ones((3, 3), np.uint8))
         smooth = cv2.inpaint(small, small_patch, 6, cv2.INPAINT_TELEA)
         smooth = cv2.resize(smooth, (width, height), interpolation=cv2.INTER_CUBIC).astype(np.float64)
-        if 'back' in entry:
-            bx, by = entry['back']
-            back = image[by - 4:by + 5, bx - 4:bx + 5].reshape(-1, 3).mean(axis=0)
+        if 'back' in entry or 'backColour' in entry:
+            if 'backColour' in entry:   # the back's colour given (where the photo shows none of it: a gull's mantle under its wing)
+                back = np.array(entry['backColour'], np.float64)
+            else:
+                bx, by = entry['back']
+                back = image[by - 4:by + 5, bx - 4:bx + 5].reshape(-1, 3).mean(axis=0)
             columns = np.flatnonzero(patch.any(axis=0))
             flanks = []
             for column in columns:   # the flank's colour under each column (the median: never a stray wing bar's tip)
                 bottom = np.flatnonzero(patch[:, column]).max()
                 below = [row for row in range(bottom + 3, min(bottom + 20, height)) if known[row, column]]
-                flanks.append(np.median(image[below, column], axis=0) if below else smooth[bottom, column])
+                if 'flankColour' in entry:   # given (where the photo's flank is in the wing's shadow: a gull's white)
+                    flanks.append(np.array(entry['flankColour'], np.float64))
+                else:
+                    flanks.append(np.median(image[below, column], axis=0) if below else smooth[bottom, column])
             flanks = ndimage.median_filter(np.array(flanks), size=(31, 1), mode='nearest')
             flanks = ndimage.uniform_filter1d(flanks, 15, axis=0, mode='nearest')
+            taper = entry.get('taper', 0)   # the back's colour faded out over this many px at the patch's ends (a gull's grey mantle into its white nape and rump)
             for column, flank in zip(columns, flanks):
                 rows = np.flatnonzero(patch[:, column])
+                end = min(column - columns.min(), columns.max() - column) / taper if taper else 1.0
                 bird_rows = np.flatnonzero(traced_inside[:, column])   # its top: the back's line, where the patch passes it
                 top, bottom = max(rows.min(), bird_rows.min() if len(bird_rows) else 0), rows.max()
                 share = np.clip((rows - top) / max(bottom - top, 1), 0, 1)
-                share = np.clip((share - 0.45) / 0.5, 0, 1)   # the back's colour down to about the wing's root
+                begin = entry.get('backShare', 0.45)   # the back's colour down to about the wing's root (a share of the column)
+                share = np.clip((share - begin) / entry.get('fade', 0.5), 0, 1)
                 share = share * share * (3 - 2 * share)
+                share = 1 - (1 - share) * min(end, 1.0) ** 2 * (3 - 2 * min(end, 1.0))
                 smooth[rows, column] = back * (1 - share[:, None]) + flank * share[:, None]
         smooth = cv2.GaussianBlur(smooth, (0, 0), 3)
         luminance = image @ np.array([0.299, 0.587, 0.114])
@@ -302,7 +352,7 @@ def repainted(image, spec, outline):
         grain = ndimage.gaussian_filter(np.random.default_rng(7 + number).standard_normal((height, width)), 1.0)
         grain *= strength / max(float(np.std(grain)), 1e-6)
         painted = np.clip(smooth + grain[..., None] * (smooth / np.maximum(smooth.mean(axis=-1, keepdims=True), 1)), 0, 255)
-        blend = ndimage.gaussian_filter(patch.astype(np.float64), 5.0)[..., None]
+        blend = ndimage.gaussian_filter(patch.astype(np.float64), entry.get('blend', 5.0))[..., None]
         result = result * (1 - blend) + painted * blend
     return result
 
@@ -357,6 +407,14 @@ def body_part(spec, length, pixels=PIXELS_PER_METRE):
         alpha, colour = cut_traced(image, outline), image   # branch lies inside it takes the bird's nearest colour)
     else:
         alpha, colour = cut_from_sky(image, spec['low'], spec['high'])
+        if spec.get('repaint'):   # what was painted is bird, however like the sky its grey (a gull's mantle)
+            assert not spec.get('swing'), 'a swung kind against a sky: its painted patches would need swinging too'
+            painted = np.zeros(alpha.shape, np.uint8)
+            for entry in spec['repaint']:
+                cv2.fillPoly(painted, [np.array(entry['polygon'], np.int32)], 1)
+            painted = painted.astype(bool)
+            alpha = np.where(painted, 1.0, alpha)
+            colour = np.where(painted[..., None], image, colour)
     colour = np.clip(colour * np.array(spec.get('gain', (1.0, 1.0, 1.0))), 0, 255)
     if spec.get('flip'):
         width = image.shape[1]
@@ -438,11 +496,36 @@ def body_part(spec, length, pixels=PIXELS_PER_METRE):
     }
 
 
+def unshaded(image, spec):
+    """A shadow lifted (`unshade`: polygons, photo px): what the bird's own body shades in the photo (a gull's wing root
+    under its belly), each pixel's light raised to the lit part's (the median light of the cut-out round it) by the
+    ratio to its blurred light, so the feathers' detail stays and only the shade goes; blended in at its edge. With a
+    `mask`, only the wing inside it is the lit part."""
+    if not spec.get('unshade'):
+        return image
+    height, width, _ = image.shape
+    region = np.zeros((height, width), np.uint8)
+    for polygon in spec['unshade']:
+        cv2.fillPoly(region, [np.array(polygon, np.int32)], 1)
+    luminance = image @ np.array([0.299, 0.587, 0.114])
+    blurred = ndimage.gaussian_filter(luminance, 6)
+    ring = cv2.dilate(region, np.ones((41, 41), np.uint8)).astype(bool) & ~region.astype(bool) & (luminance > 120)
+    if 'mask' in spec:   # the lit wing round it, not the sky (a pale sky passes the threshold)
+        wing = np.zeros((height, width), np.uint8)
+        cv2.fillPoly(wing, [np.array(spec['mask'], np.int32)], 1)
+        ring &= wing.astype(bool)
+    target = float(np.median(luminance[ring])) if ring.any() else 220.0
+    gain = np.clip(target / np.maximum(blurred, 1), 1, 4)
+    blend = ndimage.gaussian_filter(region.astype(np.float64), 6)
+    gain = 1 + (gain - 1) * blend
+    return np.clip(image * gain[..., None], 0, 255)
+
+
 def wing_part(spec, span, pixels=PIXELS_PER_METRE):
     """A wing from below, rectified flat: its picture (RGBA), its edges along the span (m), and the rect it covers."""
     image = photo(spec['file'])
     left, top, right, bottom = spec['crop']
-    piece = mended(image, spec)[top:bottom, left:right]
+    piece = unshaded(mended(image, spec), spec)[top:bottom, left:right]
     if spec.get('cut') == 'grabcut':   # not against a sky (grass, a lawn): GrabCut, started from the traced `mask`
         alpha, colour = cut_traced(piece, np.array(spec['mask'], np.float64) - np.array([left, top])), piece
     else:
@@ -674,14 +757,65 @@ def side_part(spec, length):
     }
 
 
+def mantled(picture, upper):
+    """A gull's upper side from its underside (`upper` with a `mantle` colour): the same feathers, their light kept as
+    detail on the mantle's grey (a white underwing's feathers lie as the grey upper side's do), its dark wing tips kept
+    dark (they are black on both sides), and the trailing edge's white band (`trailing`, a share of the chord at each
+    station, fading in over as much again) put back: what an upper-side photo gives a gull only foreshortened."""
+    array = np.asarray(picture).astype(np.float64)
+    inside = array[..., 3] > 128
+    luminance = array[..., :3] @ np.array([0.299, 0.587, 0.114])
+    light = float(np.median(luminance[inside]))
+    ratio = luminance / light
+    dark = np.clip((0.55 - ratio) / 0.25, 0, 1)   # the black tips: as dark as below
+    dark = dark * dark * (3 - 2 * dark)
+    detail = ((1 + 0.25 * (np.clip(ratio, 0, 1.3) - 1)) * (1 - dark) + ratio * dark)[..., None]   # the rest's light softened: the upper side is even
+    colour = np.array(upper['mantle'], np.float64) * detail
+    share = upper.get('trailing', 0.0)
+    if share:
+        for column in np.flatnonzero(inside.any(axis=0)):
+            rows = np.flatnonzero(inside[:, column])
+            lead, trail = rows.min(), rows.max()
+            depth = (trail - rows) / max(trail - lead, 1)   # 0 at the trailing edge, 1 at the leading
+            white = np.clip((2 * share - depth) / share, 0, 1)[:, None] * (1 - dark[rows, column, None])
+            colour[rows, column] = colour[rows, column] * (1 - white) + np.array((236, 238, 241)) * detail[rows, column] * white
+    array[..., :3] = colour
+    return Image.fromarray(array.clip(0, 255).astype(np.uint8))
+
+
 def tinted(picture, tint):
     array = np.asarray(picture).astype(np.float64)
     array[..., :3] *= np.array(tint)
     return Image.fromarray(array.clip(0, 255).astype(np.uint8))
 
 
-def tail_part(body_picture, body):
-    """The tail fan's colour: the body's picture at the tail, stretched over a square."""
+def tail_part(body_picture, body, fan=None):
+    """The tail fan's colour: the body's picture at the tail, stretched over a square. With `fan` (`tailFan`: the share
+    of the body's length from its tail's tip the fan's feathers are taken from, and how many feathers), the fan's own
+    picture instead: down it (src/birdMeshes.js: v from the fan's root to its tip) the body's picture from that share
+    back to the tip, across it each station's depth, so the feathers run root to tip; solid, its tip notched between
+    the feathers (a square-ended tail as a gull's)."""
+    if fan:
+        array = np.asarray(body_picture).astype(np.float64)
+        share, feathers = fan
+        columns = np.flatnonzero((array[..., 3] > 128).any(axis=0))
+        length = columns.max() - columns.min()
+        tip, root = columns.min() + 0.05 * length, columns.min() + share * length   # not the tip's last few px: the sky's fringe
+        size = 96
+        tile = np.zeros((size, size, 4))
+        for row in range(size):
+            column = int(round(root + (tip - root) * row / (size - 1)))   # row 0 the root, the last the tip
+            solid = np.flatnonzero(array[:, column, 3] > 128)
+            if not len(solid):
+                continue
+            lead, trail = solid.min() + 0.15 * (solid.max() - solid.min()), solid.max() - 0.15 * (solid.max() - solid.min())
+            picked = np.linspace(lead, trail, size)
+            tile[row, :, :3] = array[np.round(picked).astype(int), column, :3]
+        across = np.linspace(0, 1, size)
+        notch = 1 - 0.035 * np.abs(np.sin(np.pi * feathers * across))   # where each feather's tip ends (a share of the length)
+        rows = np.arange(size)[:, None] / (size - 1)
+        tile[..., 3] = np.where(rows <= notch[None, :], 255, 0)
+        return Image.fromarray(tile.clip(0, 255).astype(np.uint8))
     left, bottom, right, top = body['rect']
     array = np.asarray(body_picture)
     width = array.shape[1]
@@ -767,12 +901,14 @@ def main():
         pixels = spec.get('pixelsPerMetre', PIXELS_PER_METRE)
         body_picture, body = body_part(spec['body'], spec['length'], pixels)
         wing_picture, wing = wing_part(spec['wing'], spec['span'], pixels)
+        upper = spec['wing'].get('upper', {})
         if spec['wing'].get('face') == 'upper':   # a photograph of its upper side: the underside made from it
             under_picture, upper_picture = underside(wing_picture, spec['wing']['under']), wing_picture
+        elif 'mantle' in upper:   # a gull's grey upper side from its white underside
+            under_picture, upper_picture = wing_picture, mantled(wing_picture, upper)
         else:
-            upper = spec['wing'].get('upper', {})
             under_picture, upper_picture = wing_picture, tinted(wing_picture, upper.get('tint', (0.85, 0.85, 0.85)))
-        parts = {'body': body_picture, 'under': under_picture, 'upper': upper_picture, 'tail': tail_part(body_picture, body)}
+        parts = {'body': body_picture, 'under': under_picture, 'upper': upper_picture, 'tail': tail_part(body_picture, body, spec.get('tailFan'))}
         atlas, uv = pack(parts)
         atlas = bleed(atlas)
         file = f'{kind}-model.webp'   # beside tools/bird-sprites.py's pictures (assets/birds/<kind>.webp)
