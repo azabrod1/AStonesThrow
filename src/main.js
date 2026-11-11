@@ -881,7 +881,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
   // The water's lean programs while there is no ice, gale or rain (src/waterSurface.js); ?lean=0 draws the full ones only.
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, visitor, lean: pageParameters.get('lean') !== '0' });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, nearLand: environment.nearLandUniforms, gale: galeWaves, ice, visitor, lean: pageParameters.get('lean') !== '0' });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass

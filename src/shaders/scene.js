@@ -1564,6 +1564,7 @@ uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
+uniform vec4 uNearLand[NEAR_LAND_SECTORS];   // the photo's near land (src/sky.js Near land): each sector's centre (radians, atan(z, x)), half width (radians; 0: none), distance (m), edge (radians)
 uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen but while a splash rises from a hole, else 0 (src/main.js)
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
@@ -1770,22 +1771,43 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
 // splash's rectangle: the splash, a floater, the thing in the loch; in the Pool, the whole image: its walls and deck)
 // spreads by L/(L + d) of that, L its distance from the water here and d the water's from the eye, as nearReflection
 // moves it, about the lookup it settled on (\`near\`: that lookup and the nearness found there), so the spread image
-// lies over the sharp one. Its image moves less, but its rays turn as far as the sky's: where the box is cut is
+// lies over the sharp one; where the photo's own land stands near (nearLandReach), what the dome shows there spreads
+// so by that land's distance. Its image moves less, but its rays turn as far as the sky's: where the box is cut is
 // reckoned by the rays' turn, not the image's. Where the spread is under
 // half a mirror pixel the sharp image stands. A footprint the image's edge cuts would read the edge's clamped texels
 // down the water (the bars MIRROR_EDGE keeps from the sharp lookup): as far as its far end is past the edge, it fades
 // to the sky's cube, as the sharp lookup does.
 #define MIRROR_BOX 3.5                 // the lookup's footprint down the image, in the spread's rms (a box of the Gaussian's width)
+// The photo's near land (uNearLand; src/sky.js Near land): the dome draws it at infinity, but on these bearings it
+// stands D metres off, so what the dome shows there spreads as a near thing's image does, by 1 − d/D of the sky's
+// (d the water's distance from the eye, \`along\`), and not at all where the water lies past it: the dome's horizon
+// there is taken as the land's foot. Each sector by the reflected ray's bearing, faded in over its edge; where
+// sectors overlap, the nearer land's. 1 (the sky's) where none is listed, and in the Pool, whose walls stand between.
+float nearLandReach(vec3 ray, float along) {
+  if (uPool.w > 0.0) return 1.0;
+  float bearing = atan(ray.z, ray.x);
+  float reach = 1.0;
+  for (int index = 0; index < NEAR_LAND_SECTORS; index++) {
+    vec4 sector = uNearLand[index];
+    if (sector.y <= 0.0) continue;
+    float offset = abs(mod(bearing - sector.x + PI, 2.0 * PI) - PI);
+    float share = smoothstep(0.0, sector.w, sector.y - offset);
+    reach = min(reach, mix(1.0, clamp(1.0 - along / sector.z, 0.0, 1.0), share));
+  }
+  return reach;
+}
 vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVariance) {   // coord: uReflectionMatrix * (ray, 0)
   float horizontal = max(length(ray.xz), 1e-3);
   vec4 raised = coord + 0.01 * horizontal * uReflectionMatrix[1];
   vec2 perClimb = (raised.xy / max(raised.w, 1e-4) - coord.xy / max(coord.w, 1e-4)) / 0.01;   // uv per unit of climb
   // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d).
   // Outside nearReflection's reach the cached image's near things (the boulders, the reeds, the koi's garden, the
-  // lagoon's palms) spread as the sky does, as the sharp lookup moves them: spread by their own nearness there, the
-  // garden's image by the bank stood as the sharp lookup's shards, and the spread had smoothed them.
+  // lagoon's palms) spread as the sky does (on near land's bearings, as that land does), as the sharp lookup moves
+  // them: spread by their own nearness there, the garden's image by the bank stood as the sharp lookup's shards, and
+  // the spread had smoothed them.
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
-  float reach = clamp(1.0 - distance(vWorld, mirrorEye) * near.z, 0.0, 1.0);
+  float fromMirror = distance(vWorld, mirrorEye);
+  float reach = near.z > 0.0 ? clamp(1.0 - fromMirror * near.z, 0.0, 1.0) : nearLandReach(ray, fromMirror);   // a near thing's, or the dome's
   float turned = sqrt(2.0 * slopeVariance);   // the rays' turn (rms climb)
   float spread = turned * reach;               // the image's
   float pixels = spread * length(perClimb * uMirrorSize);
