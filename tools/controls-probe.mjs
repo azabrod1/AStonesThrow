@@ -1026,10 +1026,12 @@ for (const framing of FRAMINGS) {
   });
   check(aboutShown.open && !aboutShown.settings && !!aboutCard && onScreen(aboutCard) && aboutShown.credits && aboutShown.mall && aboutShown.elsewhere === 0,
     `About opens its popup on the screen (open: ${aboutShown.open}, settings ${aboutShown.settings ? 'still open' : 'closed'}), the credits and the Reflecting Pool's line in it (${aboutShown.credits}, ${aboutShown.mall}), none left in the settings (${aboutShown.elsewhere})`);
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-about.png`) });
   if (framing.touch) await press('#about-close');
   else await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);   // a dialog's close event comes a task later
   const aboutClosed = await page.evaluate(() => ({ open: document.getElementById('about').open, focus: document.activeElement?.id }));
-  check(!aboutClosed.open && aboutClosed.focus === 'menu-button', `${framing.touch ? 'Its ×' : 'Escape'} closes it, the focus back on the settings button (${aboutClosed.focus})`);
+  check(!aboutClosed.open && aboutClosed.focus === 'menu-button', `${framing.touch ? 'Its ×' : 'Escape'} closes it, the focus back on the settings button (open: ${aboutClosed.open}, focus: ${aboutClosed.focus})`);
   await press('#menu-button');
   await page.waitForTimeout(400);
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
