@@ -781,7 +781,43 @@
   .menu-seg button + button { border-left: 1px solid var(--line); }
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-  .menu-credit a { color: inherit; }
+  /* About (a modal <dialog>, opened from the settings' About row): a card of the panel's glass in the middle of the
+     screen, the pond dimmed behind it. A press on the dimmed pond closes it, as Escape and × do; it scrolls when a
+     short screen cannot hold it. */
+  .about {
+    width: min(420px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    box-sizing: border-box;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 16px;
+    border: 1px solid rgba(238, 243, 244, 0.12);
+    background:
+      linear-gradient(168deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012) 38%, rgba(0, 0, 0, 0.05)),
+      rgba(7, 18, 24, 0.9);
+    backdrop-filter: blur(30px) saturate(160%);
+    -webkit-backdrop-filter: blur(30px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 28px 80px rgba(0, 0, 0, 0.6);
+    color: var(--fg);
+  }
+  .about::backdrop { background: rgba(0, 0, 0, 0.45); }
+  .about-body { padding: 8px 18px 16px; font-size: 13.5px; line-height: 1.55; }
+  .about-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 -10px 0 0; }
+  .about h2 { margin: 6px 0 0; font-family: var(--font-display); font-weight: 400; font-style: italic; font-size: 22px; }
+  .about h3 { margin: 14px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .about p { margin: 8px 0 0; color: var(--muted); }
+  .about ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+  .about li + li { margin-top: 5px; }
+  .about a { color: var(--accent); }
+  .about-close {
+    flex: none; width: 36px; height: 36px; margin-top: 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 8px; background: none; color: var(--muted);
+    font: inherit; font-size: 24px; line-height: 1; cursor: pointer;
+  }
+  .about-close:hover { background: rgba(238, 243, 244, 0.07); color: var(--fg); }
   /* A page of pictured choices (Location, Water, Weather): a thumbnail, the name and a line on it. */
   .menu-cards { display: grid; gap: 4px; }
   .menu-card {
@@ -1131,6 +1167,10 @@
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <hr class="menu-rule">
+    <button type="button" class="menu-tier" id="about-open" aria-haspopup="dialog" aria-controls="about">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"></circle><path d="M10 9v4.8M10 6.2v.1"></path></svg>
+      <span class="menu-tier-name"><b>About</b><small>The pond and its credits</small></span>
+    </button>
     <button type="button" class="menu-tier menu-reset" id="reset-settings">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.75 4v4.5h4.5"></path><path d="M3.63 12.25a6.75 6.75 0 1 0 1.6-7.02L1.75 8.5"></path></svg>
       <span class="menu-tier-name"><b>Reset all</b><small>Every setting as on a first visit</small></span>
@@ -1225,9 +1265,6 @@
         <button type="button" class="menu-card" role="radio" data-value="mall"><img loading="lazy" src="assets/sky/thumbs/mall.jpg" alt="" width="80" height="45"><span><b>Reflecting Pool</b><small>Washington, D.C.: the Monument mirrored down the pool, elms either side</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
-      <!-- Credit for what a place shows that its licence asks for (CREDITS.md, published as credits.html): the
-           Reflecting Pool's backdrop's while it is chosen, and the link to every credit always. -->
-      <div class="menu-note menu-credit" id="sky-credit"><span id="mall-credit" hidden>Reflecting Pool backdrop cut, combined and graded from photos by Kenrick95, Jmarcosny, Marty Aligata, Gregg L. Davis and Ramakrishna Gundra (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>) and John Brighenti (<a href="https://creativecommons.org/licenses/by/2.0/" target="_blank" rel="noopener">CC BY 2.0</a>); shared under CC BY-SA 4.0. </span><a href="credits.html" target="_blank" rel="noopener">Credits and licences</a></div>
     </div>
   </div>
   <div class="menu-page" data-page="time" hidden>
@@ -1305,6 +1342,26 @@
     </div>
   </div>
 </div>
+
+<!-- About, opened from the settings' About row: what the pond is, and the credits (CREDITS.md, published as
+     credits.html: change the three together), the Reflecting Pool's line in its licence's own words. -->
+<dialog class="about" id="about" aria-labelledby="about-title">
+  <div class="about-body">
+    <div class="about-head">
+      <h2 id="about-title">A Stone’s Throw</h2>
+      <button type="button" class="about-close" id="about-close" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+    </div>
+    <p>Throw stones, balls and more into water and watch the splash. The water is a real wave solver, the splash is choreographed from the physics of a stone entering water, and the droplets are drawn as water.</p>
+    <h3>Credits</h3>
+    <ul>
+      <li>The skies are HDRIs from <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a>), by Greg Zaal, Jarod Guest, Rico Cilliers, Andreas Mischok and Grzegorz Wronkowski.</li>
+      <li>Reflecting Pool backdrop cut, combined and graded from photos by Kenrick95, Jmarcosny, Marty Aligata, Gregg L. Davis and Ramakrishna Gundra (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>) and John Brighenti (<a href="https://creativecommons.org/licenses/by/2.0/" target="_blank" rel="noopener">CC BY 2.0</a>); shared under CC BY-SA 4.0.</li>
+      <li>The lagoon’s palm bark and sand are Poly Haven textures (CC0), by Dimitrios Savva, Rico Cilliers and Charlotte Baglioni.</li>
+      <li>Drawn with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> (MIT); the jet column’s sweep was computed with <a href="http://basilisk.fr" target="_blank" rel="noopener">Basilisk</a>.</li>
+    </ul>
+    <p><a href="credits.html" target="_blank" rel="noopener">Every credit and licence</a></p>
+  </div>
+</dialog>
 
 <div class="veil" id="veil" role="status" aria-live="polite"><span id="veil-text">Loading the pond…</span></div>
 
@@ -1745,10 +1802,8 @@
         if (shown !== value) skyNote.textContent = 'That place could not be loaded. Check the connection and try again.';
       });
     });
-    const mallCredit = document.getElementById('mall-credit');
     function updateSky() {
       showSky(pond.sky);
-      mallCredit.hidden = pond.sky !== 'mall';
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
       updateTime();
@@ -1830,6 +1885,18 @@
     // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
     // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.
     document.querySelector('.menu-tier[data-open="time"]').addEventListener('click', () => pond.prefetchHours());
+    // About: the settings close and its popup opens over the pond. While it is open no key reaches the pond's own
+    // handlers (Space would throw, Escape glide the view home: Escape closes it instead, the dialog's own way), and
+    // closed, the focus goes back to the settings button, its row being gone.
+    const about = document.getElementById('about');
+    document.getElementById('about-open').addEventListener('click', () => {
+      settings.hide();
+      about.showModal();
+    });
+    document.getElementById('about-close').addEventListener('click', () => about.close());
+    about.addEventListener('click', (event) => { if (event.target === about) about.close(); });   // the dimmed pond around the card
+    about.addEventListener('close', () => document.getElementById('menu-button').focus({ preventScroll: true }));
+    window.addEventListener('keydown', (event) => { if (about.open) event.stopPropagation(); }, true);
     // Reset all: a first press asks again in the row's own words, and a second within a few seconds sets every
     // setting as a first visit has it (pond.resetSettings). Favourites and the latest choices stay.
     const resetButton = document.getElementById('reset-settings');

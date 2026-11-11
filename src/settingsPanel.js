@@ -3,7 +3,8 @@
 // PlanetariumMenuPanel). The root page lists the settings in groups, each
 // row an icon, its name over a line on what it sets, where it stands and a
 // chevron; a row opens that setting's page, whose ‹ button comes back (a row
-// with no page, the list's last, Reset all, is the page script's). A page
+// with no page is the page script's: About, which closes the panel and opens
+// its popup, and the list's last, Reset all). A page
 // holds the choices (a row of buttons, a slider, or pictured cards) and a line
 // on what the chosen one means. The markup is in index.html; the page script
 // (there too) wires each choice to the pond and calls setValue with what it

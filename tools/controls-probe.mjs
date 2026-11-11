@@ -93,7 +93,9 @@
 //     choices (one list of cards) fit, whose Heavy rain brings the rain
 //     and whose Heavy snow the snow, at once; its Reset all, pressed once,
 //     asks again and, pressed again, sets every setting as a first visit
-//     has it, the rows following, and forgets them; a press on the water
+//     has it, the rows following, and forgets them; its About closes it and
+//     opens the About popup on the screen, which holds the credits (none
+//     left on Location) and closes on its × or Escape; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
 //     throws nothing, and the Reset view button then shows on the screen,
@@ -586,7 +588,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 12, `the settings open on the screen with their eleven rows and Reset all (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 13, `the settings open on the screen with their eleven rows, About and Reset all (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -1014,6 +1016,22 @@ for (const framing of FRAMINGS) {
   });
   check(reset.thing === 'stone' && reset.sky === 'lakeside' && !reset.pooled && reset.water === 'lake' && reset.weather === 'clear' && reset.wind === 'calm' && reset.sound && reset.kept.length === 0,
     `pressed again it resets: ${reset.thing}, ${reset.sky}${reset.pooled ? ' (pooled)' : ''}, ${reset.water}, ${reset.weather}, ${reset.wind}, sound ${reset.sound ? 'on' : 'off'}; the rows read "${reset.rows}"; ${reset.kept.length ? `still stored: ${reset.kept.join(', ')}` : 'nothing stored'}`);
+  // About: the row closes the settings and opens its popup on the screen, the credits in it and none left on Location.
+  await press('#about-open');
+  await page.waitForTimeout(200);
+  const [aboutCard] = await boxes('#about');
+  const aboutShown = await page.evaluate(() => {
+    const about = document.getElementById('about');
+    return { open: about.open, settings: !document.getElementById('settings').hidden, credits: !!about.querySelector('a[href="credits.html"]'), mall: about.textContent.includes('Reflecting Pool backdrop'), elsewhere: document.querySelectorAll('#settings a[href="credits.html"]').length };
+  });
+  check(aboutShown.open && !aboutShown.settings && !!aboutCard && onScreen(aboutCard) && aboutShown.credits && aboutShown.mall && aboutShown.elsewhere === 0,
+    `About opens its popup on the screen (open: ${aboutShown.open}, settings ${aboutShown.settings ? 'still open' : 'closed'}), the credits and the Reflecting Pool's line in it (${aboutShown.credits}, ${aboutShown.mall}), none left in the settings (${aboutShown.elsewhere})`);
+  if (framing.touch) await press('#about-close');
+  else await page.keyboard.press('Escape');
+  const aboutClosed = await page.evaluate(() => ({ open: document.getElementById('about').open, focus: document.activeElement?.id }));
+  check(!aboutClosed.open && aboutClosed.focus === 'menu-button', `${framing.touch ? 'Its ×' : 'Escape'} closes it, the focus back on the settings button (${aboutClosed.focus})`);
+  await press('#menu-button');
+  await page.waitForTimeout(400);
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
   // Water clear of the open list: beside it, or (on a narrow screen, where it spans the width) under it, above the strip,
   // unless the gap there is narrower than the margin beside it (a small phone): a tap that near the list is the list's.
