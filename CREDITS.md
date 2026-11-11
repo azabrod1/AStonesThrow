@@ -23,13 +23,15 @@ The stitched backdrops' skies are Poly Haven's Qwantani pure skies (below).
 
 ## Birds
 
-The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
+The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the herring gull's, blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
 
 | Shows | Photograph | Author | Licence |
 |---|---|---|---|
 | Kelp gull (Rocky cove) | [Kelp gull half moon island 1.17.25 DSC 9790-topaz-rawdenoise](https://commons.wikimedia.org/wiki/File:Kelp_gull_half_moon_island_1.17.25_DSC_9790-topaz-rawdenoise.jpg) | lwolfartist | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Kelp gull (Rocky cove) | [Kelp gull deesembocadura rio olivia DSC 3427-topaz-rawdenoise](https://commons.wikimedia.org/wiki/File:Kelp_gull_deesembocadura_rio_olivia_DSC_3427-topaz-rawdenoise.jpg) | lwolfartist | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Kelp gull (Rocky cove) | [Kelp gull deesembocadura rio olivia DSC 3294-topaz-rawdenoise](https://commons.wikimedia.org/wiki/File:Kelp_gull_deesembocadura_rio_olivia_DSC_3294-topaz-rawdenoise.jpg) | lwolfartist | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| Herring gull (Loch Ness) | [Silbermöwe (Larus argentatus) im Flug (2007)](https://commons.wikimedia.org/wiki/File:Silberm%C3%B6we_%28Larus_argentatus%29_im_Flug_%282007%29.jpg) | Jochen Teufel | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
+| Herring gull (Loch Ness) | [Herring gull in flight (00905)](https://commons.wikimedia.org/wiki/File:Herring_gull_in_flight_%2800905%29.jpg) | Rhododendrites | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | Herring gull (Loch Ness) | [Herring Gull (44562549102)](https://commons.wikimedia.org/wiki/File:Herring_Gull_%2844562549102%29.jpg) | Mike Prince | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Herring gull (Loch Ness) | [Gråtrut European Herring Gull (13896263568)](https://commons.wikimedia.org/wiki/File:Gr%C3%A5trut_European_Herring_Gull_%2813896263568%29.jpg) | Åsa Berndtsson | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Herring gull (Loch Ness) | [Larus argentatus Tuileries 20180324 t144644](https://commons.wikimedia.org/wiki/File:Larus_argentatus_Tuileries_20180324_t144644.jpg) | Marie-Lan Taÿ Pamart | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |

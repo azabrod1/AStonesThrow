@@ -55,6 +55,10 @@ export const FLIGHT = {
   // FLAPPING.bounding; `fold` here).
   blueJay: { amplitude: degrees(48), centre: degrees(8), down: 0.5, lag: 0.08, handSwing: 0.4, flex: 0.7, pronation: degrees(12), rise: 0.03,
     glide: { dihedral: degrees(4), hand: degrees(-4), sweep: degrees(8) } },
+  // A gull: moderate beats, the hand drawn in and swept back on each upstroke (its flex gait), gliding with its arm
+  // raised a little and its hand drooped, the gull's arched wing.
+  herring: { amplitude: degrees(38), centre: degrees(6), down: 0.52, lag: 0.1, handSwing: 0.5, flex: 0.55, pronation: degrees(10), rise: 0.014,
+    glide: { dihedral: degrees(6), hand: degrees(-10), sweep: degrees(10) } },
   cardinal: { amplitude: degrees(55), centre: degrees(10), down: 0.5, lag: 0.06, handSwing: 0.35, flex: 0.85, pronation: degrees(12), rise: 0.03,
     glide: { dihedral: degrees(4), hand: degrees(-4), sweep: degrees(8) } },
 };

@@ -685,7 +685,12 @@ made the same way, their bodies cut from perched birds (GrabCut from a
 traced outline, levelled along the body, the cardinal's tail and head
 swung into line, its crest a thin fin over its skull, and the folded wing of
 the perched photo painted out, since in flight it is spread) and their wings from a bird with its wing spread above
-or below, the other side derived from it. The grey heron is one too: its trunk, six-jointed
+or below, the other side derived from it. Loch Ness's herring gull is
+cut from a gull flying side on, its raised near wing painted out of its
+back and flank (the mantle grey, the flank white), its wings from an
+underwing photographed as the gull banked overhead (the shade of its body
+on the wing's root lifted) and its grey upper side made from those same
+feathers, black tips and white trailing edge kept. The grey heron is one too: its trunk, six-jointed
 neck and legs shaped from a side-on photograph, so it stands, looks about,
 draws its neck in or stretches it, walks the bank, strikes at fish, crouches
 and takes off trailing its legs, its legs seen through the water
@@ -694,7 +699,8 @@ alone through its wingbeat (`--poses=standing`: a standing kind's ways). The
 other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
-or public domain, and CC BY-SA for the jay's and cardinal's wings, so their
+or public domain, and CC BY-SA for the herring gull's model and the jay's
+and cardinal's wings, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky (or, for the standing birds,
 its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
