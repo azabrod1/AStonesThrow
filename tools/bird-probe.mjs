@@ -11,7 +11,8 @@
 //   and go, every visit beginning and ending out beyond the frame's sides,
 //   each on a path of its own; the gulls and the fish eagle glide and flap
 //   by turns; the Reflecting Pool's cardinal bounds (its wings shut a
-//   moment each cycle) and its jay beats steadily; a flock flies together;
+//   moment each cycle) and its jay beats steadily, each coming and going
+//   on its own; a flock flies together;
 // - the heron stands wading at its spot: its feet on the bed, in the water,
 //   a few centimetres to a few tens deep, inside the pond;
 // - its ways are smooth: it turns about unhurried, stepping round as it
@@ -147,6 +148,20 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
     const beating = jay.filter((bird) => bird.beat > 0.5).length / jay.length;
     check(shut > 0.15 && shut < 0.6 && dips > 20 && cardinal.every((bird) => bird.fold === 0 || bird.beat === 1 - bird.fold), `the cardinal bounds: wings shut in ${(shut * 100).toFixed(0)}% of its frames, ${dips} bounds come down into a flap`);
     check(beating > 0.6 && jay.every((bird) => !bird.fold), `the jay beats steadily: in ${(beating * 100).toFixed(0)}% of its frames, never shut`);
+    // Each on its own comings and goings: over many seeds, both in view about as often as two birds coming and going
+    // by chance would be (the product of how often each is), neither following nor avoiding the other.
+    let jayShown = 0, cardinalShown = 0, both = 0, samples = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const birds = new BirdPopulation({ seed }); birds.setPlace(place); birds.setConditions(DAY);
+      const [jayBird, cardinalBird] = ['blueJay', 'cardinal'].map((kind) => birds.birds.find((bird) => bird.kind === kind));
+      for (let time = 0; time < 600; time += 0.25) {
+        birds.showAt(time);
+        samples++;
+        jayShown += jayBird.pose.shown; cardinalShown += cardinalBird.pose.shown; both += jayBird.pose.shown && cardinalBird.pose.shown;
+      }
+    }
+    const together = (both / samples) / ((jayShown / samples) * (cardinalShown / samples));
+    check(together > 0.6 && together < 1.5, `the jay and the cardinal come and go each on its own: both in view ${(together * 100).toFixed(0)}% as often as by chance`);
   }
   if (groups.some((group) => group.together)) {
     // Together: while the first and the last of the flock are both in view, they are a few spacings apart.

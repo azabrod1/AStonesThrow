@@ -138,12 +138,13 @@ export const BIRDS_BY_PLACE = {
   harbour: [{ kind: 'ibis', habit: 'visit', count: 5, together: true, spacing: 3.5, distance: [40, 75], height: [2.5, 4.5], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 0.75, turn: 0.25 } }],
   mesas: [{ kind: 'goose', habit: 'visit', count: 2, together: true, spacing: 2.5, distance: [35, 65], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 0.75, turn: 0.25 } }],
   highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 0.7, turn: 0.3 } }],
-  // The Reflecting Pool (Washington, D.C.): a blue jay and a cardinal, birds of the elms either side of it, now and
-  // then crossing the pool from one row to the other, low and near (nothing thrown goes past the water's 6 m patch,
-  // so they may come within 10 m of the eye, where a songbird shows), the cardinal bounding.
+  // The Reflecting Pool (Washington, D.C.): a blue jay and a cardinal, birds of the elms either side of it, each on
+  // its own comings and goings and in its own way (nothing thrown goes past the water's 6 m patch, so they may come
+  // within 10 m of the eye, where a songbird shows): the jay crossing higher and farther out, at the elms' lower
+  // branches; the cardinal dashing low and near, bounding, less often.
   mall: [
-    { kind: 'blueJay', habit: 'visit', count: 1, distance: [10, 24], height: [1.6, 4], aim: 0, spread: 16, gap: [15, 45], styles: { cross: 1 } },
-    { kind: 'cardinal', habit: 'visit', count: 1, distance: [10, 22], height: [1.6, 3.5], aim: 0, spread: 16, gap: [20, 55], styles: { cross: 1 } },
+    { kind: 'blueJay', habit: 'visit', count: 1, distance: [15, 32], height: [2.4, 4.5], aim: 0, spread: 22, gap: [12, 50], styles: { cross: 1 } },
+    { kind: 'cardinal', habit: 'visit', count: 1, distance: [10.5, 19], height: [1.2, 2.5], aim: 0, spread: 12, gap: [25, 75], styles: { cross: 1 } },
   ],
 };
 
