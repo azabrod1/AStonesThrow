@@ -1345,7 +1345,7 @@
 </div>
 
 <!-- About, opened from the settings' About row: what the pond is, and the credits (CREDITS.md, published as
-     credits.html: change the three together), the Reflecting Pool's line in its licence's own words. -->
+     credits.html: change the three together), the Reflecting Pool's attribution in full. -->
 <dialog class="about" id="about" aria-labelledby="about-title">
   <div class="about-body">
     <div class="about-head">
@@ -1895,12 +1895,21 @@
       about.showModal();
     });
     document.getElementById('about-close').addEventListener('click', () => about.close());
-    // The dimmed pond around the card: a press that starts and ends there (one dragged out of the card, selecting its
-    // text, ends on the dialog too).
+    // The dimmed pond around the card: a press that starts and ends outside the card's box (one dragged out of the
+    // card, selecting its text, ends on the dialog too, and so does one on the card's own border).
+    const outsideCard = (event) => {
+      const card = about.getBoundingClientRect();
+      return event.target === about && (event.clientX < card.left || event.clientX > card.right || event.clientY < card.top || event.clientY > card.bottom);
+    };
     let pressedOutside = false;
-    about.addEventListener('pointerdown', (event) => { pressedOutside = event.target === about; });
-    about.addEventListener('click', (event) => { if (event.target === about && pressedOutside) about.close(); });
-    about.addEventListener('close', () => document.getElementById('menu-button').focus({ preventScroll: true }));
+    about.addEventListener('pointerdown', (event) => { pressedOutside = outsideCard(event); });
+    about.addEventListener('click', (event) => { if (pressedOutside && outsideCard(event)) about.close(); });
+    // Closed: the backdrop, a fixed box at the top, may have lent its dim to an iPhone's status bar, so Safari takes
+    // the bar's colour afresh (src/screen.js refresh), as it does when the veil goes.
+    about.addEventListener('close', () => {
+      document.getElementById('menu-button').focus({ preventScroll: true });
+      screenEdges?.refresh();
+    });
     window.addEventListener('keydown', (event) => { if (about.open) event.stopPropagation(); }, true);
     // Reset all: a first press asks again in the row's own words, and a second within a few seconds sets every
     // setting as a first visit has it (pond.resetSettings). Favourites and the latest choices stay.
