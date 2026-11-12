@@ -2,7 +2,7 @@
 <!-- One kind's bird model (src/birdMeshes.js) alone, posed through its wingbeat and seen from several sides, for
      tools/bird-look.mjs to shoot: ?kind=fishEagle&beat=1. Rows: its wingbeat's phases (or, with &poses=standing, a
      standing kind's ways: standing as photographed, neck drawn in, stretched up, striking, mid-step, crouched to go,
-     flying); columns: side on, from below, from in front and below, from above (standing: side on, from the front,
+     flying, flopping its wings); columns: side on, from below, from in front and below, from above (standing: side on, from the front,
      from three-quarters behind, from above). &sides=x,y,z;x,y,z;... chooses the columns' eye directions instead (the
      eye offset from the bird, +z its left side, +x ahead of it), and &fold=0..1 folds its wings (a bound). -->
 <html><head><meta charset="utf-8">
@@ -18,11 +18,12 @@ const beat = Number(parameters.get('beat') ?? 1);
 const STANDING_POSES = [
   {}, { neck: 0 }, { neck: 1 }, { strike: 1, neck: 0.3 }, { walking: 1, stride: 0.75 }, { crouch: 1, neck: 0.2 },
   { flying: true, legs: 0, fold: 0, neck: 0, beat: 1, y: 1.3 }, { flying: true, legs: 0, fold: 0, neck: 0, beat: 1, phase: Math.PI, y: 1.3 },
+  { fold: 0.1, beat: 0.9, neck: 0.75, pitch: 0.09 }, { fold: 0.1, beat: 0.9, neck: 0.75, pitch: 0.09, phase: Math.PI },   // flopping its wings (src/birds.js HERON.flop)
 ];
 const chosenSides = parameters.get('sides')?.split(';').map((side) => side.split(',').map(Number));
 const rows = parameters.get('poses') === 'standing' ? STANDING_POSES.length : Number(parameters.get('rows') ?? 4), columns = chosenSides?.length ?? 4;
 const canvas = document.getElementById('view');
-const height = standingPosesWanted() ? 8 * 300 : 960;
+const height = standingPosesWanted() ? STANDING_POSES.length * 300 : 960;
 function standingPosesWanted() { return new URLSearchParams(location.search).get('poses') === 'standing'; }
 canvas.height = height;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });

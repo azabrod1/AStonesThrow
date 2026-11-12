@@ -13,7 +13,10 @@
 //     stands still for long spells, its head turning now and then, its neck
 //     drawn in or stretched up; it walks a few steps along the bank, turning
 //     about as it steps, its head first; it peers into the water, holds
-//     still and strikes, and swallows. Each movement settles as a spring
+//     still and strikes, and swallows (or misses, or gives up); now and then
+//     it opens its wings and gives them a few lazy beats. What it does in each
+//     spell, and when, and how long the spell is, are drawn afresh each time
+//     it comes down (spellPlan), so it keeps no rhythm. Each movement settles as a spring
 //     does, each part on its own time (sprung). A splash anywhere in the
 //     pond makes it stretch up and look; a thing thrown near it puts it up: it crouches,
 //     jumps and flies off low over the garden with deep, slow beats, its neck
@@ -172,22 +175,32 @@ const ROLL_EASE = 0.5;
 //   land: it glides back in over `glide` s from `from` m out and `high` m up, beating `flaps` s of every few and
 //     flaring over the last `flare` s, its wings folding over `fold` s once it stands.
 const HERON = {
-  idle: { lookEvery: 4.6, jitter: 1.6, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
+  idle: { lookEvery: 4.6, jitter: 3.4, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
   alert: { alert: 9, hold: 4.5, settle: 0.6 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 9, far: 38, climb: 13, hard: 1.8, legsUp: 1.2, neckIn: 1.0 },
   away: { absent: [45, 90], retry: 12, quiet: 8 },
   land: { glide: 10, from: 34, high: 11, flare: 1.4, fold: 0.9 },
   tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
-  // walk: its standing cut into `every`-second spells from when it began to stand; in each it may walk to one of
-  //   `spots` (m along the bank either way from its own spot) at `speed`, none in the first spell (it has just come
-  //   down). It looks the way it will go (its head first), turns to it stepping round (`turnSettle` s, `turnStep` m of
-  //   stepping a radian turned), sets off once mostly turned (`setOff` s after it began to turn) and, as it stops,
-  //   turns to face the water a little (`facePond` rad from the bank), facing so until it walks again.
-  walk: { every: 14, spots: [-0.35, -0.12, 0.2, 0.45], speed: 0.17, start: 0.6, turnSettle: 2.2, setOff: 1.5, turnStep: 0.12, facePond: 0.5 },
-  // strike: in a `share` of its spells, `at` s into it (or a moment after its walk): it peers down into the water,
-  //   lowering itself (`stalk` s to settle), holds still `freeze` s (drawn), throws its bill in (`stab` s to settle),
-  //   holds it there `hold` s, brings it up with a little spring (`back`), and swallows: `gulps` jerks of its neck.
-  strike: { share: 0.5, at: 5, stalk: 1.6, freeze: [0.8, 2.2], stab: 0.13, hold: 0.32, back: 0.55, gulps: 3 },
+  // spells: its standing cut into spells from when it began to stand, each `length` s long (drawn), or longer if what
+  //   it does in it needs more; each spell's plan (spellPlan) is drawn from its seed, its stay (how many times it has
+  //   come down) and the spell's number, so no two stays go alike and none repeats on a beat.
+  spells: { length: [6, 20], rest: [1.5, 5] },
+  // walk: in a `share` of its spells (none in the first: it has just come down) it walks `distance` m (drawn) along
+  //   the bank, kept within `reach` of its own spot, at `speed`, setting off `start` s into the spell (drawn). It looks
+  //   the way it will go (its head first), turns to it stepping round (`turnSettle` s, `turnStep` m of stepping a
+  //   radian turned), sets off once mostly turned (`setOff` s after it began to turn) and, as it stops, turns to face
+  //   the water a little (`facePond` rad from the bank), facing so until it walks again.
+  walk: { share: 0.5, distance: [0.12, 0.6], reach: [-0.4, 0.5], speed: 0.17, start: [0.3, 3], turnSettle: 2.2, setOff: 1.5, turnStep: 0.12, facePond: 0.5 },
+  // strike: in a `share` of its spells (`afterWalk` of those it walks in), `at` s (drawn) into it or after its walk:
+  //   it peers down into the water, lowering itself (`stalk` s to settle), holds still `freeze` s (drawn), throws its
+  //   bill in (`stab` s to settle), holds it there `hold` s, brings it up with a little spring (`back`), and swallows:
+  //   `gulps` jerks of its neck (drawn; none when it missed, a share `miss`). A share `giveUp` of its peers come to
+  //   nothing: it straightens up again without striking.
+  strike: { share: 0.5, afterWalk: 0.3, at: [0.6, 6], stalk: 1.6, freeze: [0.6, 3], stab: 0.13, hold: 0.32, back: 0.55, gulps: [2, 4], miss: 0.3, giveUp: 0.2 },
+  // flop: in a `share` of its spells (a share `afterLanding` of the first after it comes down), `at` s (drawn) after
+  //   what else it does: it opens its wings (`open` s to settle), gives them a few lazy beats at `beat` Hz for `hold` s
+  //   (drawn), stretching up a little, and folds them again (`close` s to settle).
+  flop: { share: 0.09, afterLanding: 0.5, at: [0.5, 4], open: 0.45, hold: [0.8, 1.9], close: 0.7, beat: 1.6 },
 };
 const STANDING = { heron: HERON };
 const STANDING_HABITS = new Set(['wade']);
@@ -315,7 +328,7 @@ function splineAt(path, parameter, out, first, second) {
 
 const scratchSample = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };
 const scratchRoll = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };   // the bank's average's samples, and a path's tightest turn's
-const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, lead: 0, walked: 0, walking: 0, stride: 0, spell: 0, walks: false, walkEnds: 0 };
+const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, lead: 0, walked: 0, walking: 0, stride: 0, spell: 0, walks: false, plan: null, into: 0 };
 
 /**
  * Where a path is `along` m along it (into `out`): its point, its direction (velocity: its derivative there) and its
@@ -409,6 +422,7 @@ export class BirdPopulation {
       bird.mode = 'stand';
       bird.since = time;
       bird.standSince = time;   // its walks' spells from now (src/birds.js standingPlace)
+      bird.stay = 0;
       bird.foldSince = time - STANDING[bird.kind].land.fold;   // standing a while already: its wings folded
       bird.alertAt = -Infinity;
       bird.alertToward = 0;
@@ -450,6 +464,7 @@ export class BirdPopulation {
       }
       if (bird.mode === 'land' && time >= bird.since + ways.land.glide) {
         bird.mode = 'stand';
+        bird.stay = (bird.stay ?? 0) + 1;   // its spells drawn afresh (spellPlan)
         bird.since = time;
         bird.standSince = time;
         bird.foldSince = time;
@@ -774,7 +789,8 @@ export class BirdPopulation {
         const share = smoother(0, crouch, since);
         pose.crouch = share;
         pose.neck *= 1 - 0.7 * share;
-        pose.fold = 1 - 0.5 * share;
+        pose.fold = Math.min(pose.fold, 1 - 0.5 * share);   // from folded, or as open as a flop had them
+        pose.beat *= 1 - share;
         return;
       }
       const flying = since - crouch;
@@ -836,9 +852,83 @@ export class BirdPopulation {
   }
 
   /**
-   * Where a standing bird is at `time` and which way it faces: at its spot, or walking along the bank to another (its
-   * kind's `walk`) or there, from when it began to stand (bird.standSince). Each spell's place is drawn from its seed
-   * and the spell's number (the first's its own spot), so it is the same at any frame rate. Its turns are springs
+   * A standing bird's plan for spell `index` of its stay (HERON's `spells`): when it starts (s from when it began to
+   * stand), how long it is, whether and where it walks (`from`, `to`: m along the bank from its spot), when, and which
+   * way it faces as the spell begins (`facing`) and ends (`faced`), when its strike begins and how it goes, and when
+   * it flops its wings. Each is drawn from its seed, its stay and the spell's number, laid out one after the other so
+   * nothing overlaps, and kept (bird.plans) as the spells come: the same at any frame rate.
+   */
+  spellPlan(bird, index) {
+    const stay = bird.stay ?? 0;
+    if (!bird.plans || bird.plans.stay !== stay) bird.plans = { stay, list: [] };
+    const { list } = bird.plans;
+    while (list.length <= index) list.push(this.layPlan(bird, list.length, list[list.length - 1], stay));
+    return list[index];
+  }
+
+  /** The plan of spell `index` (spellPlan), after `before` (the spell before's, none for the first). */
+  layPlan(bird, index, before, stay) {
+    const ways = STANDING[bird.kind];
+    const { walk, strike, flop, spells } = ways;
+    const random = seededRandom(bird.seed, stay, index, 31);
+    const plan = { start: before ? before.start + before.length : 0, length: 0, walks: false, from: before ? before.to : 0, to: 0, walkAt: 0,
+      facing: before ? before.faced : bird.spot.heading, faced: 0, strikeAt: null, freeze: 0, gulps: 0, gaveUp: false, flopAt: null, flopHold: 0 };
+    plan.to = plan.from;
+    plan.faced = plan.facing;
+    let free = 0.5;   // when it is next free to do something (s into the spell)
+    if (index > 0 && random() < walk.share) {
+      const distance = between(walk.distance, random());
+      const [least, most] = walk.reach;
+      let way = random() < (most - plan.from) / (most - least) ? 1 : -1;   // more likely toward the more room
+      let to = THREE.MathUtils.clamp(plan.from + way * distance, least, most);
+      if (Math.abs(to - plan.from) < walk.distance[0]) { way = -way; to = THREE.MathUtils.clamp(plan.from + way * distance, least, most); }
+      if (Math.abs(to - plan.from) >= walk.distance[0]) {
+        plan.walks = true;
+        plan.to = to;
+        plan.walkAt = between(walk.start, random());
+        plan.faced = this.facingFor(bird.spot, Math.sign(to - plan.from));
+        const duration = Math.abs(to - plan.from) / walk.speed;
+        free = plan.walkAt + walk.setOff + duration - 0.5 + settledAfter(walk.turnSettle, 3) + 0.4;   // its last turn settled
+      }
+    }
+    if (random() < (plan.walks ? strike.afterWalk : strike.share)) {
+      plan.strikeAt = free + between(strike.at, random());
+      plan.freeze = between(strike.freeze, random());
+      plan.gaveUp = random() < strike.giveUp;
+      plan.gulps = random() < strike.miss ? 0 : Math.round(between([strike.gulps[0] - 0.49, strike.gulps[1] + 0.49], random()));
+      const upAt = plan.strikeAt + this.strikeTimes(strike, plan).upAt;
+      free = Math.max(upAt + 0.5 + settledAfter(strike.stalk), upAt + 0.7 + plan.gulps * 0.38 + 0.5, upAt + settledAfter(2 * strike.back)) + 0.3;
+    }
+    if (random() < (index === 0 && stay > 0 ? flop.afterLanding : flop.share)) {
+      plan.flopAt = free + between(flop.at, random());
+      plan.flopHold = between(flop.hold, random());
+      free = plan.flopAt + plan.flopHold + settledAfter(flop.close) + 0.3;
+    }
+    plan.length = Math.max(between(spells.length, random()), free + between(spells.rest, random()));
+    return plan;
+  }
+
+  /** A strike's times from when it begins (s): when it stabs, and when it brings its bill up (or gives up). */
+  strikeTimes(strike, plan) {
+    const stabAt = 0.9 * strike.stalk + plan.freeze;
+    return { stabAt, upAt: stabAt + (plan.gaveUp ? 0 : strike.stab + strike.hold) };
+  }
+
+  /** The spell of a standing bird's stay `since` s after it began to stand: its plan and number. */
+  spellAt(bird, since) {
+    this.spellPlan(bird, 0);
+    // From the spell last asked for (bird.plans.last), as time mostly goes on; from the first if it went back.
+    let index = bird.plans.last ?? 0;
+    if (since < bird.plans.list[index].start) index = 0;
+    let plan = this.spellPlan(bird, index);
+    while (since >= plan.start + plan.length) plan = this.spellPlan(bird, ++index);
+    bird.plans.last = index;
+    return { plan, index };
+  }
+
+  /**
+   * Where a standing bird is at `time` and which way it faces: at its spot, or walking along the bank as its spell's
+   * plan says (spellPlan), or where it walked to, from when it began to stand (bird.standSince). Its turns are springs
    * (sprung), stepped round (`stride` counts its turning's steps with its walk's, so its feet move as it turns), its
    * head turning first (`lead`, the way its head faces); `walking` is how much it is stepping.
    */
@@ -846,25 +936,26 @@ export class BirdPopulation {
     const { spot } = bird;
     const walk = STANDING[bird.kind].walk;
     out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.lead = spot.heading; out.walked = 0; out.walking = 0; out.stride = 0;
-    out.spell = 0; out.walks = false; out.walkEnds = 0;
+    out.spell = 0; out.walks = false; out.plan = null; out.into = 0;
     if (!walk) { out.y = spot.y; return out; }
-    const since = time - bird.standSince;
-    const spell = Math.max(0, Math.floor(since / walk.every));
-    const into = since - spell * walk.every;
+    const since = Math.max(0, time - bird.standSince);
+    const { plan, index } = this.spellAt(bird, since);
+    const into = since - plan.start;
     const { alongX, alongZ } = this.bank(spot);
-    const from = this.walkOffset(bird, spell - 1), to = this.walkOffset(bird, spell);
-    const facing = this.facingAfter(bird, spell - 1);   // as it stood when the spell began
+    const { from, to, facing } = plan;
     const distance = Math.abs(to - from), way = Math.sign(to - from);
     let offset = from;
-    out.spell = spell;
-    out.walks = distance > 0.01;
+    out.spell = index;
+    out.plan = plan;
+    out.into = into;
+    out.walks = plan.walks;
     out.heading = out.lead = facing;
-    if (out.walks) {
+    if (plan.walks) {
       const duration = distance / walk.speed;
       // It turns to go (the short way round), sets off once mostly turned, and as it stops turns to face the water.
       const walkHeading = facing + turnBetween(facing, Math.atan2(-alongZ * way, alongX * way));
-      const faced = walkHeading + turnBetween(walkHeading, this.facingFor(spot, way));
-      const turnAt = walk.start, goAt = turnAt + walk.setOff, faceAt = goAt + duration - 0.5;
+      const faced = walkHeading + turnBetween(walkHeading, plan.faced);
+      const turnAt = plan.walkAt, goAt = turnAt + walk.setOff, faceAt = goAt + duration - 0.5;
       const settle = walk.turnSettle;
       out.heading = sprung(into, facing, [[turnAt, walkHeading, settle, 1, 3], [faceAt, faced, settle, 1, 3]]);
       out.lead = sprung(into, facing, [[turnAt - 0.4, walkHeading, settle * 0.3], [faceAt - 0.4, faced, settle * 0.3]]);
@@ -882,7 +973,6 @@ export class BirdPopulation {
       // Stepping round as it turns, as much as it is turning (its turn starts gently, so its steps do too).
       out.walking = Math.max(moving, 0.7 * Math.min(1, turning * turning));
       out.stride = (out.walked + walk.turnStep * turned) / (2 * STEP_LENGTH);
-      out.walkEnds = faceAt + settledAfter(settle, 3);   // when its last turn has settled (springStep exactly 1)
     }
     out.x = spot.x + alongX * offset;
     out.z = spot.z + alongZ * offset;
@@ -897,27 +987,12 @@ export class BirdPopulation {
     return { alongX: tangentX / length, alongZ: tangentZ / length };
   }
 
-  /** Where along the bank a standing bird's walk of spell `index` takes it (m from its spot; the first spell's none). */
-  walkOffset(bird, index) {
-    const { spots } = STANDING[bird.kind].walk;
-    return index <= 0 ? 0 : spots[Math.floor(hashed(bird.seed, index, 11) * spots.length)];
-  }
-
   /** How a standing bird faces once it has stopped walking `way` (±1 along the bank): that way, turned a little to the water. */
   facingFor(spot, way) {
     const { alongX, alongZ } = this.bank(spot);
     const walkHeading = Math.atan2(-alongZ * way, alongX * way);
     const inward = Math.atan2(-(KOI_SHORE.centre[1] - spot.z), KOI_SHORE.centre[0] - spot.x);
     return walkHeading + Math.sign(turnBetween(walkHeading, inward)) * STANDING.heron.walk.facePond;
-  }
-
-  /** How a standing bird faces at the end of spell `index`: as its last walk left it, or as it came down. */
-  facingAfter(bird, index) {
-    for (let spell = index; spell >= 1 && spell > index - 32; spell--) {
-      const from = this.walkOffset(bird, spell - 1), to = this.walkOffset(bird, spell);
-      if (Math.abs(to - from) > 0.01) return this.facingFor(bird.spot, Math.sign(to - from));
-    }
-    return bird.spot.heading;
   }
 
   /**
@@ -943,7 +1018,6 @@ export class BirdPopulation {
     const { pose } = bird;
     const ways = STANDING[bird.kind];
     const { idle } = ways;
-    const since = time - bird.standSince;
     const place = this.standingPlace(bird, time, scratchPlace);
     pose.x = place.x; pose.y = place.y; pose.z = place.z;
     pose.heading = place.heading;
@@ -961,23 +1035,34 @@ export class BirdPopulation {
     // Stepping, it looks where it goes (its head turned ahead of its body), its neck at its ease.
     look = look * (1 - place.walking) + 1.2 * Math.tanh(turnBetween(place.heading, place.lead) / 1.2);   // as far round as it can look, softly
     neck += (0.5 - neck) * place.walking;
-    // A strike at a fish, in a spell it stands (its kind's `strike`): it peers down, lowering itself, holds still,
-    // throws its bill in, holds it there, brings it up with a little spring and swallows.
+    // A strike at a fish, when its spell's plan says (its kind's `strike`): it peers down, lowering itself, holds
+    // still, throws its bill in, holds it there, brings it up with a little spring and swallows; or gives up.
     let thrown = 0, crouch = 0;
-    const strike = ways.strike;
-    if (strike && !place.walks && place.spell > 0 && hashed(bird.seed, place.spell, 12) < strike.share) {
-      const into = since - place.spell * ways.walk.every - strike.at;
-      const stabAt = 0.9 * strike.stalk + between(strike.freeze, hashed(bird.seed, place.spell, 13));
-      const upAt = stabAt + strike.stab + strike.hold;
+    const strike = ways.strike, plan = place.plan;
+    if (strike && plan && plan.strikeAt !== null) {
+      const into = place.into - plan.strikeAt;
+      const { stabAt, upAt } = this.strikeTimes(strike, plan);
       const engaged = sprung(into, 0, [[0, 1, strike.stalk], [upAt + 0.5, 0, strike.stalk]]);
-      thrown = sprung(into, 0, [[0, 0.3, strike.stalk], [stabAt, 1, strike.stab], [upAt, 0, strike.back, 0.55]]);
-      crouch = sprung(into, 0, [[0, 0.25, strike.stalk], [stabAt, 0.35, strike.stab], [upAt, 0, 2 * strike.back]]);
+      thrown = plan.gaveUp ? sprung(into, 0, [[0, 0.3, strike.stalk], [upAt, 0, strike.stalk]])
+        : sprung(into, 0, [[0, 0.3, strike.stalk], [stabAt, 1, strike.stab], [upAt, 0, strike.back, 0.55]]);
+      crouch = plan.gaveUp ? sprung(into, 0, [[0, 0.25, strike.stalk], [upAt, 0, strike.stalk]])
+        : sprung(into, 0, [[0, 0.25, strike.stalk], [stabAt, 0.35, strike.stab], [upAt, 0, 2 * strike.back]]);
       look *= 1 - engaged;
       neck += (0.3 - neck) * engaged;
       // Swallowing: its neck jerked up a little and back, `gulps` times.
       const gulps = [];
-      for (let gulp = 0; gulp < strike.gulps; gulp++) { const at = upAt + 0.7 + gulp * 0.38; gulps.push([at, 0.08, 0.1], [at + 0.14, 0, 0.12]); }
+      for (let gulp = 0; gulp < plan.gulps; gulp++) { const at = upAt + 0.7 + gulp * 0.38; gulps.push([at, 0.08, 0.1], [at + 0.14, 0, 0.12]); }
       neck += sprung(into, 0, gulps);
+    }
+    // A flop of its wings, when its spell's plan says (its kind's `flop`): open, a few lazy beats, folded again.
+    let opened = 0;
+    const flop = ways.flop;
+    if (flop && plan && plan.flopAt !== null) {
+      const into = place.into - plan.flopAt;
+      opened = sprung(into, 0, [[0, 1, flop.open], [flop.open + plan.flopHold, 0, flop.close]]);
+      if (opened > 0) pose.phase = 2 * Math.PI * flop.beat * Math.max(into, 0);
+      look *= 1 - opened;
+      neck += (0.75 - neck) * opened;
     }
     // A splash in sight: up and looking, quick to react, for a while, then back to its ways.
     const { hold, settle } = ways.alert;
@@ -985,9 +1070,12 @@ export class BirdPopulation {
     look += (bird.alertToward - look) * alerted;
     neck += (1 - neck) * alerted;
     thrown *= 1 - alerted;
+    opened *= 1 - alerted;
+    pose.fold *= 1 - 0.9 * opened;
+    pose.beat = opened;
     pose.strike = thrown;
     pose.crouch = crouch * (1 - alerted);
-    pose.pitch = ways.tilt - 0.3 * thrown;   // tipped forward into its strike
+    pose.pitch = ways.tilt - 0.3 * thrown + 0.1 * opened;   // tipped forward into its strike, up as it flops its wings
     pose.look = look;
     pose.neck = neck;
   }

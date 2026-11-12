@@ -17,7 +17,9 @@
 //   a few centimetres to a few tens deep, inside the pond;
 // - its ways are smooth: it turns about unhurried, stepping round as it
 //   turns, holds still between its moves, and peers into the water a while
-//   before it strikes;
+//   before it strikes; it keeps no rhythm (over twenty seeds the gaps
+//   between its walks, strikes and wing flops spread widely), and now and
+//   then it opens its wings and beats them, standing where it was;
 // - a splash across the pond makes it look, not go; a stone coming down
 //   near it puts it up before it lands, and it climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
@@ -174,7 +176,7 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
 // The heron at rest.
 const heronAt = (frame) => frame.birds[0];
 {
-  const { frames } = run('koi', 30, 1 / 60);
+  const { frames } = run('koi', 60, 1 / 60);
   const first = heronAt(frames[0]);
   const depth = koiFloorDepthAt(first.spot.x, first.spot.z);
   check(first.mode === 'stand' && first.fold === 1, 'the heron starts standing, its wings folded');
@@ -210,6 +212,36 @@ const heronAt = (frame) => frame.birds[0];
   check(spun === 0, `it steps round as it turns (${spun} frames turning on still feet)`);
   check(still / frames.length > 0.4, `it holds still between its moves (${(100 * still / frames.length).toFixed(0)}% of frames)`);
   check(struck > 0 && longestPeer / 60 > 0.6, `it peers into the water a while before it strikes (${(longestPeer / 60).toFixed(1)} s)`);
+}
+
+// No rhythm: what the heron does in each spell, and when, is drawn afresh (src/birds.js spellPlan), so the gaps
+// between the starts of its walks, strikes and wing flops spread widely; and now and then it flops its wings, beating
+// them open while it stands where it was.
+{
+  const gaps = [];
+  let flops = 0, flopMoved = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const birds = new BirdPopulation({ seed });
+    birds.setPlace('koi');
+    birds.setConditions(DAY);
+    let last = null, before = null;
+    for (let time = 0; time <= 300; time += 1 / 20) {
+      birds.showAt(time);
+      const heron = { ...birds.birds[0].pose };
+      if (before) {
+        const began = (heron.walking > 0.1 && before.walking <= 0.1) || (heron.strike > 0.1 && before.strike <= 0.1) || (heron.fold < 0.9 && before.fold >= 0.9);
+        if (began) { if (last !== null) gaps.push(time - last); last = time; }
+        if (heron.fold < 0.9 && before.fold >= 0.9) flops++;
+        if (heron.fold < 0.9 && (heron.x !== before.x || heron.z !== before.z)) flopMoved++;
+      }
+      before = heron;
+    }
+  }
+  gaps.sort((a, b) => a - b);
+  const tenth = gaps[Math.floor(gaps.length / 10)], ninetieth = gaps[Math.floor(gaps.length * 0.9)];
+  check(gaps.length > 100 && ninetieth > 2.2 * tenth, `it keeps no rhythm: its acts ${tenth.toFixed(1)} to ${ninetieth.toFixed(1)} s apart (a tenth to nine tenths, ${gaps.length} gaps)`);
+  check(flops >= 10 && flops < 100, `it flops its wings now and then (${flops} times in 20 × 5 min)`);
+  check(flopMoved === 0, `standing where it was as it flops them (${flopMoved} frames moving)`);
 }
 
 // A splash across the pond: it looks. A stone coming down near it: it goes, and later comes back.
