@@ -679,8 +679,8 @@ then instead (`BIRDS_WHEN_FROZEN`). Each movement is a spring's, closed form in 
 (`sprung` in `src/birds.js`): every part settles on its own time, so they
 overlap as a bird's do rather than starting and stopping together. A
 splash nearby makes it stretch up and turn its head and neck to look at it,
-over its shoulder if the splash is behind it; a thing thrown near puts it up, and it comes
-back half a minute to a minute later, gliding in to land somewhere new on the far bank. None are
+over its shoulder if the splash is behind it; a thing thrown near puts it up, and it flies off the
+way it faces. It comes back half a minute to a minute later, gliding in to land somewhere new on the far bank. None are
 about after dark. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out
 of reach and in the home view's sky. Their state changes only in the

@@ -25,7 +25,8 @@
 //   then it opens its wings and holds them open, still, for seconds (never
 //   beating them), standing where it was;
 // - a splash across the pond makes it look, not go; a stone coming down
-//   near it puts it up before it lands, and it climbs away out of sight
+//   near it puts it up before it lands, and it takes off the way it faces
+//   (over twenty seeds) and climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
 //   while things are thrown near where it will come down) and lands
 //   somewhere new on the far bank, its heading its own, smoothly; then it
@@ -331,6 +332,21 @@ const heronAt = (frame) => frame.birds[0];
   const busy = run('koi', 140, 1 / 60, { things: pelted, splashes: [{ time: landAt, x: landX, z: landZ }] });
   const busyBack = busy.frames.find((frame) => frame.time > 20 && heronAt(frame).mode === 'land');
   check(!busyBack || busyBack.time > 115, `it is not back while things are thrown near its spot (back at ${busyBack ? busyBack.time.toFixed(0) : 'not yet'} s)`);
+}
+
+// It takes off the way it faces (src/birds.js flush): over twenty seeds, its first second in the air goes along its heading.
+{
+  let backward = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const birds = new BirdPopulation({ seed });
+    birds.setPlace('koi');
+    birds.setConditions(DAY);
+    const heron = birds.birds[0], { spot } = heron;
+    birds.flush(heron, 5, spot.x + 0.5, spot.z + 0.5);
+    birds.showAt(6.3);
+    if ((heron.pose.x - spot.x) * Math.cos(spot.heading) - (heron.pose.z - spot.z) * Math.sin(spot.heading) <= 0) backward++;
+  }
+  check(backward === 0, `it takes off the way it faces (${backward} of 20 the other way)`);
 }
 
 // After dark: none.

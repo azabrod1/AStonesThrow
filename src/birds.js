@@ -26,7 +26,7 @@
 //     does, each part on its own time (sprung). A splash anywhere in the
 //     pond makes it stretch up and turn its head and neck to look at it (alert);
 //     a thing thrown near it puts it up: it crouches,
-//     jumps and flies off low over the garden with deep, slow beats, its neck
+//     jumps and flies off the way it faces, low over the garden with deep, slow beats, its neck
 //     drawn in and its legs trailing, as herons fly; half a minute to a
 //     minute later it glides back in, flares and lands somewhere new along
 //     the far bank.
@@ -646,10 +646,11 @@ export class BirdPopulation {
   }
 
   /**
-   * Put a standing bird up at `time`: off along the bank, across the eye's
-   * view (to the side away from (x, z)) and a little away from the eye, low
-   * over the garden; across, as its pictures show it side on
-   * (src/birdSprites.js). The rest of its group, standing, go with it.
+   * Put a standing bird up at `time`: off across the eye's view the way it
+   * faces (as a heron springs off forward; facing the eye or away from it,
+   * the side away from (x, z)), and a little away from the eye, low over the
+   * garden; across, so it is seen side on. The rest of its group, standing,
+   * go with it.
    */
   flush(bird, time, x, z) {
     const spot = { ...this.standingPlace(bird, time, scratchPlace) };   // where it stands now (it may have walked)
@@ -657,8 +658,10 @@ export class BirdPopulation {
     const fromEyeX = spot.x - EYE.x, fromEyeZ = spot.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
     const fromThingX = spot.x - x, fromThingZ = spot.z - z;
     let acrossX = -fromEyeZ / fromEye, acrossZ = fromEyeX / fromEye;
+    const facing = acrossX * Math.cos(spot.heading) - acrossZ * Math.sin(spot.heading);   // its heading's share across the view
     const thingSide = acrossX * fromThingX + acrossZ * fromThingZ;
-    if (thingSide < 0 || (thingSide === 0 && hashed(bird.seed, Math.floor(time * 10), 4) < 0.5)) { acrossX = -acrossX; acrossZ = -acrossZ; }
+    const flip = Math.abs(facing) > 0.3 ? facing < 0 : thingSide < 0 || (thingSide === 0 && hashed(bird.seed, Math.floor(time * 10), 4) < 0.5);
+    if (flip) { acrossX = -acrossX; acrossZ = -acrossZ; }
     let awayX = acrossX + 0.45 * fromEyeX / fromEye, awayZ = acrossZ + 0.45 * fromEyeZ / fromEye;
     const length = Math.hypot(awayX, awayZ);
     awayX /= length; awayZ /= length;
