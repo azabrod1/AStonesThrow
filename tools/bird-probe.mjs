@@ -19,7 +19,7 @@
 //   a few centimetres to a few tens deep, inside the pond;
 // - its ways are smooth: it turns about unhurried, stepping round as it
 //   turns, holds still between its moves, and peers into the water a while
-//   before it strikes; it keeps no rhythm (over twenty seeds the gaps
+//   (its bill pointed down) before it strikes, sometimes to one side; it keeps no rhythm (over twenty seeds the gaps
 //   between its walks, strikes and wing spreads spread widely), and now and
 //   then it opens its wings and holds them open, still, for seconds (never
 //   beating them), standing where it was;
@@ -210,22 +210,24 @@ const heronAt = (frame) => frame.birds[0];
 // on its feet), holds still between its moves, and peers into the water a while before it strikes.
 {
   const { frames } = run('koi', 120, 1 / 60);
-  let fastestTurn = 0, spun = 0, still = 0, longestPeer = 0, peering = 0, struck = 0;
+  let fastestTurn = 0, spun = 0, still = 0, longestPeer = 0, peering = 0, struck = 0, widestAim = 0;
   for (let index = 1; index < frames.length; index++) {
     const heron = heronAt(frames[index]), before = heronAt(frames[index - 1]);
     const rate = Math.abs(Math.atan2(Math.sin(heron.heading - before.heading), Math.cos(heron.heading - before.heading))) * 60;
     fastestTurn = Math.max(fastestTurn, rate);
     if (rate > 0.6 && heron.walking < 0.15) spun++;
-    if (['heading', 'look', 'neck', 'strike', 'crouch', 'x', 'z'].every((key) => heron[key] === before[key])) still++;
-    // Peering: its strike part way (src/birds.js: 0.3); a stab from it passes through more in a frame or two.
-    if (heron.strike > 0.2 && heron.strike < 0.5) peering++;
-    else if (heron.strike > 0.9 && before.strike <= 0.9) { longestPeer = Math.max(longestPeer, peering); peering = 0; struck++; }
-    else if (heron.strike < 0.2) peering = 0;
+    if (['heading', 'look', 'neck', 'strike', 'crouch', 'aim', 'bill', 'x', 'z'].every((key) => heron[key] === before[key])) still++;
+    // Peering: its bill pointed down at the water, its neck not yet thrown (src/birds.js layHunt); a stab from it
+    // passes the strike's line's 0.8 in a frame or two.
+    if (heron.bill < -0.4 && heron.strike < 0.5) peering++;
+    else if (heron.strike > 0.8 && before.strike <= 0.8) { longestPeer = Math.max(longestPeer, peering); peering = 0; struck++; widestAim = Math.max(widestAim, Math.abs(heron.aim)); }
+    else if (heron.strike < 0.5 && heron.bill > -0.2) peering = 0;   // (as it stabs, its bill comes level a frame before its neck is out)
   }
   check(fastestTurn < 3.2, `it turns about unhurried: at most ${fastestTurn.toFixed(2)} rad/s`);
   check(spun === 0, `it steps round as it turns (${spun} frames turning on still feet)`);
   check(still / frames.length > 0.4, `it holds still between its moves (${(100 * still / frames.length).toFixed(0)}% of frames)`);
   check(struck > 0 && longestPeer / 60 > 0.6, `it peers into the water a while before it strikes (${(longestPeer / 60).toFixed(1)} s)`);
+  check(widestAim > 0.1, `it strikes to one side as well as ahead (up to ${widestAim.toFixed(2)} rad)`);
 }
 
 // No rhythm: what the heron does in each spell, and when, is drawn afresh (src/birds.js spellPlan), so the gaps

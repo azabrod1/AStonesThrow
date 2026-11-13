@@ -174,7 +174,8 @@ export function poseJoints(out, model, flight, pose) {
 //     flight, pose.tuck), the
 //     photograph's (NECK_PHOTO) and stretched up (1) (NECK_POSES); a strike (pose.strike, 0 to 1) throws it forward and
 //     down in one line, the bill to the water before its feet; turned to look (pose.look), the head and the upper neck
-//     sharing the turn (LOOK_SHARES);
+//     sharing the turn (LOOK_SHARES); swung round from its base toward a strike's target (pose.aim, AIM_SHARES); its
+//     head tipped about its nape (pose.bill, rad, up positive), the bill pointed down at the water as it peers;
 //   - the legs: standing, each foot set where it should be (planted, or swung forward a step: pose.stride, pose.walking)
 //     and the hip and heel solved to reach it (two bones in the side's plane, the heel bending back as a heron's does);
 //     flying, swung back to trail straight behind (pose.legs 0), the toes curled;
@@ -218,6 +219,15 @@ const LOOK_SHARES = (() => {
   const weights = NECK_SHARES.map((share) => Math.max(share - LOOK_FROM, 0));
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   return [...weights.map((weight) => (1 - LOOK_HEAD) * weight / total), LOOK_HEAD];
+})();
+// Its aim (pose.aim, rad: a strike's target to the left of its heading, positive), the whole neck swung round toward it
+// from its base, as a heron points its neck at a fish to one side: shared over the lower neck's links (below AIM_TO of the
+// way up), so the breast's skin bends over several joints, not at one.
+const AIM_TO = 0.35;
+const AIM_SHARES = (() => {
+  const weights = NECK_SHARES.map((share) => Math.max(AIM_TO - share, 0));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  return [...weights.map((weight) => weight / total), 0];
 })();
 const lookAxis = new THREE.Vector3();
 // A standing heron's wings held open (pose.spread 1), as herons sun and dry themselves: not flapped but opened
@@ -293,6 +303,7 @@ export function poseStanding(out, model, flight, pose) {
   const strike = THREE.MathUtils.clamp(pose.strike ?? 0, 0, 1);
   const chain = [...JOINTS.neck, JOINTS.head];
   const look = (pose.look ?? 0) * (1 - strike);
+  const aim = pose.aim ?? 0, bill = pose.bill ?? 0;
   step.copy(bodyWorld);
   let turned = 0;
   chain.forEach((joint, index) => {
@@ -301,13 +312,15 @@ export function poseStanding(out, model, flight, pose) {
     let direction = neck < NECK_PHOTO ? drawnIn + (rest - drawnIn) * (neck / NECK_PHOTO)
       : rest + (degrees(NECK_LINKS.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
     direction += (degrees(NECK_LINKS.strike[index]) - direction) * strike;
+    if (index === chain.length - 1) direction += bill;   // the head tipped about its nape: its bill down at the water, or up
     const bend = direction - rest - turned;
     turned += bend;
     const point = skeleton.neck[index];
     about(local, jointPoint.set(point.x, point.y, 0), AXIS_Z, bend);
     // Its share of the look, about the body's up: the chain has turned this link `turned` about the side's normal
     // (the bends before it and its own), so the body's up is, in the link's own frame, up turned back by as much.
-    if (look !== 0 && LOOK_SHARES[index] > 0) local.multiply(about(world, jointPoint, lookAxis.set(Math.sin(turned), Math.cos(turned), 0), look * LOOK_SHARES[index]));
+    const yaw = look * LOOK_SHARES[index] + aim * AIM_SHARES[index];
+    if (yaw !== 0) local.multiply(about(world, jointPoint, lookAxis.set(Math.sin(turned), Math.cos(turned), 0), yaw));
     step.multiply(local);
     step.toArray(out, joint * 16);
   });

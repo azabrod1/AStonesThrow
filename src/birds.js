@@ -14,8 +14,10 @@
 //     bank, as herons stand in every garden pond with fish in it (wade). It
 //     stands still for long spells, its head turning now and then, its neck
 //     drawn in or stretched up; it walks a few steps along the bank, turning
-//     about as it steps, its head first; it peers into the water, holds
-//     still and strikes, and swallows (or misses, or gives up); now and then
+//     about as it steps, its head first; it hunts (layHunt): peers down at a
+//     fish ahead or to one side, its neck cocked and its bill pointed at it,
+//     holds still but for its head's tilts, stabs, and tosses its catch up
+//     and swallows it, or stabs again, or gives up; now and then
 //     it opens its wings and holds them open a few seconds, still, as herons
 //     do to sun or dry themselves (never flapping them), then folds them. What it does in each
 //     spell, and when, and how long the spell is, are drawn afresh each time
@@ -211,12 +213,25 @@ const HERON = {
   //   radian turned), sets off once mostly turned (`setOff` s after it began to turn) and, as it stops, turns to face
   //   the water a little (`facePond` rad from the bank), facing so until it walks again.
   walk: { share: 0.5, distance: [0.12, 0.6], reach: [-0.4, 0.5], speed: 0.17, start: [0.3, 3], turnSettle: 2.2, setOff: 1.5, turnStep: 0.12, facePond: 0.5 },
-  // strike: in a `share` of its spells (`afterWalk` of those it walks in), `at` s (drawn) into it or after its walk:
-  //   it peers down into the water, lowering itself (`stalk` s to settle), holds still `freeze` s (drawn), throws its
-  //   bill in (`stab` s to settle), holds it there `hold` s, brings it up with a little spring (`back`), and swallows:
-  //   `gulps` jerks of its neck (drawn; none when it missed, a share `miss`). A share `giveUp` of its peers come to
-  //   nothing: it straightens up again without striking.
-  strike: { share: 0.5, afterWalk: 0.3, at: [0.6, 6], stalk: 1.6, freeze: [0.6, 3], stab: 0.13, hold: 0.32, back: 0.55, gulps: [2, 4], miss: 0.3, giveUp: 0.2 },
+  // strike: in a `share` of its spells (`afterWalk` of those it walks in), `at` s (drawn) into it or after its walk, it
+  //   hunts a fish it has seen (layHunt: every part of it drawn, so no two go alike), as herons do in the photographs and
+  //   films of them:
+  //   - it peers down at it (`stalk` s to settle, drawn): its neck swung round toward it (up to `aim` rad either side of
+  //     its heading), drawn in to `neck` (drawn: cocked low, or peering from higher), its bill pointed down at it
+  //     (`bill`, rad), its body lowered (`crouch`) and leaning in a little (`lean`, a share of the strike's line);
+  //   - it holds still `freeze` s (drawn), but for its head: tilted now and then (`tilts`: how many, how far in rad,
+  //     each settling in `tiltSettle` s), as a heron cocks its head to judge the fish's depth;
+  //   - it stabs (`stab` s to settle, drawn: herons strike in a tenth of a second or so), its neck thrown out to `reach`
+  //     (drawn) of the strike's line, holds its bill in the water `hold` s (drawn) and brings it up with a little spring
+  //     (`back`);
+  //   - caught (but for a share `miss`): its head up and its bill tipped up (`catchNeck`, `catchBill`), the fish tossed
+  //     to turn it head first (`tosses`, drawn: each a jerk of `toss` rad), then swallowed in `gulps` (drawn: jerks of
+  //     its neck); missed, it often stabs again (a share `again`, `againAfter` s later, drawn; that one may catch);
+  //   - and, a share `shake` of the times, shakes the water off its bill (`shakes` quick turns of its head either way).
+  //   A share `giveUp` of its peers come to nothing: it straightens up again without striking.
+  strike: { share: 0.5, afterWalk: 0.3, at: [0.6, 6], stalk: [1.0, 2.2], aim: 0.5, neck: [0.12, 0.5], bill: [-0.55, -0.85], crouch: [0.2, 0.4], lean: 0.12,
+    freeze: [0.6, 3], tilts: [0, 3], tilt: 0.14, tiltSettle: 0.3, stab: [0.09, 0.15], reach: [0.82, 1.04], hold: [0.18, 0.45], back: 0.55,
+    miss: 0.4, again: 0.5, againAfter: [0.45, 1.1], catchNeck: 0.85, catchBill: 0.45, tosses: [0, 2], toss: 0.35, gulps: [2, 4], shake: 0.5, shakes: 4, giveUp: 0.15 },
   // spread: in a `share` of its spells (a share `afterLanding` of the first after it comes down: drying off), `at` s
   //   (drawn) after what else it does, it opens its wings and holds them open, as herons sun and dry themselves (the
   //   spread-wing or "delta" posture: src/birdRig.js SPREAD), not flapping: it opens them (`open` s to settle, a little
@@ -278,7 +293,90 @@ function sprung(time, from, steps) {
 
 /** A pose, at rest. */
 function freshPose() {
-  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, legs: 0, crouch: 0, shown: false };
+  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, aim: 0, bill: 0, legs: 0, crouch: 0, shown: false };
+}
+
+/**
+ * A heron's hunt (HERON's `strike`), beginning `at` s into its spell, every part of it drawn from `random` (its spell's
+ * stream): its springs' steps for each part of its pose, in s from when it begins (sprung), and when all of them have
+ * settled. `neck` is the neck it peers with; `holding` how far its neck is up holding a catch, and `gulps` the jerks
+ * added to its neck as it swallows; `look` its head's tilts and shakes, added to its look.
+ */
+function layHunt(ways, at, random) {
+  const draw = (range) => between(range, random());
+  const count = (range) => Math.round(between([range[0] - 0.49, range[1] + 0.49], random()));
+  const stalk = draw(ways.stalk), freeze = draw(ways.freeze);
+  const side = (random() * 2 - 1) * ways.aim;
+  const peerBill = draw(ways.bill), peerCrouch = draw(ways.crouch);
+  const hunt = { at, neck: draw(ways.neck), engaged: [], thrown: [], crouch: [], aim: [], bill: [], look: [], holding: [], gulps: [], settled: 0 };
+  // Peering: down at it, swung round toward it, lowered, leaning in a little.
+  const still = 0.9 * stalk;   // when it has all but settled into its peer
+  hunt.engaged.push([0, 1, stalk]);
+  hunt.aim.push([0, side, 0.8 * stalk]);
+  hunt.bill.push([0.15 * stalk, peerBill, 0.8 * stalk]);
+  hunt.crouch.push([0, peerCrouch, stalk]);
+  hunt.thrown.push([0, ways.lean, stalk]);
+  // Its head tilted now and then as it waits, each a quick little turn, held, then the next; level again to strike.
+  const tilts = count(ways.tilts);
+  for (let tilt = 0; tilt < tilts; tilt++) hunt.look.push([still + freeze * (tilt + 0.2 + 0.6 * random()) / (tilts + 0.3), (random() * 2 - 1) * ways.tilt, ways.tiltSettle, 0.8]);
+  const stabAt = still + freeze;
+  hunt.look.push([stabAt - 0.12, 0, 0.12]);
+  let end = stabAt;
+  if (random() < ways.giveUp) {
+    // Nothing comes of it: it straightens up again.
+    hunt.thrown.push([stabAt, 0, stalk]);
+    hunt.bill.push([stabAt, 0, stalk]);
+    hunt.crouch.push([stabAt, 0, stalk]);
+    hunt.aim.push([stabAt, 0, stalk]);
+    end = stabAt + 0.3;
+  } else {
+    // A stab, its bill in the water a moment, and up; missed, perhaps another a moment later (which may catch).
+    let caught = false;
+    for (let stabAtNow = stabAt, stab = 0; stab < 2; stab++) {
+      const quick = draw(ways.stab), reach = draw(ways.reach), hold = draw(ways.hold);
+      const upAt = stabAtNow + quick + hold;
+      caught = random() >= ways.miss;
+      const again = !caught && stab === 0 && random() < ways.again;
+      hunt.thrown.push([stabAtNow, reach, quick], [upAt, again ? 0.3 : 0, ways.back, 0.55]);
+      hunt.bill.push([stabAtNow, 0, quick], [upAt, again ? peerBill * 0.8 : 0, ways.back]);   // the strike's line points it
+      hunt.crouch.push([stabAtNow, peerCrouch + 0.1, quick], [upAt, again ? peerCrouch : 0, 2 * ways.back]);
+      end = upAt;
+      if (!again) break;
+      stabAtNow = upAt + draw(ways.againAfter);
+    }
+    hunt.aim.push([end, 0, 1.2]);
+    if (caught) {
+      // Its head up, bill tipped up, the fish tossed to turn it head first, then swallowed.
+      hunt.holding.push([end + 0.1, 1, 0.45]);
+      hunt.bill.push([end + 0.1, ways.catchBill, 0.4]);
+      let after = end + 0.6;
+      const tosses = count(ways.tosses);
+      for (let toss = 0; toss < tosses; toss++) {
+        after += 0.25 + 0.3 * random();
+        hunt.bill.push([after, ways.catchBill + ways.toss, 0.1], [after + 0.11, ways.catchBill, 0.16]);
+        after += 0.2;
+      }
+      const gulps = count(ways.gulps);
+      after += 0.3;
+      for (let gulp = 0; gulp < gulps; gulp++) { hunt.gulps.push([after, 0.08, 0.1], [after + 0.14, 0, 0.12]); after += 0.32 + 0.12 * random(); }
+      hunt.bill.push([after, 0, 0.6]);
+      hunt.holding.push([after + 0.1, 0, 1.0]);
+      end = after + 0.4;
+    }
+    if (random() < ways.shake) {
+      // Shaking the water off its bill: quick turns of its head either way, dying away.
+      const shakeAt = end + 0.2;
+      for (let shake = 0; shake < ways.shakes; shake++) hunt.look.push([shakeAt + shake * 0.075, (shake % 2 ? -1 : 1) * 0.28 * (1 - shake / ways.shakes), 0.07, 0.9]);
+      hunt.look.push([shakeAt + ways.shakes * 0.075, 0, 0.12]);
+      end = shakeAt + ways.shakes * 0.075 + 0.2;
+    }
+  }
+  hunt.engaged.push([end, 0, stalk]);
+  // When every part has settled (each spring exactly at rest after settledAfter), from its last step.
+  for (const steps of [hunt.engaged, hunt.thrown, hunt.crouch, hunt.aim, hunt.bill, hunt.look, hunt.holding, hunt.gulps]) {
+    for (const [stepAt, , settle] of steps) hunt.settled = Math.max(hunt.settled, stepAt + settledAfter(settle));
+  }
+  return hunt;
 }
 
 /** A point on the cubic Bézier through four [x, y, z] points at u (into `out`). */
@@ -851,7 +949,7 @@ export class BirdPopulation {
       pose.phase = 2 * Math.PI * kind.beat * (flying + quicker * quickFor * (1 - Math.exp(-flying / quickFor)));
       pose.crouch = 1 - smoother(0, 0.2, flying);   // springing up out of its crouch
       pose.walking = 0;
-      pose.strike = 0;
+      pose.strike = pose.aim = pose.bill = 0;
       pose.fold = 0.5 * (1 - smoother(0, 0.25, flying));
       pose.legs = 1 - smoother(0.15, legsUp, flying);
       pose.neck = 0.3 * (1 - smoother(0, neckIn, flying));
@@ -880,7 +978,7 @@ export class BirdPopulation {
       pose.fold = 0;
       pose.look = 0;
       pose.walking = 0;
-      pose.strike = 0;
+      pose.strike = pose.aim = pose.bill = 0;
       return;
     }
     // Away: unseen.
@@ -923,7 +1021,7 @@ export class BirdPopulation {
     const { walk, strike, spread, spells } = ways;
     const random = seededRandom(bird.seed, stay, index, 31);
     const plan = { start: before ? before.start + before.length : 0, length: 0, walks: false, from: before ? before.to : 0, to: 0, walkAt: 0,
-      facing: before ? before.faced : bird.spot.heading, faced: 0, strikeAt: null, freeze: 0, gulps: 0, gaveUp: false, spreadAt: null, spreadHold: 0 };
+      facing: before ? before.faced : bird.spot.heading, faced: 0, hunt: null, spreadAt: null, spreadHold: 0 };
     plan.to = plan.from;
     plan.faced = plan.facing;
     let free = 0.5;   // when it is next free to do something (s into the spell)
@@ -943,12 +1041,8 @@ export class BirdPopulation {
       }
     }
     if (random() < (plan.walks ? strike.afterWalk : strike.share)) {
-      plan.strikeAt = free + between(strike.at, random());
-      plan.freeze = between(strike.freeze, random());
-      plan.gaveUp = random() < strike.giveUp;
-      plan.gulps = random() < strike.miss ? 0 : Math.round(between([strike.gulps[0] - 0.49, strike.gulps[1] + 0.49], random()));
-      const upAt = plan.strikeAt + this.strikeTimes(strike, plan).upAt;
-      free = Math.max(upAt + 0.5 + settledAfter(strike.stalk), upAt + 0.7 + plan.gulps * 0.38 + 0.5, upAt + settledAfter(2 * strike.back)) + 0.3;
+      plan.hunt = layHunt(strike, free + between(strike.at, random()), random);
+      free = plan.hunt.at + plan.hunt.settled + 0.3;
     }
     if (random() < (index === 0 && stay > 0 ? spread.afterLanding : spread.share)) {
       plan.spreadAt = free + between(spread.at, random());
@@ -957,12 +1051,6 @@ export class BirdPopulation {
     }
     plan.length = Math.max(between(spells.length, random()), free + between(spells.rest, random()));
     return plan;
-  }
-
-  /** A strike's times from when it begins (s): when it stabs, and when it brings its bill up (or gives up). */
-  strikeTimes(strike, plan) {
-    const stabAt = 0.9 * strike.stalk + plan.freeze;
-    return { stabAt, upAt: stabAt + (plan.gaveUp ? 0 : strike.stab + strike.hold) };
   }
 
   /** The spell of a standing bird's stay `since` s after it began to stand: its plan and number. */
@@ -1087,24 +1175,21 @@ export class BirdPopulation {
     // Stepping, it looks where it goes (its head turned ahead of its body), its neck at its ease.
     look = look * (1 - place.walking) + 1.2 * Math.tanh(turnBetween(place.heading, place.lead) / 1.2);   // as far round as it can look, softly
     neck += (0.5 - neck) * place.walking;
-    // A strike at a fish, when its spell's plan says (its kind's `strike`): it peers down, lowering itself, holds
-    // still, throws its bill in, holds it there, brings it up with a little spring and swallows; or gives up.
-    let thrown = 0, crouch = 0;
-    const strike = ways.strike, plan = place.plan;
-    if (strike && plan && plan.strikeAt !== null) {
-      const into = place.into - plan.strikeAt;
-      const { stabAt, upAt } = this.strikeTimes(strike, plan);
-      const engaged = sprung(into, 0, [[0, 1, strike.stalk], [upAt + 0.5, 0, strike.stalk]]);
-      thrown = plan.gaveUp ? sprung(into, 0, [[0, 0.3, strike.stalk], [upAt, 0, strike.stalk]])
-        : sprung(into, 0, [[0, 0.3, strike.stalk], [stabAt, 1, strike.stab], [upAt, 0, strike.back, 0.55]]);
-      crouch = plan.gaveUp ? sprung(into, 0, [[0, 0.25, strike.stalk], [upAt, 0, strike.stalk]])
-        : sprung(into, 0, [[0, 0.25, strike.stalk], [stabAt, 0.35, strike.stab], [upAt, 0, 2 * strike.back]]);
-      look *= 1 - engaged;
-      neck += (0.3 - neck) * engaged;
-      // Swallowing: its neck jerked up a little and back, `gulps` times.
-      const gulps = [];
-      for (let gulp = 0; gulp < plan.gulps; gulp++) { const at = upAt + 0.7 + gulp * 0.38; gulps.push([at, 0.08, 0.1], [at + 0.14, 0, 0.12]); }
-      neck += sprung(into, 0, gulps);
+    // A hunt, when its spell's plan says (its kind's `strike`, layHunt): it peers down at a fish, holds still but for
+    // its head, stabs, and swallows its catch or stabs again; or gives up. Each part a spring of its own.
+    let thrown = 0, crouch = 0, aim = 0, bill = 0;
+    const plan = place.plan, hunt = plan?.hunt;
+    const into = hunt ? place.into - hunt.at : -1;
+    if (into > 0 && into < hunt.settled) {
+      const engaged = sprung(into, 0, hunt.engaged);
+      thrown = sprung(into, 0, hunt.thrown);
+      crouch = sprung(into, 0, hunt.crouch);
+      aim = sprung(into, 0, hunt.aim);
+      bill = sprung(into, 0, hunt.bill);
+      look = look * (1 - engaged) + sprung(into, 0, hunt.look);
+      neck += (hunt.neck - neck) * engaged;
+      neck += (ways.strike.catchNeck - neck) * sprung(into, 0, hunt.holding);
+      neck += sprung(into, 0, hunt.gulps);
     }
     // Its wings opened and held open, when its spell's plan says (its kind's `spread`): opened with a little spring,
     // held still (sagging and spread again once in a long hold), folded again; hunched and leaning a little meanwhile.
@@ -1133,10 +1218,14 @@ export class BirdPopulation {
     }
     neck += (1 - neck) * alerted;
     thrown *= 1 - alerted;
+    aim *= 1 - alerted;
+    bill *= 1 - alerted;
     spread *= 1 - alerted;   // alarmed, it folds them
     pose.fold *= THREE.MathUtils.clamp(1 - spread, 0, 1);
     pose.spread = spread;
     pose.strike = thrown;
+    pose.aim = aim;
+    pose.bill = bill;
     pose.crouch = crouch * (1 - alerted);
     pose.pitch = ways.tilt - 0.3 * thrown - (spreading ? spreading.lean * THREE.MathUtils.clamp(spread, 0, 1) : 0);   // tipped forward into its strike, and a little as it holds its wings open
     pose.look = look;
