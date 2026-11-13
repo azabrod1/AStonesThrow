@@ -81,7 +81,9 @@
 // ?birds=none), and --look=bird:n turns the view, after the pre-roll, to bird
 // n (__pond.birds's order), from where the view stands; bird:n:follow
 // turns it to the bird again before every frame (a tenth of a millisecond
-// on), so a run of --times is a clip that keeps it in frame.
+// on), so a run of --times is a clip that keeps it in frame. --bird-seed=n
+// gives the birds that seed (?birdSeed=; the harness's is 1), so another
+// visit's comings and goings, and the Koi pond's heron somewhere else.
 // --thing=name[:value] throws that (a key of THINGS in src/things.js: a
 // kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
 // slider value (a bowling ball's pounds, a basketball's size; a stone's
@@ -137,6 +139,7 @@ const orbitArgument = arg('orbit', '');
 const [thingName, thingValue] = arg('thing', '').split(':');
 const fishArgument = arg('fish', '');
 const birdsArgument = arg('birds', '');
+const birdSeed = arg('bird-seed', '');
 const showPreview = arg('preview', '0') === '1';
 const readyGiven = arg('wait', null);   // how long the pond may take to be ready (s), if given: else patience's
 
@@ -176,7 +179,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${birdsArgument ? `&birds=${birdsArgument}` : ''}${showPreview ? '' : '&preview=off'}${targets ? `&targets=${targets}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${birdsArgument ? `&birds=${birdsArgument}` : ''}${birdSeed ? `&birdSeed=${birdSeed}` : ''}${showPreview ? '' : '&preview=off'}${targets ? `&targets=${targets}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
