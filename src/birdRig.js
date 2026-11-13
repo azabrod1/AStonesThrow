@@ -47,9 +47,10 @@ const degrees = THREE.MathUtils.degToRad;
 export const FLIGHT = {
   fishEagle: { amplitude: degrees(32), centre: degrees(6), down: 0.52, lag: 0.1, handSwing: 0.45, flex: 0.25, pronation: degrees(10), rise: 0.012,
     glide: { dihedral: degrees(7), hand: degrees(-3), sweep: degrees(6) } },
-  // A heron: deep, slow, bowed beats (its wings arched down in a glide), hardly any flex.
-  heron: { amplitude: degrees(36), centre: degrees(-2), down: 0.55, lag: 0.12, handSwing: 0.5, flex: 0.12, pronation: degrees(8), rise: 0.015,
-    glide: { dihedral: degrees(-3), hand: degrees(-12), sweep: degrees(4) } },
+  // A heron: deep, slow, bowed beats, mostly below the level (its wings arched down in a glide), hardly any flex, its
+  // body bobbing against them.
+  heron: { amplitude: degrees(38), centre: degrees(-7), down: 0.55, lag: 0.12, handSwing: 0.5, flex: 0.12, pronation: degrees(8), rise: 0.022,
+    glide: { dihedral: degrees(-4), hand: degrees(-14), sweep: degrees(4) } },
   // Songbirds: deep, quick beats, the wing drawn right in on the upstroke (a passerine's flex gait), the body bobbing
   // with each. The cardinal's are deeper and quicker still, in bursts between bounds with its wings shut (src/birds.js
   // FLAPPING.bounding; `fold` here).
@@ -164,7 +165,9 @@ export function poseJoints(out, model, flight, pose) {
 // Its model (src/birdMeshes.js buildStandingModel) is its photograph's pose: neck in a loose S, legs straight down, wings
 // folded (its side picture shows them). poseStanding moves it from there:
 //   - the body placed at its hips: standing, its feet's height (pose.y) and its legs' (lower as it crouches); flying, pose.y;
-//   - the neck: each link's direction in the side's plane eased between drawn in onto the shoulders (neck 0), the
+//   - the trunk: slimmed in flight (pose.slim), its breast plumes laid flat;
+//   - the neck: each link's direction in the side's plane eased between drawn in onto the shoulders (neck 0; tucked tighter in
+//     flight, pose.tuck), the
 //     photograph's (NECK_PHOTO) and stretched up (1) (NECK_POSES); a strike (pose.strike, 0 to 1) throws it forward and
 //     down in one line, the bill to the water before its feet; the head turned to look (pose.look);
 //   - the legs: standing, each foot set where it should be (planted, or swung forward a step: pose.stride, pose.walking)
@@ -178,11 +181,16 @@ const NECK_PHOTO = 0.55;
 // rests and flies), stretched up, and striking (one line forward and down, the bill pointing down at the water).
 const NECK_POSES = {
   drawnIn: [58, 40, -8, -14, 70, 135, 0],
+  // Drawn in as it flies (pose.tuck): folded right back, the head laid on the shoulders, bill level, the neck's lower
+  // loop hanging below it as the heron's keel-like bulge, as in every photograph of one flying.
+  flying: [28, -22, -58, 0, 78, 140, 2],
   stretched: [72, 80, 88, 90, 86, 80, -4],
   strike: [-34, -38, -42, -46, -50, -53, -70],
 };
+const FLIGHT_TRUNK = { depth: 0.28, width: 0.12 };   // shares the trunk's depth and width are slimmed by in flight
 const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
 const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
+const TRAIL_SLIM = degrees(-4);   // and further back as its trunk is slimmed (pose.slim), its thighs drawn up into its belly
 const STEP_LIFT = 0.07;        // m a walking foot is lifted at the middle of its swing
 export const STEP_LENGTH = 0.13;   // m a foot moves a step (two steps a stride), src/birds.js walks it so
 
@@ -224,18 +232,32 @@ export function poseStanding(out, model, flight, pose) {
   scratch.euler.set(pose.bank ?? 0, pose.heading ?? 0, pose.pitch ?? 0, 'YZX');
   bodyWorld.makeRotationFromEuler(scratch.euler);
   bodyWorld.setPosition(pose.x, hipsY, pose.z);
-  bodyWorld.toArray(out, JOINTS.body * 16);
-  bodyWorld.toArray(out, JOINTS.tail * 16);
+  // In flight its trunk slimmed (pose.slim, 0 to 1; flying, 1 unless given): the photograph's is a standing heron's,
+  // its breast plumes hanging loose, which aloft are laid flat; its back kept where it is (the wings' roots) and its
+  // belly drawn up to it, a little narrower too (FLIGHT_TRUNK).
+  const slim = THREE.MathUtils.clamp(pose.slim ?? (flying ? 1 : 0), 0, 1);
+  if (slim > 0) {
+    const backY = skeleton.wing.shoulder.y;
+    local.makeTranslation(0, backY, 0).scale(scratch.vector.set(1, 1 - FLIGHT_TRUNK.depth * slim, 1 - FLIGHT_TRUNK.width * slim)).multiply(world.makeTranslation(0, -backY, 0));
+    step.multiplyMatrices(bodyWorld, local);
+    step.toArray(out, JOINTS.body * 16);
+    step.toArray(out, JOINTS.tail * 16);
+  } else {
+    bodyWorld.toArray(out, JOINTS.body * 16);
+    bodyWorld.toArray(out, JOINTS.tail * 16);
+  }
   // The neck's chain: each link's direction (the photograph's, or toward a pose's), bent at its joint by what turns its
   // rest direction to that, less what the links before it turned already.
   const neck = THREE.MathUtils.clamp(pose.neck ?? NECK_PHOTO, 0, 1);
+  const tuck = THREE.MathUtils.clamp(pose.tuck ?? (flying ? 1 : 0), 0, 1);
   const strike = THREE.MathUtils.clamp(pose.strike ?? 0, 0, 1);
   const chain = [...JOINTS.neck, JOINTS.head];
   step.copy(bodyWorld);
   let turned = 0;
   chain.forEach((joint, index) => {
     const rest = skeleton.neckRest[index];
-    let direction = neck < NECK_PHOTO ? degrees(NECK_POSES.drawnIn[index]) + (rest - degrees(NECK_POSES.drawnIn[index])) * (neck / NECK_PHOTO)
+    const drawnIn = degrees(NECK_POSES.drawnIn[index] + (NECK_POSES.flying[index] - NECK_POSES.drawnIn[index]) * tuck);
+    let direction = neck < NECK_PHOTO ? drawnIn + (rest - drawnIn) * (neck / NECK_PHOTO)
       : rest + (degrees(NECK_POSES.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
     direction += (degrees(NECK_POSES.strike[index]) - direction) * strike;
     const bend = direction - rest - turned;
@@ -266,7 +288,7 @@ export function poseStanding(out, model, flight, pose) {
     }
     const solved = solveLeg(leg.hip, { x: footX, y: footY }, leg.upper, leg.lower);
     // Trailing: the whole leg swung back from its rest, straight.
-    const trailTibia = leg.restTibia + TRAIL, trailTarsus = trailTibia;
+    const trailTibia = leg.restTibia + TRAIL + TRAIL_SLIM * slim, trailTarsus = trailTibia;
     const tibia = trailTibia + (solved.tibia - trailTibia) * legsDown;
     const tarsus = trailTarsus + (solved.tarsus - trailTarsus) * legsDown;
     const hipTurn = tibia - leg.restTibia, heelTurn = tarsus - leg.restTarsus - hipTurn;

@@ -102,7 +102,7 @@ const FLAPPING = {
 export const BIRD_KINDS = {
   herring: { name: 'Herring gull', span: 1.4, length: 0.6, beat: 2.9, cruise: 8.5, flapping: 'gull', stand: 0 },
   kelp: { name: 'Kelp gull', span: 1.4, length: 0.6, beat: 2.8, cruise: 8.5, flapping: 'gull', stand: 0 },
-  heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 9, flapping: 'steady', stand: 0.421 },   // stand: its model's hips (src/birdMeshes.js)
+  heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 10.5, flapping: 'steady', stand: 0.421 },   // stand: its model's hips (src/birdMeshes.js)
   goose: { name: 'Egyptian goose', span: 1.45, length: 0.7, beat: 3.8, cruise: 14, flapping: 'steady', stand: 0.32 },
   ibis: { name: 'African sacred ibis', span: 1.15, length: 0.7, beat: 3.6, cruise: 12, flapping: 'corvid', stand: 0 },
   fishEagle: { name: 'African fish eagle', span: 2.1, length: 0.72, beat: 2.2, cruise: 10, flapping: 'fishing', stand: 0 },
@@ -169,17 +169,20 @@ const ROLL_EASE = 0.5;
 //   alert: a splash within `alert` m: it stretches up and looks toward it for `hold` s, quick to react (`settle`).
 //   flush: a thing thrown coming down within `radius` m of it (and under `height` m), or a splash within `splash` m,
 //     puts it up; it crouches `crouch` s, then flies off over `flight` s along a curve `far` m away and `climb` m up,
-//     beating hard over the first `hard` s, its legs swinging back over `legsUp` s and its neck drawn in over `neckIn`.
+//     beating hard over the first `hard` s (a share `quicker` faster at first, easing to its kind's beat over about
+//     `quickFor` s), then steadily (`cruise`, its beat's depth), its legs swinging back over `legsUp` s and its neck
+//     drawn in and its trunk slimmed (src/birdRig.js pose.tuck, pose.slim) over `neckIn`.
 //   away: `absent` s (drawn) before it comes back, put off `retry` s while a thing has been thrown near its spot in the
 //     last `quiet` s.
-//   land: it glides back in over `glide` s from `from` m out and `high` m up, beating `flaps` s of every few and
-//     flaring over the last `flare` s, its wings folding over `fold` s once it stands.
+//   land: it comes back in over `glide` s from `from` m out and `high` m up, still beating for its first `flapping` s,
+//     then gliding on bowed wings, and flaring over the last `flare` s (its neck coming out of its tuck, its trunk
+//     filling out, its legs down), its wings folding over `fold` s once it stands.
 const HERON = {
   idle: { lookEvery: 4.6, jitter: 3.4, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
   alert: { alert: 9, hold: 4.5, settle: 0.6 },
-  flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 9, far: 38, climb: 13, hard: 1.8, legsUp: 1.2, neckIn: 1.0 },
+  flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 5.5, far: 38, climb: 13, hard: 1.8, legsUp: 1.0, neckIn: 1.1, quicker: 0.35, quickFor: 1.4, cruise: 0.9 },
   away: { absent: [45, 90], retry: 12, quiet: 8 },
-  land: { glide: 10, from: 34, high: 11, flare: 1.4, fold: 0.9 },
+  land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.4, fold: 0.9 },
   tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
   // spells: its standing cut into spells from when it began to stand, each `length` s long (drawn), or longer if what
   //   it does in it needs more; each spell's plan (spellPlan) is drawn from its seed, its stay (how many times it has
@@ -800,13 +803,17 @@ export class BirdPopulation {
       this.flyAlong(bird, along, Math.min(along + 0.01, 1), along > 0.99);
       pose.heading = bird.fleeHeading + turnBetween(bird.fleeHeading, pose.heading) * smoother(0, 0.45, flying);
       // Off the bed: its feet leave the water as it springs, so its middle starts where its standing middle was.
-      pose.beat = 1 - 0.45 * smoother(hard, hard + 2, flying);
+      pose.beat = 1 - (1 - ways.flush.cruise) * smoother(hard, hard + 2, flying);
+      // Its wingbeat's phase: quicker at first, easing to its kind's (the integral of that rate, so it never jumps).
+      const { quicker, quickFor } = ways.flush;
+      pose.phase = 2 * Math.PI * kind.beat * (flying + quicker * quickFor * (1 - Math.exp(-flying / quickFor)));
       pose.crouch = 1 - smoother(0, 0.2, flying);   // springing up out of its crouch
       pose.walking = 0;
       pose.strike = 0;
       pose.fold = 0.5 * (1 - smoother(0, 0.25, flying));
       pose.legs = 1 - smoother(0.15, legsUp, flying);
       pose.neck = 0.3 * (1 - smoother(0, neckIn, flying));
+      pose.tuck = pose.slim = smoother(0, neckIn, flying);
       pose.look = 0;
       // Out of sight over the garden: gone the moment it is far enough (the Koi pond's land ends at 35 m: src/sky.js backdrop).
       if (share >= 1) pose.shown = false;
@@ -820,12 +827,14 @@ export class BirdPopulation {
       this.flyAlong(bird, along, Math.min(along + 0.01, 1), false);
       const toLand = glide - since;
       const flaring = 1 - smoother(0, flare, toLand);
-      // Gliding in, a few beats now and then, then the flare: wings forward and beating hard, body up, legs down.
-      const glideBeats = 0.6 * Math.max(0, Math.sin(time * 0.9 + bird.seed)) ** 4;
-      pose.beat = Math.max(glideBeats, flaring);
+      // Beating in, then gliding on bowed wings, then the flare: wings forward and beating hard, body up, legs down.
+      const coming = 1 - smoother(ways.land.flapping - 0.8, ways.land.flapping + 0.8, since);
+      pose.beat = Math.max(coming, flaring);
       pose.pitch += flaring * THREE.MathUtils.degToRad(28);
       pose.legs = 1 - smoother(flare * 0.3, flare + 0.8, toLand);
       pose.neck = 0.35 * flaring;
+      pose.tuck = 1 - flaring;
+      pose.slim = 1 - flaring;
       pose.fold = 0;
       pose.look = 0;
       pose.walking = 0;
@@ -1025,6 +1034,7 @@ export class BirdPopulation {
     pose.flying = false;
     pose.legs = 1;
     pose.beat = 0;
+    pose.tuck = pose.slim = 0;   // its neck and trunk as it stands (src/birdRig.js)
     pose.fold = smoother(0, ways.land.fold, time - bird.foldSince);
     // Stepping: its stride's phase from how far it has gone and turned (two steps a stride), so its feet never slide.
     pose.walking = place.walking;
