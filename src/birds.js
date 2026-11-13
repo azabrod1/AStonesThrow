@@ -18,7 +18,8 @@
 //     spell, and when, and how long the spell is, are drawn afresh each time
 //     it comes down (spellPlan), so it keeps no rhythm. Each movement settles as a spring
 //     does, each part on its own time (sprung). A splash anywhere in the
-//     pond makes it stretch up and look; a thing thrown near it puts it up: it crouches,
+//     pond makes it stretch up and turn its head and neck to look at it (alert);
+//     a thing thrown near it puts it up: it crouches,
 //     jumps and flies off low over the garden with deep, slow beats, its neck
 //     drawn in and its legs trailing, as herons fly; a minute or so later it
 //     glides back in, flares and lands where it stood.
@@ -166,7 +167,10 @@ const ROLL_EASE = 0.5;
 //   idle: its head turned now and then (`looks`, rad either side), its spells `lookEvery` s apart, each starting up to
 //     `jitter` s late, a quick turn settling in about `lookSettle` s; its neck set to one of `necks` on spells of its
 //     own (`neckEvery` s), slower (`neckSettle`); a share `still` of spells changing nothing.
-//   alert: a splash within `alert` m: it stretches up and looks toward it for `hold` s, quick to react (`settle`).
+//   alert: a splash within `alert` m (out of reach of a flush): it stretches up and turns its head and neck to look at
+//     it (as far round as `most` rad from where its body faces, so it looks over its shoulder at one behind it) for
+//     `hold` s, quick to react (`settle`); another splash while it looks keeps it up, its gaze going over to the new
+//     one (`refocus` s to settle), never snapping back first.
 //   flush: a thing thrown coming down within `radius` m of it (and under `height` m), or a splash within `splash` m,
 //     puts it up; it crouches `crouch` s, then flies off over `flight` s along a curve `far` m away and `climb` m up,
 //     beating hard over the first `hard` s (a share `quicker` faster at first, easing to its kind's beat over about
@@ -179,7 +183,7 @@ const ROLL_EASE = 0.5;
 //     filling out, its legs down), its wings folding over `fold` s once it stands.
 const HERON = {
   idle: { lookEvery: 4.6, jitter: 3.4, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
-  alert: { alert: 9, hold: 4.5, settle: 0.6 },
+  alert: { alert: 9, hold: 4.5, settle: 0.6, most: 2.3, refocus: 0.5 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 5.5, far: 38, climb: 13, hard: 1.8, legsUp: 1.0, neckIn: 1.1, quicker: 0.35, quickFor: 1.4, cruise: 0.9 },
   away: { absent: [45, 90], retry: 12, quiet: 8 },
   land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.4, fold: 0.9 },
@@ -427,8 +431,8 @@ export class BirdPopulation {
       bird.standSince = time;   // its walks' spells from now (src/birds.js standingPlace)
       bird.stay = 0;
       bird.foldSince = time - STANDING[bird.kind].land.fold;   // standing a while already: its wings folded
-      bird.alertAt = -Infinity;
-      bird.alertToward = 0;
+      bird.alerts = [];   // its alert's springs (src/birds.js standing): up and looking, then back to its ways
+      bird.gazes = [];    // where it looks while alerted: [time, the splash's direction from it (rad, unwrapped), settle]
       bird.returnAt = Infinity;
       bird.flight = null;
     }
@@ -471,7 +475,8 @@ export class BirdPopulation {
         bird.since = time;
         bird.standSince = time;
         bird.foldSince = time;
-        bird.alertAt = -Infinity;
+        bird.alerts = [];
+        bird.gazes = [];
       }
     }
   }
@@ -485,12 +490,31 @@ export class BirdPopulation {
       if (near < ways.flush.radius * 1.6) this.disturbed = time;
       if (bird.mode !== 'stand') continue;
       if (near < ways.flush.splash) this.flush(bird, time, x, z);
-      else if (near < ways.alert.alert) {
-        // Its head toward the splash, as a turn from its heading, no more than it can look round.
-        bird.alertToward = THREE.MathUtils.clamp(turnBetween(bird.spot.heading, Math.atan2(-(z - bird.spot.z), x - bird.spot.x)), -1.4, 1.4);
-        bird.alertAt = time;
-      }
+      else if (near < ways.alert.alert) this.alert(bird, time, x, z);
     }
+  }
+
+  /**
+   * A standing bird alerted at `time` by a splash at (x, z) (its kind's `alert`): up and looking at it for `hold` s.
+   * Alerted already, it stays up `hold` s from now and its gaze goes over to the new splash from where it is, so
+   * neither its neck nor its head jumps.
+   */
+  alert(bird, time, x, z) {
+    const { hold, settle, refocus } = STANDING[bird.kind].alert;
+    const place = this.standingPlace(bird, time, scratchPlace);
+    const toward = Math.atan2(-(z - place.z), x - place.x);   // as headings go (src/birdRig.js)
+    const looking = bird.alerts.length > 0 && sprung(time, 0, bird.alerts) > 0;
+    const last = bird.alerts[bird.alerts.length - 1];
+    if (looking && time < last[0]) last[0] = time + hold;   // still up: kept up longer
+    else {
+      if (!looking) bird.alerts.length = 0;   // its earlier alerts over (each spring settled exactly)
+      bird.alerts.push([time, 1, settle], [time + hold, 0, 2 * settle]);
+    }
+    if (!looking) { bird.gazes = [[time, toward, 0]]; return; }
+    // Its gaze from where it is now to the new splash, the short way round; the gazes it has settled on dropped.
+    while (bird.gazes.length > 1 && time >= bird.gazes[1][0] + settledAfter(bird.gazes[1][2])) bird.gazes.shift();
+    const before = bird.gazes[bird.gazes.length - 1][1];
+    bird.gazes.push([time, before + turnBetween(before, toward), refocus]);
   }
 
   /**
@@ -1074,10 +1098,14 @@ export class BirdPopulation {
       look *= 1 - opened;
       neck += (0.75 - neck) * opened;
     }
-    // A splash in sight: up and looking, quick to react, for a while, then back to its ways.
-    const { hold, settle } = ways.alert;
-    const alerted = sprung(time, 0, [[bird.alertAt, 1, settle], [bird.alertAt + hold, 0, 2 * settle]]);
-    look += (bird.alertToward - look) * alerted;
+    // A splash in sight: up and looking, quick to react, for a while, then back to its ways; its gaze turned from
+    // where its body faces now (it may have walked since), no further round than it can look.
+    const alerted = bird.alerts.length ? sprung(time, 0, bird.alerts) : 0;
+    if (alerted > 0) {
+      const gaze = sprung(time, bird.gazes[0][1], bird.gazes.slice(1));
+      const toward = THREE.MathUtils.clamp(turnBetween(place.heading, gaze), -ways.alert.most, ways.alert.most);
+      look += (toward - look) * alerted;
+    }
     neck += (1 - neck) * alerted;
     thrown *= 1 - alerted;
     opened *= 1 - alerted;

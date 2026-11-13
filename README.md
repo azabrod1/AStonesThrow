@@ -671,7 +671,8 @@ bank (turning about as it steps, its head first), peers into the water,
 holds still and strikes. Each movement is a spring's, closed form in time
 (`sprung` in `src/birds.js`): every part settles on its own time, so they
 overlap as a bird's do rather than starting and stopping together. A
-splash nearby makes it look; a thing thrown near puts it up, and it comes
+splash nearby makes it stretch up and turn its head and neck to look at it,
+over its shoulder if the splash is behind it; a thing thrown near puts it up, and it comes
 back a minute or so later, gliding in to land where it stood. None are
 about after dark. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out
@@ -700,7 +701,8 @@ neck (its poses read off a smooth curve, so its S bends without corners) and leg
 draws its neck in or stretches it, walks the bank, strikes at fish, crouches
 and takes off trailing its legs, its legs seen through the water
 (`poseStanding` in `src/birdRig.js`). `tools/bird-look.mjs` shoots a model
-alone through its wingbeat (`--poses=standing`: a standing kind's ways). The
+alone through its wingbeat (`--poses=standing`: a standing kind's ways; `--focus` and
+`--distance` for a close-up, `--look` to turn its head). The
 other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0

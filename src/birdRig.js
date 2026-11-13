@@ -173,7 +173,8 @@ export function poseJoints(out, model, flight, pose) {
 //   - the neck: each link's direction in the side's plane eased between drawn in onto the shoulders (neck 0; tucked tighter in
 //     flight, pose.tuck), the
 //     photograph's (NECK_PHOTO) and stretched up (1) (NECK_POSES); a strike (pose.strike, 0 to 1) throws it forward and
-//     down in one line, the bill to the water before its feet; the head turned to look (pose.look);
+//     down in one line, the bill to the water before its feet; turned to look (pose.look), the head and the upper neck
+//     sharing the turn (LOOK_SHARES);
 //   - the legs: standing, each foot set where it should be (planted, or swung forward a step: pose.stride, pose.walking)
 //     and the hip and heel solved to reach it (two bones in the side's plane, the heel bending back as a heron's does);
 //     flying, swung back to trail straight behind (pose.legs 0), the toes curled;
@@ -208,6 +209,16 @@ function linkDirections(table) {
   return [...links, table[NECK_POSE_AT.length]];
 }
 const NECK_LINKS = Object.fromEntries(Object.entries(NECK_POSES).map(([name, table]) => [name, linkDirections(table)]));
+// Its look (pose.look) shared along the chain, as a bird turns its head: the head turning most, the upper neck
+// swivelling under it (its links from LOOK_FROM of the way up, more toward the top), the lower neck not at all. Each
+// share turns its link about the body's up, so the neck's S keeps upright and swings round to where it looks.
+const LOOK_HEAD = 0.5, LOOK_FROM = 0.5;
+const LOOK_SHARES = (() => {
+  const weights = NECK_SHARES.map((share) => Math.max(share - LOOK_FROM, 0));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  return [...weights.map((weight) => (1 - LOOK_HEAD) * weight / total), LOOK_HEAD];
+})();
+const lookAxis = new THREE.Vector3();
 const FLIGHT_TRUNK = { depth: 0.28, width: 0.12 };   // shares the trunk's depth and width are slimmed by in flight
 const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
 const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
@@ -273,6 +284,7 @@ export function poseStanding(out, model, flight, pose) {
   const tuck = THREE.MathUtils.clamp(pose.tuck ?? (flying ? 1 : 0), 0, 1);
   const strike = THREE.MathUtils.clamp(pose.strike ?? 0, 0, 1);
   const chain = [...JOINTS.neck, JOINTS.head];
+  const look = (pose.look ?? 0) * (1 - strike);
   step.copy(bodyWorld);
   let turned = 0;
   chain.forEach((joint, index) => {
@@ -285,7 +297,9 @@ export function poseStanding(out, model, flight, pose) {
     turned += bend;
     const point = skeleton.neck[index];
     about(local, jointPoint.set(point.x, point.y, 0), AXIS_Z, bend);
-    if (joint === JOINTS.head) local.multiply(about(world, jointPoint, AXIS_Y, (pose.look ?? 0) * (1 - strike)));
+    // Its share of the look, about the body's up: the chain has turned this link `turned` about the side's normal
+    // (the bends before it and its own), so the body's up is, in the link's own frame, up turned back by as much.
+    if (look !== 0 && LOOK_SHARES[index] > 0) local.multiply(about(world, jointPoint, lookAxis.set(Math.sin(turned), Math.cos(turned), 0), look * LOOK_SHARES[index]));
     step.multiply(local);
     step.toArray(out, joint * 16);
   });
