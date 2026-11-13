@@ -8,6 +8,8 @@
 //   - Rocky cove (Cape Town's Atlantic shore): kelp gulls, each coming by
 //     now and then to work the water out past the rocks, mostly gliding, a
 //     few wingbeats now and then. Loch Ness: herring gulls, so.
+//   - The Koi pond (Nagoya), frozen: no heron standing on the ice; one flies
+//     over the garden now and then instead (BIRDS_WHEN_FROZEN).
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
 //     bank, as herons stand in every garden pond with fish in it (wade). It
 //     stands still for long spells, its head turning now and then, its neck
@@ -124,7 +126,8 @@ export const BIRD_KINDS = {
 //     side, round in a wide turn out over the water and back out the same side; circle: in, round and round over the
 //     water, rising as in a thermal, and off; a soaring kind's), between `distance` [near, far] m from the shore's
 //     eye and `height` [low, high] m over the water, its turns and circles centred `aim` degrees to the right of the
-//     home view's line, give or take `spread`. `count` birds, each on its own visits, or with `together` one flock
+//     home view's line, give or take `spread`; a crossing's places each up to `wander` m nearer or farther than the
+//     one before (by its speed if not given: 14 m at 10 m/s, less faster). `count` birds, each on its own visits, or with `together` one flock
 //     on its leader's, each `spacing` m behind the one before and a little to one side, as a small flock strings out.
 //   wade: `angle` (rad about the pond's centre, KOI_SHORE) and `offshore` (m out from the waterline) where it stands,
 //     `heading` (rad from +x, turning toward −z) which way it faces as it comes down: side on to the home view, so its
@@ -151,6 +154,15 @@ export const BIRDS_BY_PLACE = {
     { kind: 'blueJay', habit: 'visit', count: 1, distance: [15, 32], height: [2.4, 4.5], aim: 0, spread: 22, gap: [12, 50], styles: { cross: 1 } },
     { kind: 'cardinal', habit: 'visit', count: 1, distance: [10.5, 19], height: [1.2, 2.5], aim: 0, spread: 12, gap: [25, 75], styles: { cross: 1 } },
   ],
+};
+
+// A place's birds while its water is frozen (setPlace's `frozen`), where they differ: a wading bird has no water to
+// wade in, so the Koi pond's heron does not stand on the ice; it comes over now and then as a visitor, low over the
+// garden and inside its backdrop (src/sky.js `garden`: 35 m from the eye), as herons go looking for open water;
+// crossing only, and straight on (a wide turn at a heron's speed is 60 m or more across, far behind the garden's
+// picture, and its wanderings would turn it hard at this range).
+export const BIRDS_WHEN_FROZEN = {
+  koi: [{ kind: 'heron', habit: 'visit', count: 1, distance: [16, 26], height: [2.2, 3.4], aim: 0, spread: 18, gap: [6, 26], wander: 3, styles: { cross: 1 } }],
 };
 
 const BANK_MOST = THREE.MathUtils.degToRad(35);   // no bird is drawn banked more (a visit is laid out within LAID_BANK)
@@ -386,12 +398,13 @@ export class BirdPopulation {
     this.disturbed = -Infinity;   // when a thing was last thrown near a heron's spot (its kind's STANDING away.quiet)
   }
 
-  /** The birds of `place` (none for a place without, or 'none'), each as it starts. */
-  setPlace(place) {
+  /** The birds of `place` (none for a place without, or 'none'), each as it starts; its frozen water's (BIRDS_WHEN_FROZEN) when `frozen`. */
+  setPlace(place, { frozen = false } = {}) {
     this.place = place;
+    this.frozen = frozen;
     const stream = seededRandom(this.seed, 977);
     this.birds = [];
-    for (const group of BIRDS_BY_PLACE[place] ?? []) {
+    for (const group of (frozen && BIRDS_WHEN_FROZEN[place]) || BIRDS_BY_PLACE[place] || []) {
       let groupSeed = null, visitor = null;
       for (let index = 0; index < group.count; index++) {
         const bird = { kind: group.kind, habit: group.habit, group, index, pose: freshPose(), seed: Math.floor(stream() * 2 ** 31) };
@@ -626,7 +639,7 @@ export class BirdPopulation {
       // Over, by two to three places strung across the view, each nearer or farther, higher or lower.
       // Each a step nearer or farther than the one before, smaller the faster it flies (a turn's radius goes as the
       // square of its speed).
-      const stops = 2 + Math.floor(random() * 2), wander = 14 * Math.min(1, (10 / speed) ** 2);
+      const stops = 2 + Math.floor(random() * 2), wander = group.wander ?? 14 * Math.min(1, (10 / speed) ** 2);
       let distance = range(group.distance);
       for (let stop = 1; stop <= stops; stop++) {
         const share = stop / (stops + 1);

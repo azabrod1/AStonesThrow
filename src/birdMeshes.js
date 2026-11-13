@@ -673,7 +673,8 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     sprite.under.visible = false;
     if (!ready) return;
     if (loaded.model.standing) {
-      // Standing in the water its feet are on the bed (src/birds.js laySpot); on a frozen pond, on the ice over them.
+      // Standing in the water its feet are on the bed (src/birds.js laySpot); on a frozen pond, on the ice over them
+      // (none stands on one now: src/birds.js BIRDS_WHEN_FROZEN).
       const ice = standing && at.y < 0 ? iceAt(at.x, at.z) : null;
       const pose = ice === null ? at : Object.assign(standingPose, at, { y: ice });
       poseStanding(sprite.jointArray, loaded.model, flight, pose);

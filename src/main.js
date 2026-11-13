@@ -990,6 +990,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   applyGround();
   // The ice (the header): Frozen water's, as chosen above.
+  let birdsFrozen = null;   // whether the birds were last laid out for frozen water (applyBirds; null before they are)
   let iceName = frozenAtStart ? iceThickness : 'none';
   /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
   function applyIce(name = iceName) {
@@ -999,6 +1000,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     water.iced = ice.on;
     splash.setIce(ice);
     applyGale();
+    // Frozen or thawed, the place's birds as they are on its water now (src/birds.js BIRDS_WHEN_FROZEN: no heron on the
+    // Koi pond's ice); none yet at the start, which sets them up itself (applyBirds).
+    if (birdsFrozen !== null && birdsFrozen !== ice.on) { applyBirds(stepsTime); viewChanged = true; }
   }
   applyIce();
 
@@ -1183,7 +1187,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const iceUnderBird = (x, z) => (ice.on && !ice.holeAt(x, z) ? ice.top : null);
   /** The place's birds, as they start at `time` (the caller draws the mirror image whole again, with them or without). */
   function applyBirds(time) {
-    birds.setPlace(birdsOn ? placeName : 'none');
+    birdsFrozen = ice.on;
+    birds.setPlace(birdsOn ? placeName : 'none', { frozen: ice.on });
     birds.reset(time);
     birds.setConditions({ solarElevation: lighting.solarElevation });
     birds.showAt(time);

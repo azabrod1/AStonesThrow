@@ -43,7 +43,8 @@
 // its way back up, as the reeds are) and, for an eye under the water,
 // fading into the water's colour. The water's crests, a centimetre or two,
 // hide the top of it and show the bottom of the upper picture, as at a
-// reed's waterline. On a frozen pond the heron stands on the ice instead
+// reed's waterline. On a frozen pond (no bird stands on one now: src/birds.js
+// BIRDS_WHEN_FROZEN puts the Koi pond's heron in the air) the heron stands on the ice instead
 // (update's `iceAt`: where a hole's open water is, in it), as herons stand
 // on ice in winter, nothing of it under the sheet. A bird standing on dry
 // ground or on ice (the Pool's geese, a heron in winter) has a

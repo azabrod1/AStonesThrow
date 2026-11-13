@@ -669,7 +669,9 @@ rising and dipping a few centimetres about the visit's). The
 heron stands: it looks about, sets its neck, walks a few steps along the
 bank (turning about as it steps, its head first), peers into the water,
 holds still and strikes, and now and then opens its wings and holds them
-open a few seconds, still, as herons do to sun or dry themselves. Each movement is a spring's, closed form in time
+open a few seconds, still, as herons do to sun or dry themselves. When the
+pond is frozen it doesn't stand on the ice: it flies over the garden now and
+then instead (`BIRDS_WHEN_FROZEN`). Each movement is a spring's, closed form in time
 (`sprung` in `src/birds.js`): every part settles on its own time, so they
 overlap as a bird's do rather than starting and stopping together. A
 splash nearby makes it stretch up and turn its head and neck to look at it,

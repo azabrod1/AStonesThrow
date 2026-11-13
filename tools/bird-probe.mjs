@@ -2,7 +2,9 @@
 //
 //   node tools/bird-probe.mjs
 //
-// - each place's birds (BIRDS_BY_PLACE): some at every place but the Pool
+// - each place's birds (BIRDS_BY_PLACE): some at every place but the Pool;
+//   frozen, none standing on the ice (BIRDS_WHEN_FROZEN: the Koi pond's
+//   heron flies over instead, and is checked as every flying bird is)
 //   (whose view looks down into the water), none for 'none';
 // - ten minutes of every place's flying birds (visit): always low over the
 //   water in the home view's sky (out past THROW_REACH from the eye, between
@@ -35,7 +37,7 @@
 //   (tools/cost-clock.mjs).
 import * as THREE from 'three';
 import { costClock, costSince } from './cost-clock.mjs';
-import { BirdPopulation, BIRDS_BY_PLACE, BIRD_KINDS } from '../src/birds.js';
+import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRD_KINDS } from '../src/birds.js';
 import { koiShoreDistance, koiFloorDepthAt } from '../src/pondFloor.js';
 import { PLACES } from '../src/places.js';
 
@@ -52,9 +54,9 @@ const realRandom = Math.random;
 Math.random = () => { throw new Error('the birds drew Math.random'); };
 
 /** A population of `place` run from 0 to `seconds`, stepped at the physics step and posed every `frame`: each frame's poses. */
-function run(place, seconds, frame, { things = () => [], splashes = [], conditions = DAY } = {}) {
+function run(place, seconds, frame, { things = () => [], splashes = [], conditions = DAY, frozen = false } = {}) {
   const birds = new BirdPopulation({ seed: 1 });
-  birds.setPlace(place);
+  birds.setPlace(place, { frozen });
   birds.setConditions(conditions);
   const frames = [];
   let stepsTime = 0;
@@ -81,17 +83,24 @@ for (const place of Object.keys(PLACES)) {
 {
   const none = new BirdPopulation(); none.setPlace('none');
   check(none.birds.length === 0, "'none': no birds");
+  // Frozen, no bird stands on the ice: the Koi pond's heron flies over instead.
+  const frozen = new BirdPopulation(); frozen.setPlace('koi', { frozen: true });
+  check(frozen.birds.length > 0 && frozen.birds.every((bird) => bird.habit === 'visit'), `koi, frozen: no heron standing on the ice (${frozen.birds.map((bird) => `${bird.kind} ${bird.habit}s`).join(', ')})`);
+  const thawed = new BirdPopulation(); thawed.setPlace('loch', { frozen: true });
+  check(thawed.birds.length === BIRDS_BY_PLACE.loch[0].count, 'frozen elsewhere: the same birds');
 }
 
 // Every place's flying birds over ten minutes.
 const OUT_OF_FRAME = THREE.MathUtils.degToRad(45);   // a wide screen's frame reaches 38° either side of the home view's line
 const bearingOf = (bird) => Math.atan2(bird.x - EYE.x, -(bird.z - EYE.z));
-for (const place of Object.keys(BIRDS_BY_PLACE)) {
-  const groups = BIRDS_BY_PLACE[place];
+const flyingRuns = [...Object.keys(BIRDS_BY_PLACE).map((place) => [place, place, false]), ...Object.keys(BIRDS_WHEN_FROZEN).map((place) => [`${place} (frozen)`, place, true])];
+for (const [label, where, frozen] of flyingRuns) {
+  const place = label;
+  const groups = frozen ? BIRDS_WHEN_FROZEN[where] : BIRDS_BY_PLACE[where];
   if (!groups.some((group) => group.habit === 'visit')) continue;
-  const { frames } = run(place, 600, 1 / 60);
+  const { frames } = run(where, 600, 1 / 60, { frozen });
   const cruise = BIRD_KINDS[groups[0].kind].cruise;
-  let nearest = Infinity, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, fastestRoll = 0, biggestJump = 0;
+  let nearest = Infinity, farthest = 0, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, fastestRoll = 0, biggestJump = 0;
   let visits = 0, inside = 0, styles = new Set(), entries = [];
   for (let index = 1; index < frames.length; index++) {
     frames[index].birds.forEach((bird, which) => {
@@ -105,6 +114,7 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
       if (!bird.shown) return;
       const distance = Math.hypot(bird.x - EYE.x, bird.z - EYE.z);
       nearest = Math.min(nearest, distance);
+      if (Math.abs(bearingOf(bird)) < OUT_OF_FRAME) farthest = Math.max(farthest, distance);   // as far as it is seen
       lowest = Math.min(lowest, bird.y);
       if (bird.style !== 'circle') highestElevation = Math.max(highestElevation, Math.atan2(bird.y - EYE.y, distance));
       steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
@@ -118,6 +128,9 @@ for (const place of Object.keys(BIRDS_BY_PLACE)) {
   const seen = frames.filter((frame) => frame.birds.some((bird) => bird.shown)).length / frames.length;
   check(nearest > THROW_REACH, `${place}: its birds keep out of reach: nearest ${nearest.toFixed(1)} m from the eye`);
   check(lowest > 1.2, `${place}: they stay over the water: lowest ${lowest.toFixed(2)} m`);
+  // The Koi pond's garden is a photograph on a sphere 35 m round the eye (src/sky.js `garden` backdrop): its birds
+  // fly inside it in the frame (out beyond its sides, where visits come and go, nothing is seen), never behind the picture.
+  if (where === 'koi') check(farthest < 34, `${place}: they fly inside the garden's backdrop: farthest in the frame ${farthest.toFixed(1)} m from the eye`);
   check(highestElevation < FRAME_TOP, `${place}: they stay in the home view's sky (but in a thermal): highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
   check(slowest > 0.4 * cruise && fastest < 2.2 * cruise, `${place}: they fly at their speed: ${slowest.toFixed(1)} to ${fastest.toFixed(1)} m/s (cruising ${cruise})`);
   // Gliding turns, unhurried: a visit laid out within 28° of bank for its speed (a flock's outer birds a little more)
