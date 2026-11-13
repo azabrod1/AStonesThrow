@@ -16,7 +16,8 @@
 //   moment each cycle) and its jay beats steadily, each coming and going
 //   on its own; a flock flies together;
 // - the heron stands wading at its spot: its feet on the bed, in the water,
-//   a few centimetres to a few tens deep, inside the pond;
+//   a few centimetres to a few tens deep, inside the pond; its spot differs
+//   from seed to seed, along the far bank, inside an upright phone's frame;
 // - its ways are smooth: it turns about unhurried, stepping round as it
 //   turns, holds still between its moves, and peers into the water a while
 //   (its bill pointed down) before it strikes, sometimes to one side; it keeps no rhythm (over twenty seeds the gaps
@@ -26,8 +27,9 @@
 // - a splash across the pond makes it look, not go; a stone coming down
 //   near it puts it up before it lands, and it climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
-//   while things are thrown near its spot) and lands where it stood, its
-//   heading its own, smoothly; then it stands;
+//   while things are thrown near where it will come down) and lands
+//   somewhere new on the far bank, its heading its own, smoothly; then it
+//   stands;
 // - after dark there are none (setConditions);
 // - the population draws no Math.random (its own seeded stream);
 // - at any frame rate: stepped at the physics step, as src/main.js steps
@@ -206,6 +208,25 @@ const heronAt = (frame) => frame.birds[0];
   check(moved.length > 0 && moved.every((frame) => heronAt(frame).walking > 0), `it walks now and then, and moves only as it walks (${moved.length} frames)`);
 }
 
+// Where it stands differs from seed to seed (src/birds.js laySpot): along the far bank, all of it inside an upright
+// phone's frame (62° high at about 9:19.5, so about 15.5° either side of straight ahead; its body and its walks need a
+// few degrees more), side on.
+{
+  const bearings = [];
+  let sideOn = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const birds = new BirdPopulation({ seed });
+    birds.setPlace('koi');
+    const { spot } = birds.birds[0];
+    bearings.push(THREE.MathUtils.radToDeg(Math.atan2(spot.x - EYE.x, -(spot.z - EYE.z))));
+    const toEye = Math.atan2(-(EYE.z - spot.z), EYE.x - spot.x);
+    if (Math.abs(Math.cos(spot.heading - toEye)) < 0.45) sideOn++;
+  }
+  const least = Math.min(...bearings), most = Math.max(...bearings);
+  check(most - least > 12 && least > -13.5 && most < 12, `it stands somewhere of its own each time: ${least.toFixed(1)}° to ${most.toFixed(1)}° from straight ahead over 20 seeds`);
+  check(sideOn === 20, `side on to the eye (${sideOn} of 20)`);
+}
+
 // The heron's ways, smooth (src/birds.js sprung): it turns about unhurried, stepping round as it turns (never spinning
 // on its feet), holds still between its moves, and peers into the water a while before it strikes.
 {
@@ -297,12 +318,16 @@ const heronAt = (frame) => frame.birds[0];
   }
   check(biggestJump < 0.2, `it never jumps between frames in the air (${(biggestJump * 100).toFixed(1)} cm at most)`);
   check(gone && Math.hypot(gone.from.x - EYE.x, gone.from.z - EYE.z) > 30 && gone.from.y > 8, `it climbs away out of sight: last seen ${gone ? Math.hypot(gone.from.x - EYE.x, gone.from.z - EYE.z).toFixed(0) : '?'} m off, ${gone?.from.y.toFixed(1)} m up`);
-  check(back && back - gone.time >= 40, `it stays away a while (${back ? (back - gone.time).toFixed(0) : '?'} s)`);
-  check(landed && Math.hypot(landed.pose.x - spot.x, landed.pose.z - spot.z) < 1e-6 && Math.abs(landed.pose.heading - spot.heading) < 0.05, 'it comes back to where it stood, facing as it did');
+  check(back && back - gone.time >= 20, `it stays away a while (${back ? (back - gone.time).toFixed(0) : '?'} s)`);
+  probe.laySpot(probe.birds[0], 1);
+  const next = probe.birds[0].spot;   // where it comes down after its first flight (src/birds.js laySpot)
+  check(Math.hypot(next.x - spot.x, next.z - spot.z) > 0.3, `somewhere new (${Math.hypot(next.x - spot.x, next.z - spot.z).toFixed(1)} m from where it stood)`);
+  check(landed && Math.hypot(landed.pose.x - next.x, landed.pose.z - next.z) < 1e-6 && Math.abs(landed.pose.heading - next.heading) < 0.05, 'it comes down where it was going, facing as it meant to');
   check(thrown.frames.at(-1).birds[0].mode === 'stand', 'and stands again');
 
-  // Things keep being thrown near its spot while it is away: it stays away until they stop.
-  const pelted = (time) => (time > 20 && time < 115 && (time % 4) < 1 ? stone(landAt + (time % 4) - 0.6).map((thing) => ({ ...thing })) : stone(time));
+  // Things keep being thrown near where it will come down while it is away: it stays away until they stop.
+  const nearNext = (thing) => ({ ...thing, position: thing.position.clone().add(new THREE.Vector3(next.x - spot.x, 0, next.z - spot.z)) });
+  const pelted = (time) => (time > 20 && time < 115 && (time % 4) < 1 ? stone(landAt + (time % 4) - 0.6).map(nearNext) : stone(time));
   const busy = run('koi', 140, 1 / 60, { things: pelted, splashes: [{ time: landAt, x: landX, z: landZ }] });
   const busyBack = busy.frames.find((frame) => frame.time > 20 && heronAt(frame).mode === 'land');
   check(!busyBack || busyBack.time > 115, `it is not back while things are thrown near its spot (back at ${busyBack ? busyBack.time.toFixed(0) : 'not yet'} s)`);

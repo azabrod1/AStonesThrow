@@ -11,7 +11,8 @@
 //   - The Koi pond (Nagoya), frozen: no heron standing on the ice; one flies
 //     over the garden now and then instead (BIRDS_WHEN_FROZEN).
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
-//     bank, as herons stand in every garden pond with fish in it (wade). It
+//     bank, as herons stand in every garden pond with fish in it (wade),
+//     somewhere along it of its own each time (laySpot). It
 //     stands still for long spells, its head turning now and then, its neck
 //     drawn in or stretched up; it walks a few steps along the bank, turning
 //     about as it steps, its head first; it hunts (layHunt): peers down at a
@@ -26,8 +27,9 @@
 //     pond makes it stretch up and turn its head and neck to look at it (alert);
 //     a thing thrown near it puts it up: it crouches,
 //     jumps and flies off low over the garden with deep, slow beats, its neck
-//     drawn in and its legs trailing, as herons fly; a minute or so later it
-//     glides back in, flares and lands where it stood.
+//     drawn in and its legs trailing, as herons fly; half a minute to a
+//     minute later it glides back in, flares and lands somewhere new along
+//     the far bank.
 //   - The Pool: none (its view looks down into the water, at no sky).
 //   - Lakeside (Sterkfontein Dam): an African fish eagle, coming over the
 //     open water now and then, sometimes circling up in a thermal; Harbour,
@@ -131,15 +133,16 @@ export const BIRD_KINDS = {
 //     home view's line, give or take `spread`; a crossing's places each up to `wander` m nearer or farther than the
 //     one before (by its speed if not given: 14 m at 10 m/s, less faster). `count` birds, each on its own visits, or with `together` one flock
 //     on its leader's, each `spacing` m behind the one before and a little to one side, as a small flock strings out.
-//   wade: `angle` (rad about the pond's centre, KOI_SHORE) and `offshore` (m out from the waterline) where it stands,
-//     `heading` (rad from +x, turning toward −z) which way it faces as it comes down: side on to the home view, so its
-//     outline reads. Standing, a bird's ways are its kind's STANDING.
+//   wade: where it stands, drawn afresh each time it comes down (and as the place is shown: laySpot): `angles` (rad
+//     about the pond's centre, KOI_SHORE: the far bank, in the home view's frame even on an upright phone) and
+//     `offshore` (m out from the waterline); it faces either way across the eye's line of sight, turned up to `toPond`
+//     rad toward the water: side on to the home view, so its outline reads. Standing, a bird's ways are its kind's STANDING.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
 // sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
 export const BIRDS_BY_PLACE = {
   cove: [{ kind: 'kelp', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [10, 45], styles: { cross: 0.6, turn: 0.4 } }],
   loch: [{ kind: 'herring', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [10, 45], styles: { cross: 0.6, turn: 0.4 } }],
-  koi: [{ kind: 'heron', habit: 'wade', count: 1, angle: 4.3, offshore: 0.1, heading: -2.85 }],   // in 12 cm of water: to mid-shin
+  koi: [{ kind: 'heron', habit: 'wade', count: 1, angles: [4.3, 5.15], offshore: [0.07, 0.15], toPond: 0.3 }],   // in 8 to 20 cm of water: ankle to mid-shin
   lagoon: [{ kind: 'frigate', habit: 'visit', count: 2, distance: [45, 100], height: [3, 6], aim: 0, spread: 14, gap: [8, 40], styles: { cross: 0.3, turn: 0.2, circle: 0.5 } }],
   swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [35, 80], height: [2, 4.5], aim: 0, spread: 14, gap: [10, 40], styles: { cross: 0.6, turn: 0.4 } }],
   desert: [{ kind: 'eagle', habit: 'visit', count: 1, distance: [55, 110], height: [3.5, 6.5], aim: 0, spread: 12, gap: [10, 40], styles: { cross: 0.35, turn: 0.2, circle: 0.45 } }],
@@ -200,7 +203,7 @@ const HERON = {
   idle: { lookEvery: 4.6, jitter: 3.4, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
   alert: { alert: 9, hold: 4.5, settle: 0.6, most: 2.3, refocus: 0.5 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 5.5, far: 38, climb: 13, hard: 1.8, legsUp: 1.0, neckIn: 1.1, quicker: 0.35, quickFor: 1.4, cruise: 0.9 },
-  away: { absent: [45, 90], retry: 12, quiet: 8 },
+  away: { absent: [25, 55], retry: 12, quiet: 8 },
   land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.4, fold: 0.9 },
   tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
   // spells: its standing cut into spells from when it began to stand, each `length` s long (drawn), or longer if what
@@ -512,7 +515,7 @@ export class BirdPopulation {
           // Each on its own visits, or a flock all on its leader's (rank: its place behind the leader).
           if (!group.together || !visitor) visitor = this.layVisitor(group, bird.seed);
           Object.assign(bird, { visitor, rank: group.together ? index : 0, phaseOffset: stream() * Math.PI * 2, flapOffset: stream() * (FLAPPING[BIRD_KINDS[group.kind].flapping].window ?? 1) });
-        } else this.laySpot(bird, group);
+        }
         this.birds.push(bird);
       }
     }
@@ -525,14 +528,22 @@ export class BirdPopulation {
   }
 
   /**
-   * A standing bird's spot: where its feet are (a heron's on the bed, src/birdSprites.js drawing what of it is under
-   * the water there) and which way it faces.
+   * A standing bird's spot for its stay `stay` (how many times it has come down): where its feet are (a heron's on the
+   * bed, src/birdSprites.js drawing what of it is under the water there) and which way it faces, drawn from its seed
+   * and the stay (its group's `angles`, `offshore`, `toPond`), so it is somewhere new each time it comes back, and
+   * each visit to the page finds it somewhere of its own.
    */
-  laySpot(bird, group) {
-    const radius = koiShoreRadius(group.angle) - group.offshore;
-    const x = KOI_SHORE.centre[0] + Math.cos(group.angle) * radius;
-    const z = KOI_SHORE.centre[1] + Math.sin(group.angle) * radius;
-    bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: group.heading };
+  laySpot(bird, stay) {
+    const { group } = bird;
+    const random = seededRandom(bird.seed, stay, 53);
+    const angle = between(group.angles, random());
+    const radius = koiShoreRadius(angle) - between(group.offshore, random());
+    const x = KOI_SHORE.centre[0] + Math.cos(angle) * radius;
+    const z = KOI_SHORE.centre[1] + Math.sin(angle) * radius;
+    // Across the eye's line of sight, one way or the other; turned a little toward the water (the pond's centre).
+    const across = Math.atan2(-(z - EYE.z), x - EYE.x) + (random() < 0.5 ? 1 : -1) * Math.PI / 2;
+    const inward = Math.atan2(-(KOI_SHORE.centre[1] - z), KOI_SHORE.centre[0] - x);
+    bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: across + Math.sign(turnBetween(across, inward)) * random() * group.toPond };
   }
 
   /** Every bird as it starts at `time`: one that stands, standing at its spot; a visitor's visits from now. */
@@ -545,6 +556,7 @@ export class BirdPopulation {
       bird.since = time;
       bird.standSince = time;   // its walks' spells from now (src/birds.js standingPlace)
       bird.stay = 0;
+      this.laySpot(bird, 0);
       bird.foldSince = time - STANDING[bird.kind].land.fold;   // standing a while already: its wings folded
       bird.alerts = [];   // its alert's springs (src/birds.js standing): up and looking, then back to its ways
       bird.gazes = [];    // where it looks while alerted: [time, the splash's direction from it (rad, unwrapped), settle]
@@ -579,6 +591,7 @@ export class BirdPopulation {
       if (bird.mode === 'flee' && time >= bird.since + ways.flush.crouch + ways.flush.flight) {
         bird.mode = 'away';
         bird.since = time;
+        this.laySpot(bird, bird.stay + 1);   // where it will come down next, out of sight now
       }
       if (bird.mode === 'away' && time >= bird.returnAt) {
         if (time - this.disturbed < ways.away.quiet) bird.returnAt = time + ways.away.retry;
@@ -662,7 +675,7 @@ export class BirdPopulation {
     for (const other of this.birds) if (other.group === bird.group && other.mode === 'stand') this.flush(other, time, x, z);
   }
 
-  /** Bring a standing bird back at `time`: a glide in from one side (its group's), to its spot, ending along its heading. */
+  /** Bring a standing bird back at `time`: a glide in from one side (its group's), to its spot (new this time: laySpot), ending along its heading. */
   land(bird, time) {
     const { spot } = bird;
     const side = hashed(bird.groupSeed, Math.floor(time * 10), 5) < 0.5 ? 1 : -1;

@@ -666,9 +666,13 @@ kind flaps as it does (a gull a few beats now and then, a fish eagle in
 bouts, an eagle hardly, a raven mostly, a jay steadily, a cardinal in
 bounds: a few beats, then its wings shut a moment as it arcs on, its path
 rising and dipping a few centimetres about the visit's). The
-heron stands: it looks about, sets its neck, walks a few steps along the
-bank (turning about as it steps, its head first), peers into the water,
-holds still and strikes, and now and then opens its wings and holds them
+heron stands somewhere of its own along the far bank (a new place each time
+it comes down, and on each visit to the page): it looks about, sets its
+neck, walks a few steps along the bank (turning about as it steps, its head
+first), and hunts: it peers down at a fish ahead or to one side, its neck
+cocked and its bill pointed at it, holds still but for a tilt of its head
+now and then, stabs, and tosses its catch up and swallows it, or stabs
+again, or gives up, every part of it drawn afresh. Now and then it opens its wings and holds them
 open a few seconds, still, as herons do to sun or dry themselves. When the
 pond is frozen it doesn't stand on the ice: it flies over the garden now and
 then instead (`BIRDS_WHEN_FROZEN`). Each movement is a spring's, closed form in time
@@ -676,7 +680,7 @@ then instead (`BIRDS_WHEN_FROZEN`). Each movement is a spring's, closed form in 
 overlap as a bird's do rather than starting and stopping together. A
 splash nearby makes it stretch up and turn its head and neck to look at it,
 over its shoulder if the splash is behind it; a thing thrown near puts it up, and it comes
-back a minute or so later, gliding in to land where it stood. None are
+back half a minute to a minute later, gliding in to land somewhere new on the far bank. None are
 about after dark. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out
 of reach and in the home view's sky. Their state changes only in the
