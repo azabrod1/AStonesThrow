@@ -29,12 +29,16 @@ import * as THREE from 'three';
 
 export const JOINTS = {
   body: 0, head: 1, tail: 2, rightShoulder: 3, rightElbow: 4, rightWrist: 5, leftShoulder: 6, leftElbow: 7, leftWrist: 8,
-  // A standing bird's (poseStanding): each leg's hip, heel and foot, and its neck's chain from the breast up (six
-  // joints, so that between any two its photographed S is nearly straight and the neck can be laid in any line).
+  // A standing bird's (poseStanding): each leg's hip, heel and foot, and its neck's chain from the breast up (twelve
+  // joints, NECK_SHARES: so few that any two links' bend stayed big enough to show as a kink, so many that each link is
+  // all but straight and the neck bends smoothly in any line it is laid in).
   rightHip: 12, rightHeel: 13, rightFoot: 14, leftHip: 15, leftHeel: 16, leftFoot: 17,
-  neck: [9, 10, 11, 18, 19, 20],
+  neck: [9, 10, 11, 18, 19, 20, 21, 22, 23, 24, 25, 26],
 };
-export const JOINT_COUNT = 21;
+export const JOINT_COUNT = 27;
+// Where the neck's joints are along its middle line, a share of the way from the breast to the nape (JOINTS.neck's
+// order; src/birdMeshes.js buildStandingModel places them, and the nape is the head's).
+export const NECK_SHARES = JOINTS.neck.map((joint, index) => 0.04 + index * 0.08);
 
 const degrees = THREE.MathUtils.degToRad;
 
@@ -176,9 +180,12 @@ export function poseJoints(out, model, flight, pose) {
 //   - the wings: folded away into the body (pose.fold 1: shrunk to the shoulder and swept back, inside the trunk's
 //     picture of its folded wings), spread and beating as FLIGHT's wingbeat (src/birdRig.js flapAngles) as they open.
 const NECK_PHOTO = 0.55;
-// The neck's links' directions in the side's plane (degrees from forward, up positive), from the breast up to the
-// nape (JOINTS.neck's six), and the head's (nape to bill): drawn in (an S folded down onto the shoulders, as a heron
-// rests and flies), stretched up, and striking (one line forward and down, the bill pointing down at the water).
+// The neck's directions in the side's plane (degrees from forward, up positive), at six places along it from the
+// breast up to the nape (NECK_POSE_AT, shares of the way), and the head's (nape to bill): drawn in (an S folded down
+// onto the shoulders, as a heron rests and flies), stretched up, and striking (one line forward and down, the bill
+// pointing down at the water). Each link of the chain (NECK_SHARES) takes the direction at its middle, read off the
+// line through them (linear in angle, so the neck's curvature changes only gradually: the S has no corners).
+const NECK_POSE_AT = [0.14, 0.3, 0.46, 0.62, 0.775, 0.925];
 const NECK_POSES = {
   drawnIn: [58, 40, -8, -14, 70, 135, 0],
   // Drawn in as it flies (pose.tuck): folded right back, the head laid on the shoulders, bill level, the neck's lower
@@ -187,6 +194,20 @@ const NECK_POSES = {
   stretched: [72, 80, 88, 90, 86, 80, -4],
   strike: [-34, -38, -42, -46, -50, -53, -70],
 };
+/** A pose's directions (degrees) for each link of the chain, then the head's. */
+function linkDirections(table) {
+  const ends = [...NECK_SHARES, 1];
+  const links = NECK_SHARES.map((share, index) => {
+    const middle = (share + ends[index + 1]) / 2;
+    if (middle <= NECK_POSE_AT[0]) return table[0];
+    const after = NECK_POSE_AT.findIndex((at) => at >= middle);
+    if (after < 0) return table[NECK_POSE_AT.length - 1];
+    const before = after - 1;
+    return table[before] + (table[after] - table[before]) * (middle - NECK_POSE_AT[before]) / (NECK_POSE_AT[after] - NECK_POSE_AT[before]);
+  });
+  return [...links, table[NECK_POSE_AT.length]];
+}
+const NECK_LINKS = Object.fromEntries(Object.entries(NECK_POSES).map(([name, table]) => [name, linkDirections(table)]));
 const FLIGHT_TRUNK = { depth: 0.28, width: 0.12 };   // shares the trunk's depth and width are slimmed by in flight
 const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
 const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
@@ -256,10 +277,10 @@ export function poseStanding(out, model, flight, pose) {
   let turned = 0;
   chain.forEach((joint, index) => {
     const rest = skeleton.neckRest[index];
-    const drawnIn = degrees(NECK_POSES.drawnIn[index] + (NECK_POSES.flying[index] - NECK_POSES.drawnIn[index]) * tuck);
+    const drawnIn = degrees(NECK_LINKS.drawnIn[index] + (NECK_LINKS.flying[index] - NECK_LINKS.drawnIn[index]) * tuck);
     let direction = neck < NECK_PHOTO ? drawnIn + (rest - drawnIn) * (neck / NECK_PHOTO)
-      : rest + (degrees(NECK_POSES.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
-    direction += (degrees(NECK_POSES.strike[index]) - direction) * strike;
+      : rest + (degrees(NECK_LINKS.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
+    direction += (degrees(NECK_LINKS.strike[index]) - direction) * strike;
     const bend = direction - rest - turned;
     turned += bend;
     const point = skeleton.neck[index];

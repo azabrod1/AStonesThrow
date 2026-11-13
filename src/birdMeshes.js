@@ -48,7 +48,7 @@
 // shown; a failed fetch leaves that kind unshown.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
-import { JOINTS, JOINT_COUNT, FLIGHT, poseJoints, poseStanding } from './birdRig.js';
+import { JOINTS, JOINT_COUNT, NECK_SHARES, FLIGHT, poseJoints, poseStanding } from './birdRig.js';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 
 const FOLDER = new URL('../assets/birds/', import.meta.url);
@@ -363,9 +363,11 @@ export function buildModel(entry) {
 
 // A standing kind's trunk's width against its depth along it (0 the tail's tip, 1 the breast).
 const STANDING_WIDTH = [[0, 0.2], [0.15, 0.42], [0.4, 0.58], [0.7, 0.62], [0.9, 0.56], [1, 0.45]];
-const NECK_RING = 10;
-// Where the neck's joints are along its middle line from the breast to the nape (shares: src/birdRig.js JOINTS.neck).
-const NECK_JOINTS = [0.06, 0.22, 0.38, 0.54, 0.7, 0.85];
+const NECK_RING = 16;
+// The neck's middle line and thickness, read off the photograph's outline point by point, each point averaged with up
+// to this many either side (symmetrically, so the line keeps its ends; up to the nape: the head is its own), so the
+// tube has no zigzag or lumps the picture's pixels put in (its rings each square to a line that turns smoothly).
+const NECK_SMOOTHING = 3;
 const LEG_RING = 6;
 const LEG_SPREAD = 0.045;   // m either side of the middle a leg stands
 const TOE_SPLAY = 0.45;     // rad a front toe turns out from the middle one
@@ -412,12 +414,19 @@ export function buildStandingModel(entry) {
     }
   }
   // The neck and head: rings along the middle line, each skinned between the chain's joints either side of it.
-  const neck = side.neck;   // [x, y, half-thickness, past the nape]
+  const firstPastNape = side.neck.findIndex((point) => point[3] > 0.5);
+  const neck = side.neck.map((point, index, points) => {
+    const reach = Math.min(NECK_SMOOTHING, index, firstPastNape - index);
+    if (reach <= 0) return point;
+    const sum = [0, 0, 0];
+    for (let near = index - reach; near <= index + reach; near++) for (let axis = 0; axis < 3; axis++) sum[axis] += points[near][axis];
+    return [...sum.map((total) => total / (2 * reach + 1)), point[3]];
+  });   // [x, y, half-thickness, past the nape]
   const lengths = [0];
   for (let index = 1; index < neck.length; index++) lengths.push(lengths[index - 1] + Math.hypot(neck[index][0] - neck[index - 1][0], neck[index][1] - neck[index - 1][1]));
   const napeIndex = neck.findIndex((point) => point[3] > 0.5);
   const napeAlong = lengths[napeIndex], total = lengths[lengths.length - 1];
-  const chainAlong = [...NECK_JOINTS.map((share) => share * napeAlong), napeAlong];
+  const chainAlong = [...NECK_SHARES.map((share) => share * napeAlong), napeAlong];
   const chainJoints = [JOINTS.body, ...JOINTS.neck, JOINTS.head];
   const chainPoint = (along) => {
     let index = 1;

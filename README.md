@@ -695,8 +695,8 @@ cut from a gull flying side on, its raised near wing painted out of its
 back and flank (the mantle grey, the flank white), its wings from an
 underwing photographed as the gull banked overhead (the shade of its body
 on the wing's root lifted) and its grey upper side made from those same
-feathers, black tips and white trailing edge kept. The grey heron is one too: its trunk, six-jointed
-neck and legs shaped from a side-on photograph, so it stands, looks about,
+feathers, black tips and white trailing edge kept. The grey heron is one too: its trunk, twelve-jointed
+neck (its poses read off a smooth curve, so its S bends without corners) and legs shaped from a side-on photograph, so it stands, looks about,
 draws its neck in or stretches it, walks the bank, strikes at fish, crouches
 and takes off trailing its legs, its legs seen through the water
 (`poseStanding` in `src/birdRig.js`). `tools/bird-look.mjs` shoots a model
