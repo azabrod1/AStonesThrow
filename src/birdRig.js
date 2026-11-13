@@ -179,7 +179,8 @@ export function poseJoints(out, model, flight, pose) {
 //     and the hip and heel solved to reach it (two bones in the side's plane, the heel bending back as a heron's does);
 //     flying, swung back to trail straight behind (pose.legs 0), the toes curled;
 //   - the wings: folded away into the body (pose.fold 1: shrunk to the shoulder and swept back, inside the trunk's
-//     picture of its folded wings), spread and beating as FLIGHT's wingbeat (src/birdRig.js flapAngles) as they open.
+//     picture of its folded wings), spread and beating as FLIGHT's wingbeat (src/birdRig.js flapAngles) as they open;
+//     standing, held open to the sun (pose.spread, 0 to 1: SPREAD), as a heron suns or dries itself.
 const NECK_PHOTO = 0.55;
 // The neck's directions in the side's plane (degrees from forward, up positive), at six places along it from the
 // breast up to the nape (NECK_POSE_AT, shares of the way), and the head's (nape to bill): drawn in (an S folded down
@@ -219,6 +220,13 @@ const LOOK_SHARES = (() => {
   return [...weights.map((weight) => (1 - LOOK_HEAD) * weight / total), LOOK_HEAD];
 })();
 const lookAxis = new THREE.Vector3();
+// A standing heron's wings held open (pose.spread 1), as herons sun and dry themselves: not flapped but opened
+// and held still, the "delta" of the photographs, each wing a drooping cape: the arm lowered from the shoulder
+// (`shoulder`, rad, up positive) and swept back a little (`armSweep`), the forearm brought forward (`elbowSweep`), the
+// hand hanging down from the wrist (`hand`) and swept back (`handSweep`), and the wing turned about its span leading
+// edge up, a little at the shoulder (`rootTilt`: more would lift the sheet's root above the back) and more from the
+// elbow out (`tilt`), so it hangs toward upright, its upper side out to the sun, its primaries toward the water.
+const SPREAD = { shoulder: degrees(-14), armSweep: degrees(18), elbowSweep: degrees(10), hand: degrees(-40), handSweep: degrees(28), rootTilt: degrees(8), tilt: degrees(28) };
 const FLIGHT_TRUNK = { depth: 0.28, width: 0.12 };   // shares the trunk's depth and width are slimmed by in flight
 const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
 const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
@@ -336,19 +344,23 @@ export function poseStanding(out, model, flight, pose) {
     about(local, jointPoint.set(leg.foot.x, leg.foot.y, leg.z), AXIS_Z, toes);
     step.multiplyMatrices(elbowWorld, local).toArray(out, footJoint * 16);
   });
-  // The wings: folded (shrunk to the shoulder and swept back) as `fold`, and beating as they open.
+  // The wings: folded (shrunk to the shoulder and swept back) as `fold`, and beating as they open; or held open
+  // (`spread`: its wingbeat's angles eased to SPREAD's, a little past them as they spring open).
   const fold = THREE.MathUtils.clamp(pose.fold ?? 0, 0, 1);
+  const spread = THREE.MathUtils.clamp(pose.spread ?? 0, 0, 1.2);
+  if (spread > 0) for (const name of ['shoulder', 'elbowSweep', 'hand', 'handSweep']) angles[name] += (SPREAD[name] - angles[name]) * spread;
   const { shoulder, elbow, wrist } = skeleton.wing;
   for (const side of [1, -1]) {
     const raise = side > 0 ? -1 : 1;
     const shoulderPoint = new THREE.Vector3(shoulder.x, shoulder.y, shoulder.z * side);
     about(shoulderMatrix, shoulderPoint, AXIS_X, raise * angles.shoulder * (1 - fold));
-    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Y, side * degrees(70) * fold));
+    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Y, side * (degrees(70) * fold + SPREAD.armSweep * spread)));
     const shrink = 1 - 0.94 * fold;
     shoulderMatrix.multiply(local.makeTranslation(shoulderPoint.x, shoulderPoint.y, shoulderPoint.z).scale(scratch.vector.set(shrink, shrink, shrink)).multiply(world.makeTranslation(-shoulderPoint.x, -shoulderPoint.y, -shoulderPoint.z)));
-    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Z, angles.twist * 0.4));
+    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Z, angles.twist * 0.4 + SPREAD.rootTilt * spread));
     shoulderWorld.multiplyMatrices(bodyWorld, shoulderMatrix).toArray(out, (side > 0 ? JOINTS.rightShoulder : JOINTS.leftShoulder) * 16);
     about(elbowMatrix, jointPoint.set(elbow.x, elbow.y, elbow.z * side), AXIS_Y, side * angles.elbowSweep);
+    if (spread > 0) elbowMatrix.multiply(about(local, jointPoint, AXIS_Z, SPREAD.tilt * spread));
     elbowWorld.multiplyMatrices(shoulderWorld, elbowMatrix).toArray(out, (side > 0 ? JOINTS.rightElbow : JOINTS.leftElbow) * 16);
     about(wristMatrix, jointPoint.set(wrist.x, wrist.y, wrist.z * side), AXIS_X, raise * angles.hand);
     wristMatrix.multiply(about(local, jointPoint, AXIS_Y, -side * angles.handSweep));

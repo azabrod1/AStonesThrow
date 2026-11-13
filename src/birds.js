@@ -14,7 +14,8 @@
 //     drawn in or stretched up; it walks a few steps along the bank, turning
 //     about as it steps, its head first; it peers into the water, holds
 //     still and strikes, and swallows (or misses, or gives up); now and then
-//     it opens its wings and gives them a few lazy beats. What it does in each
+//     it opens its wings and holds them open a few seconds, still, as herons
+//     do to sun or dry themselves (never flapping them), then folds them. What it does in each
 //     spell, and when, and how long the spell is, are drawn afresh each time
 //     it comes down (spellPlan), so it keeps no rhythm. Each movement settles as a spring
 //     does, each part on its own time (sprung). A splash anywhere in the
@@ -204,10 +205,13 @@ const HERON = {
   //   `gulps` jerks of its neck (drawn; none when it missed, a share `miss`). A share `giveUp` of its peers come to
   //   nothing: it straightens up again without striking.
   strike: { share: 0.5, afterWalk: 0.3, at: [0.6, 6], stalk: 1.6, freeze: [0.6, 3], stab: 0.13, hold: 0.32, back: 0.55, gulps: [2, 4], miss: 0.3, giveUp: 0.2 },
-  // flop: in a `share` of its spells (a share `afterLanding` of the first after it comes down), `at` s (drawn) after
-  //   what else it does: it opens its wings (`open` s to settle), gives them a few lazy beats at `beat` Hz for `hold` s
-  //   (drawn), stretching up a little, and folds them again (`close` s to settle).
-  flop: { share: 0.09, afterLanding: 0.5, at: [0.5, 4], open: 0.45, hold: [0.8, 1.9], close: 0.7, beat: 1.6 },
+  // spread: in a `share` of its spells (a share `afterLanding` of the first after it comes down: drying off), `at` s
+  //   (drawn) after what else it does, it opens its wings and holds them open, as herons sun and dry themselves (the
+  //   spread-wing or "delta" posture: src/birdRig.js SPREAD), not flapping: it opens them (`open` s to settle, a little
+  //   past and back), holds them still `hold` s (drawn), hunched (its neck drawn in to `neck`, leaning forward `lean`
+  //   rad), its head still turning now and then; in a long hold (over `shuffleAfter` s) it lets them sag a little and
+  //   spreads them again once (`shuffle`: by how much, and the spring's settle); then folds them (`close` s to settle).
+  spread: { share: 0.1, afterLanding: 0.5, at: [0.5, 4], open: 0.6, hold: [3, 8], close: 0.8, neck: 0.3, lean: 0.12, shuffleAfter: 5, shuffle: [0.15, 0.3] },
 };
 const STANDING = { heron: HERON };
 const STANDING_HABITS = new Set(['wade']);
@@ -804,6 +808,7 @@ export class BirdPopulation {
     pose.shown = bird.mode !== 'away';
     pose.phase = 2 * Math.PI * kind.beat * time;
     pose.crouch = 0;
+    pose.spread = 0;   // held open only standing (src/birdRig.js SPREAD)
     if (bird.mode === 'stand') {
       this.standing(bird, time);
       return;
@@ -816,8 +821,8 @@ export class BirdPopulation {
         const share = smoother(0, crouch, since);
         pose.crouch = share;
         pose.neck *= 1 - 0.7 * share;
-        pose.fold = Math.min(pose.fold, 1 - 0.5 * share);   // from folded, or as open as a flop had them
-        pose.beat *= 1 - share;
+        pose.fold = Math.min(pose.fold, 1 - 0.5 * share);   // from folded, or from held open
+        pose.spread *= 1 - share;
         return;
       }
       const flying = since - crouch;
@@ -888,7 +893,7 @@ export class BirdPopulation {
    * A standing bird's plan for spell `index` of its stay (HERON's `spells`): when it starts (s from when it began to
    * stand), how long it is, whether and where it walks (`from`, `to`: m along the bank from its spot), when, and which
    * way it faces as the spell begins (`facing`) and ends (`faced`), when its strike begins and how it goes, and when
-   * it flops its wings. Each is drawn from its seed, its stay and the spell's number, laid out one after the other so
+   * it spreads its wings. Each is drawn from its seed, its stay and the spell's number, laid out one after the other so
    * nothing overlaps, and kept (bird.plans) as the spells come: the same at any frame rate.
    */
   spellPlan(bird, index) {
@@ -902,10 +907,10 @@ export class BirdPopulation {
   /** The plan of spell `index` (spellPlan), after `before` (the spell before's, none for the first). */
   layPlan(bird, index, before, stay) {
     const ways = STANDING[bird.kind];
-    const { walk, strike, flop, spells } = ways;
+    const { walk, strike, spread, spells } = ways;
     const random = seededRandom(bird.seed, stay, index, 31);
     const plan = { start: before ? before.start + before.length : 0, length: 0, walks: false, from: before ? before.to : 0, to: 0, walkAt: 0,
-      facing: before ? before.faced : bird.spot.heading, faced: 0, strikeAt: null, freeze: 0, gulps: 0, gaveUp: false, flopAt: null, flopHold: 0 };
+      facing: before ? before.faced : bird.spot.heading, faced: 0, strikeAt: null, freeze: 0, gulps: 0, gaveUp: false, spreadAt: null, spreadHold: 0 };
     plan.to = plan.from;
     plan.faced = plan.facing;
     let free = 0.5;   // when it is next free to do something (s into the spell)
@@ -932,10 +937,10 @@ export class BirdPopulation {
       const upAt = plan.strikeAt + this.strikeTimes(strike, plan).upAt;
       free = Math.max(upAt + 0.5 + settledAfter(strike.stalk), upAt + 0.7 + plan.gulps * 0.38 + 0.5, upAt + settledAfter(2 * strike.back)) + 0.3;
     }
-    if (random() < (index === 0 && stay > 0 ? flop.afterLanding : flop.share)) {
-      plan.flopAt = free + between(flop.at, random());
-      plan.flopHold = between(flop.hold, random());
-      free = plan.flopAt + plan.flopHold + settledAfter(flop.close) + 0.3;
+    if (random() < (index === 0 && stay > 0 ? spread.afterLanding : spread.share)) {
+      plan.spreadAt = free + between(spread.at, random());
+      plan.spreadHold = between(spread.hold, random());
+      free = plan.spreadAt + spread.open + plan.spreadHold + settledAfter(spread.close) + 0.3;
     }
     plan.length = Math.max(between(spells.length, random()), free + between(spells.rest, random()));
     return plan;
@@ -1088,15 +1093,22 @@ export class BirdPopulation {
       for (let gulp = 0; gulp < plan.gulps; gulp++) { const at = upAt + 0.7 + gulp * 0.38; gulps.push([at, 0.08, 0.1], [at + 0.14, 0, 0.12]); }
       neck += sprung(into, 0, gulps);
     }
-    // A flop of its wings, when its spell's plan says (its kind's `flop`): open, a few lazy beats, folded again.
-    let opened = 0;
-    const flop = ways.flop;
-    if (flop && plan && plan.flopAt !== null) {
-      const into = place.into - plan.flopAt;
-      opened = sprung(into, 0, [[0, 1, flop.open], [flop.open + plan.flopHold, 0, flop.close]]);
-      if (opened > 0) pose.phase = 2 * Math.PI * flop.beat * Math.max(into, 0);
-      look *= 1 - opened;
-      neck += (0.75 - neck) * opened;
+    // Its wings opened and held open, when its spell's plan says (its kind's `spread`): opened with a little spring,
+    // held still (sagging and spread again once in a long hold), folded again; hunched and leaning a little meanwhile.
+    let spread = 0;
+    const spreading = ways.spread;
+    if (spreading && plan && plan.spreadAt !== null) {
+      const into = place.into - plan.spreadAt, holdEnds = spreading.open + plan.spreadHold;
+      const steps = [[0, 1, spreading.open, 0.7]];
+      if (plan.spreadHold > spreading.shuffleAfter) {
+        const [sag, settle] = spreading.shuffle, at = spreading.open + plan.spreadHold * 0.55;
+        steps.push([at, 1 - sag, settle], [at + settle, 1, settle, 0.8]);
+      }
+      steps.push([holdEnds, 0, spreading.close]);
+      spread = sprung(into, 0, steps);
+      const hunched = THREE.MathUtils.clamp(spread, 0, 1);
+      look *= 1 - 0.5 * hunched;
+      neck += (spreading.neck - neck) * hunched;
     }
     // A splash in sight: up and looking, quick to react, for a while, then back to its ways; its gaze turned from
     // where its body faces now (it may have walked since), no further round than it can look.
@@ -1108,12 +1120,12 @@ export class BirdPopulation {
     }
     neck += (1 - neck) * alerted;
     thrown *= 1 - alerted;
-    opened *= 1 - alerted;
-    pose.fold *= 1 - 0.9 * opened;
-    pose.beat = opened;
+    spread *= 1 - alerted;   // alarmed, it folds them
+    pose.fold *= THREE.MathUtils.clamp(1 - spread, 0, 1);
+    pose.spread = spread;
     pose.strike = thrown;
     pose.crouch = crouch * (1 - alerted);
-    pose.pitch = ways.tilt - 0.3 * thrown + 0.1 * opened;   // tipped forward into its strike, up as it flops its wings
+    pose.pitch = ways.tilt - 0.3 * thrown - (spreading ? spreading.lean * THREE.MathUtils.clamp(spread, 0, 1) : 0);   // tipped forward into its strike, and a little as it holds its wings open
     pose.look = look;
     pose.neck = neck;
   }

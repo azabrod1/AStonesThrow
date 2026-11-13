@@ -18,8 +18,9 @@
 // - its ways are smooth: it turns about unhurried, stepping round as it
 //   turns, holds still between its moves, and peers into the water a while
 //   before it strikes; it keeps no rhythm (over twenty seeds the gaps
-//   between its walks, strikes and wing flops spread widely), and now and
-//   then it opens its wings and beats them, standing where it was;
+//   between its walks, strikes and wing spreads spread widely), and now and
+//   then it opens its wings and holds them open, still, for seconds (never
+//   beating them), standing where it was;
 // - a splash across the pond makes it look, not go; a stone coming down
 //   near it puts it up before it lands, and it climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
@@ -215,11 +216,12 @@ const heronAt = (frame) => frame.birds[0];
 }
 
 // No rhythm: what the heron does in each spell, and when, is drawn afresh (src/birds.js spellPlan), so the gaps
-// between the starts of its walks, strikes and wing flops spread widely; and now and then it flops its wings, beating
-// them open while it stands where it was.
+// between the starts of its walks, strikes and wing spreads spread widely; and now and then it opens its wings and
+// holds them open, still, for seconds, never beating them, while it stands where it was.
 {
   const gaps = [];
-  let flops = 0, flopMoved = 0;
+  let spreads = 0, spreadMoved = 0, beating = 0, openSince = null;
+  const holds = [];
   for (let seed = 1; seed <= 20; seed++) {
     const birds = new BirdPopulation({ seed });
     birds.setPlace('koi');
@@ -231,17 +233,25 @@ const heronAt = (frame) => frame.birds[0];
       if (before) {
         const began = (heron.walking > 0.1 && before.walking <= 0.1) || (heron.strike > 0.1 && before.strike <= 0.1) || (heron.fold < 0.9 && before.fold >= 0.9);
         if (began) { if (last !== null) gaps.push(time - last); last = time; }
-        if (heron.fold < 0.9 && before.fold >= 0.9) flops++;
-        if (heron.fold < 0.9 && (heron.x !== before.x || heron.z !== before.z)) flopMoved++;
+        if (heron.fold < 0.9 && before.fold >= 0.9) spreads++;
+        if (heron.fold < 0.9 && (heron.x !== before.x || heron.z !== before.z)) spreadMoved++;
+        if (heron.flying === false && heron.beat > 0) beating++;
+        // Held open: how long it stays near fully open.
+        if (heron.spread > 0.8 && openSince === null) openSince = time;
+        if (heron.spread <= 0.8 && openSince !== null) { holds.push(time - openSince); openSince = null; }
       }
       before = heron;
     }
+    openSince = null;
   }
   gaps.sort((a, b) => a - b);
   const tenth = gaps[Math.floor(gaps.length / 10)], ninetieth = gaps[Math.floor(gaps.length * 0.9)];
   check(gaps.length > 100 && ninetieth > 2.2 * tenth, `it keeps no rhythm: its acts ${tenth.toFixed(1)} to ${ninetieth.toFixed(1)} s apart (a tenth to nine tenths, ${gaps.length} gaps)`);
-  check(flops >= 10 && flops < 100, `it flops its wings now and then (${flops} times in 20 × 5 min)`);
-  check(flopMoved === 0, `standing where it was as it flops them (${flopMoved} frames moving)`);
+  check(spreads >= 10 && spreads < 100, `it opens its wings now and then (${spreads} times in 20 × 5 min)`);
+  check(spreadMoved === 0, `standing where it was as it holds them open (${spreadMoved} frames moving)`);
+  check(beating === 0, `never beating them as it stands (${beating} frames beating)`);
+  holds.sort((a, b) => a - b);
+  check(holds.length > 0 && holds[0] > 2 && holds[holds.length - 1] < 12, `holding them open for seconds: ${holds[0]?.toFixed(1)} to ${holds[holds.length - 1]?.toFixed(1)} s`);
 }
 
 // A splash across the pond: it looks. A stone coming down near it: it goes, and later comes back.

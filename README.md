@@ -668,7 +668,8 @@ bounds: a few beats, then its wings shut a moment as it arcs on, its path
 rising and dipping a few centimetres about the visit's). The
 heron stands: it looks about, sets its neck, walks a few steps along the
 bank (turning about as it steps, its head first), peers into the water,
-holds still and strikes. Each movement is a spring's, closed form in time
+holds still and strikes, and now and then opens its wings and holds them
+open a few seconds, still, as herons do to sun or dry themselves. Each movement is a spring's, closed form in time
 (`sprung` in `src/birds.js`): every part settles on its own time, so they
 overlap as a bird's do rather than starting and stopping together. A
 splash nearby makes it stretch up and turn its head and neck to look at it,
@@ -698,7 +699,8 @@ underwing photographed as the gull banked overhead (the shade of its body
 on the wing's root lifted) and its grey upper side made from those same
 feathers, black tips and white trailing edge kept. The grey heron is one too: its trunk, twelve-jointed
 neck (its poses read off a smooth curve, so its S bends without corners) and legs shaped from a side-on photograph, so it stands, looks about,
-draws its neck in or stretches it, walks the bank, strikes at fish, crouches
+draws its neck in or stretches it, walks the bank, strikes at fish, holds
+its wings open in a drooped spread (`SPREAD`), crouches
 and takes off trailing its legs, its legs seen through the water
 (`poseStanding` in `src/birdRig.js`). `tools/bird-look.mjs` shoots a model
 alone through its wingbeat (`--poses=standing`: a standing kind's ways; `--focus` and
