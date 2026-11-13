@@ -29,8 +29,9 @@
 //   (over twenty seeds) and climbs away out of sight
 //   without a jump between frames; it comes back after its absence (put off
 //   while things are thrown near where it will come down) and lands
-//   somewhere new on the far bank, its heading its own, smoothly; then it
-//   stands;
+//   somewhere new on the far bank, its heading its own, smoothly, flaring
+//   (pitched up, its wings up as it touches down, its pitch and neck never
+//   jumping), then folding its wings within two seconds; then it stands;
 // - after dark there are none (setConditions);
 // - the population draws no Math.random (its own seeded stream);
 // - at any frame rate: stepped at the physics step, as src/main.js steps
@@ -325,6 +326,17 @@ const heronAt = (frame) => frame.birds[0];
   check(Math.hypot(next.x - spot.x, next.z - spot.z) > 0.3, `somewhere new (${Math.hypot(next.x - spot.x, next.z - spot.z).toFixed(1)} m from where it stood)`);
   check(landed && Math.hypot(landed.pose.x - next.x, landed.pose.z - next.z) < 1e-6 && Math.abs(landed.pose.heading - next.heading) < 0.05, 'it comes down where it was going, facing as it meant to');
   check(thrown.frames.at(-1).birds[0].mode === 'stand', 'and stands again');
+  // Its landing (src/birds.js `land`): a flare, pitched well up; down, its wings up still, then folded; its pitch and
+  // neck carried over from the flare, never jumping.
+  const landing = thrown.frames.filter((frame) => frame.time >= back && frame.time <= landed.time + 3).map(heronAt);
+  const flarePitch = Math.max(...landing.filter((pose) => pose.mode === 'land').map((pose) => pose.pitch));
+  const down = landing.findIndex((pose) => pose.mode === 'stand');
+  const pitchJump = Math.abs(landing[down].pitch - landing[down - 1].pitch), neckJump = Math.abs(landing[down].neck - landing[down - 1].neck);
+  const foldedAt = landing.slice(down).findIndex((pose) => pose.fold > 0.999);
+  check(flarePitch > 0.6, `it flares as it lands, pitched up ${THREE.MathUtils.radToDeg(flarePitch).toFixed(0)}°`);
+  check(landing[down].fold < 0.05 && landing[down].beat > 0.95, 'its wings still up as it touches down');
+  check(pitchJump < 0.05 && neckJump < 0.05, `its pitch and neck carry over from the flare (${pitchJump.toFixed(3)} rad, ${neckJump.toFixed(3)} of its neck in the frame it touches down)`);
+  check(foldedAt > 0 && foldedAt / 60 < 2, `then it folds them (in ${(foldedAt / 60).toFixed(2)} s)`);
 
   // Things keep being thrown near where it will come down while it is away: it stays away until they stop.
   const nearNext = (thing) => ({ ...thing, position: thing.position.clone().add(new THREE.Vector3(next.x - spot.x, 0, next.z - spot.z)) });
