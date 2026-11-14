@@ -232,7 +232,7 @@ const heronAt = (frame) => frame.birds[0];
 // The heron's ways, smooth (src/birds.js sprung): it turns about unhurried, stepping round as it turns (never spinning
 // on its feet), holds still between its moves, and peers into the water a while before it strikes.
 {
-  const { frames } = run('koi', 120, 1 / 60);
+  const { frames } = run('koi', 300, 1 / 60);
   let fastestTurn = 0, spun = 0, still = 0, longestPeer = 0, peering = 0, struck = 0, widestAim = 0;
   for (let index = 1; index < frames.length; index++) {
     const heron = heronAt(frames[index]), before = heronAt(frames[index - 1]);

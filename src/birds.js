@@ -231,23 +231,28 @@ const HERON = {
   //   - it holds still `freeze` s (drawn), but for its head: tilted now and then (`tilts`: how many, how far in rad,
   //     each settling in `tiltSettle` s), as a heron cocks its head to judge the fish's depth;
   //   - it stabs (`stab` s to settle, drawn: herons strike in a tenth of a second or so), its neck thrown out to `reach`
-  //     (drawn) of the strike's line, holds its bill in the water `hold` s (drawn) and brings it up with a little spring
-  //     (`back`);
-  //   - caught (but for a share `miss`): its head up and its bill tipped up (`catchNeck`, `catchBill`), the fish tossed
-  //     to turn it head first (`tosses`, drawn: each a jerk of `toss` rad), then swallowed in `gulps` (drawn: jerks of
-  //     its neck); missed, it often stabs again (a share `again`, `againAfter` s later, drawn; that one may catch);
+  //     (drawn) of the strike's line, but no deeper than its bill's tip reaches `depth` m under the water (its bill and
+  //     head in to its eyes) or `clear` m over the bed (src/birdRig.js pose.floor), holds its bill in the water `hold` s
+  //     (drawn) and brings it up with a little spring (`back`);
+  //   - caught (but for a share `miss`: an adult grey heron catches about one fish in two strikes): it comes up with
+  //     a small fish held across its bill (src/birdRig.js posePrey), wriggling (`wriggle`: rad, dying away over s), its
+  //     head up and its bill tipped up (`catchNeck`, `catchBill`), the fish tossed to turn it head first (`tosses`,
+  //     drawn: each a jerk of `toss` rad; with none it works it round in its bill), then swallowed (`swallow` s, down
+  //     its throat) in `gulps` (drawn: jerks of its neck); missed, it often stabs again (a share `again`, `againAfter`
+  //     s later, drawn; that one may catch);
   //   - and, a share `shake` of the times, shakes the water off its bill (`shakes` quick turns of its head either way).
-  //   A share `giveUp` of its peers come to nothing: it straightens up again without striking.
-  strike: { share: 0.5, afterWalk: 0.3, at: [0.6, 6], stalk: [1.0, 2.2], aim: 0.5, neck: [0.12, 0.5], bill: [-0.55, -0.85], crouch: [0.2, 0.4], lean: 0.12,
-    freeze: [0.6, 3], tilts: [0, 3], tilt: 0.14, tiltSettle: 0.3, stab: [0.09, 0.15], reach: [0.82, 1.04], hold: [0.18, 0.45], back: 0.55,
-    miss: 0.4, again: 0.5, againAfter: [0.45, 1.1], catchNeck: 0.85, catchBill: 0.45, tosses: [0, 2], toss: 0.35, gulps: [2, 4], shake: 0.5, shakes: 4, giveUp: 0.15 },
+  //   A share `giveUp` of its peers come to nothing: it straightens up again without striking. Adult grey herons fishing
+  //   strike about once in two to four minutes; it hunts more often than that (about one a minute), so it is seen to.
+  strike: { share: 0.4, afterWalk: 0.3, at: [0.6, 6], stalk: [1.0, 2.2], aim: 0.5, neck: [0.12, 0.5], bill: [-0.55, -0.85], crouch: [0.2, 0.4], lean: 0.12,
+    freeze: [0.6, 3], tilts: [0, 3], tilt: 0.14, tiltSettle: 0.3, stab: [0.09, 0.15], reach: [0.82, 1.04], depth: 0.12, clear: 0.02, hold: [0.18, 0.45], back: 0.55,
+    miss: 0.5, again: 0.5, againAfter: [0.45, 1.1], catchNeck: 0.85, catchBill: 0.45, tosses: [0, 2], toss: 0.35, gulps: [2, 4], swallow: 0.35, wriggle: [0.4, 1.8], shake: 0.5, shakes: 4, giveUp: 0.25 },
   // spread: in a `share` of its spells (a share `afterLanding` of the first after it comes down: drying off), `at` s
   //   (drawn) after what else it does, it opens its wings and holds them open, as herons sun and dry themselves (the
   //   spread-wing or "delta" posture: src/birdRig.js SPREAD), not flapping: it opens them (`open` s to settle, a little
   //   past and back), holds them still `hold` s (drawn), hunched (its neck drawn in to `neck`, leaning forward `lean`
   //   rad), its head still turning now and then; in a long hold (over `shuffleAfter` s) it lets them sag a little and
   //   spreads them again once (`shuffle`: by how much, and the spring's settle); then folds them (`close` s to settle).
-  spread: { share: 0.1, afterLanding: 0.5, at: [0.5, 4], open: 0.6, hold: [3, 8], close: 0.8, neck: 0.3, lean: 0.12, shuffleAfter: 5, shuffle: [0.15, 0.3] },
+  spread: { share: 0.04, afterLanding: 0.3, at: [0.5, 4], open: 0.6, hold: [3, 8], close: 0.8, neck: 0.3, lean: 0.12, shuffleAfter: 5, shuffle: [0.15, 0.3] },
 };
 const STANDING = { heron: HERON };
 const STANDING_HABITS = new Set(['wade']);
@@ -302,7 +307,7 @@ function sprung(time, from, steps) {
 
 /** A pose, at rest. */
 function freshPose() {
-  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, aim: 0, bill: 0, legs: 0, crouch: 0, shown: false };
+  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, aim: 0, bill: 0, legs: 0, plant: 0, feetAhead: 0, brake: 0, crouch: 0, prey: 0, shown: false };
 }
 
 /**
@@ -317,7 +322,7 @@ function layHunt(ways, at, random) {
   const stalk = draw(ways.stalk), freeze = draw(ways.freeze);
   const side = (random() * 2 - 1) * ways.aim;
   const peerBill = draw(ways.bill), peerCrouch = draw(ways.crouch);
-  const hunt = { at, neck: draw(ways.neck), engaged: [], thrown: [], crouch: [], aim: [], bill: [], look: [], holding: [], gulps: [], settled: 0 };
+  const hunt = { at, neck: draw(ways.neck), engaged: [], thrown: [], crouch: [], aim: [], bill: [], look: [], holding: [], gulps: [], preyTurn: [], preyIn: [], caught: null, settled: 0 };
   // Peering: down at it, swung round toward it, lowered, leaning in a little.
   const still = 0.9 * stalk;   // when it has all but settled into its peer
   hunt.engaged.push([0, 1, stalk]);
@@ -346,7 +351,7 @@ function layHunt(ways, at, random) {
       const upAt = stabAtNow + quick + hold;
       caught = random() >= ways.miss;
       const again = !caught && stab === 0 && random() < ways.again;
-      hunt.thrown.push([stabAtNow, reach, quick], [upAt, again ? 0.3 : 0, ways.back, 0.55]);
+      hunt.thrown.push([stabAtNow, reach, quick], [upAt, again ? 0.3 : 0, ways.back, 0.8]);
       hunt.bill.push([stabAtNow, 0, quick], [upAt, again ? peerBill * 0.8 : 0, ways.back]);   // the strike's line points it
       hunt.crouch.push([stabAtNow, peerCrouch + 0.1, quick], [upAt, again ? peerCrouch : 0, 2 * ways.back]);
       end = upAt;
@@ -355,18 +360,24 @@ function layHunt(ways, at, random) {
     }
     hunt.aim.push([end, 0, 1.2]);
     if (caught) {
-      // Its head up, bill tipped up, the fish tossed to turn it head first, then swallowed.
-      hunt.holding.push([end + 0.1, 1, 0.45]);
-      hunt.bill.push([end + 0.1, ways.catchBill, 0.4]);
-      let after = end + 0.6;
+      // Up out of the water with the fish across its bill (src/birdRig.js posePrey), its head up and bill tipped up
+      // once its neck is mostly out of the strike; the fish tossed and caught again to turn it head first (or worked
+      // round in its bill), then swallowed, its neck jerking as it goes down.
+      hunt.caught = { from: end };
+      hunt.holding.push([end + 0.2, 1, 0.6]);
+      hunt.bill.push([end + 0.2, ways.catchBill, 0.5]);
+      let after = end + 0.8;
       const tosses = count(ways.tosses);
       for (let toss = 0; toss < tosses; toss++) {
         after += 0.25 + 0.3 * random();
         hunt.bill.push([after, ways.catchBill + ways.toss, 0.1], [after + 0.11, ways.catchBill, 0.16]);
+        if (toss === tosses - 1) hunt.preyTurn.push([after + 0.06, 1, 0.14]);   // in the air a moment, caught head first
         after += 0.2;
       }
+      if (!tosses) { hunt.preyTurn.push([after, 1, 0.6]); after += 0.5; }
       const gulps = count(ways.gulps);
       after += 0.3;
+      hunt.preyIn.push([after, 1, ways.swallow]);
       for (let gulp = 0; gulp < gulps; gulp++) { hunt.gulps.push([after, 0.08, 0.1], [after + 0.14, 0, 0.12]); after += 0.32 + 0.12 * random(); }
       hunt.bill.push([after, 0, 0.6]);
       hunt.holding.push([after + 0.1, 0, 1.0]);
@@ -382,7 +393,7 @@ function layHunt(ways, at, random) {
   }
   hunt.engaged.push([end, 0, stalk]);
   // When every part has settled (each spring exactly at rest after settledAfter), from its last step.
-  for (const steps of [hunt.engaged, hunt.thrown, hunt.crouch, hunt.aim, hunt.bill, hunt.look, hunt.holding, hunt.gulps]) {
+  for (const steps of [hunt.engaged, hunt.thrown, hunt.crouch, hunt.aim, hunt.bill, hunt.look, hunt.holding, hunt.gulps, hunt.preyTurn, hunt.preyIn]) {
     for (const [stepAt, , settle] of steps) hunt.settled = Math.max(hunt.settled, stepAt + settledAfter(settle));
   }
   return hunt;
@@ -971,9 +982,10 @@ export class BirdPopulation {
       pose.phase = 2 * Math.PI * kind.beat * (flying + quicker * quickFor * (1 - Math.exp(-flying / quickFor)));
       pose.crouch = 1 - smoother(0, 0.2, flying);   // springing up out of its crouch
       pose.walking = 0;
-      pose.strike = pose.aim = pose.bill = 0;
+      pose.strike = pose.aim = pose.bill = pose.prey = pose.brake = pose.feetAhead = 0;
       pose.fold = 0.5 * (1 - smoother(0, 0.25, flying));
       pose.legs = 1 - smoother(0.15, legsUp, flying);
+      pose.plant = 1 - smoother(0, 0.2, flying);   // its feet leaving the bed as it springs
       pose.neck = 0.3 * (1 - smoother(0, neckIn, flying));
       pose.tuck = pose.slim = smoother(0, neckIn, flying);
       pose.look = 0;
@@ -1190,6 +1202,7 @@ export class BirdPopulation {
     pose.bank = 0;
     pose.flying = false;
     pose.legs = 1;
+    pose.plant = 1;   // its feet on the bed, its body turning over them (src/birdRig.js)
     pose.tuck = pose.slim = 0;   // its neck and trunk as it stands (src/birdRig.js)
     // Just down (its kind's `land`): its wings held up a moment, where the flare's last beat left them (src/birdRig.js
     // flapAngles: phase 0, beat 1, the top of the stroke), then folded; its body settling forward over its feet from
@@ -1217,7 +1230,7 @@ export class BirdPopulation {
     neck += (0.5 - neck) * place.walking;
     // A hunt, when its spell's plan says (its kind's `strike`, layHunt): it peers down at a fish, holds still but for
     // its head, stabs, and swallows its catch or stabs again; or gives up. Each part a spring of its own.
-    let thrown = 0, crouch = 0, aim = 0, bill = 0;
+    let thrown = 0, crouch = 0, aim = 0, bill = 0, prey = 0, preyTurn = 0, preyIn = 0, preyWriggle = 0;
     const plan = place.plan, hunt = plan?.hunt;
     const into = hunt ? place.into - hunt.at : -1;
     if (into > 0 && into < hunt.settled) {
@@ -1230,6 +1243,16 @@ export class BirdPopulation {
       neck += (hunt.neck - neck) * engaged;
       neck += (ways.strike.catchNeck - neck) * sprung(into, 0, hunt.holding);
       neck += sprung(into, 0, hunt.gulps);
+      // Its catch, held from when its bill leaves the water till it has gone down (src/birdRig.js posePrey), wriggling
+      // (two beats, dying away as the fish tires).
+      const held = hunt.caught ? into - hunt.caught.from : -1;
+      if (held >= 0) {
+        preyIn = sprung(into, 0, hunt.preyIn);
+        prey = preyIn < 0.97 ? 1 : 0;
+        preyTurn = sprung(into, 0, hunt.preyTurn);
+        const [most, tiring] = ways.strike.wriggle, left = most * Math.exp(-held / tiring) * (1 - preyIn);
+        preyWriggle = left * (0.75 * Math.sin(2 * Math.PI * 4.2 * held) + 0.25 * Math.sin(2 * Math.PI * 7.3 * held + 1));
+      }
     }
     // Its wings opened and held open, when its spell's plan says (its kind's `spread`): opened with a little spring,
     // held still (sagging and spread again once in a long hold), folded again; hunched and leaning a little meanwhile.
@@ -1263,7 +1286,9 @@ export class BirdPopulation {
     spread *= 1 - alerted;   // alarmed, it folds them
     pose.fold *= THREE.MathUtils.clamp(1 - spread, 0, 1);
     pose.spread = spread;
+    pose.prey = prey; pose.preyTurn = preyTurn; pose.preyIn = preyIn; pose.preyWriggle = preyWriggle;
     pose.strike = thrown;
+    pose.floor = Math.max(place.y + ways.strike.clear, -ways.strike.depth);   // as deep as its stab goes (src/birdRig.js)
     pose.aim = aim;
     pose.bill = bill - 0.6 * landingPitch;   // its head kept level as its body settles (the flare's)
     pose.crouch = crouch * (1 - alerted) + absorbing;

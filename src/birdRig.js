@@ -34,8 +34,10 @@ export const JOINTS = {
   // all but straight and the neck bends smoothly in any line it is laid in).
   rightHip: 12, rightHeel: 13, rightFoot: 14, leftHip: 15, leftHeel: 16, leftFoot: 17,
   neck: [9, 10, 11, 18, 19, 20, 21, 22, 23, 24, 25, 26],
+  // A standing bird's catch, held in its bill (poseStanding: pose.prey), a fish (src/birdMeshes.js buildStandingModel).
+  prey: 27,
 };
-export const JOINT_COUNT = 27;
+export const JOINT_COUNT = 28;
 // Where the neck's joints are along its middle line, a share of the way from the breast to the nape (JOINTS.neck's
 // order; src/birdMeshes.js buildStandingModel places them, and the nape is the head's).
 export const NECK_SHARES = JOINTS.neck.map((joint, index) => 0.04 + index * 0.08);
@@ -176,7 +178,8 @@ export function poseJoints(out, model, flight, pose) {
 //     down in one line, the bill to the water before its feet; turned to look (pose.look), the head and the upper neck
 //     sharing the turn (LOOK_SHARES); swung round from its base toward a strike's target (pose.aim, AIM_SHARES); its
 //     head tipped about its nape (pose.bill, rad, up positive), the bill pointed down at the water as it peers;
-//   - the legs: standing, each foot set where it should be (planted, or swung forward a step: pose.stride, pose.walking)
+//   - the legs: standing, each foot set where it should be on the level bed whatever the body's pitch (pose.plant: planted,
+//     or swung forward a step: pose.stride, pose.walking)
 //     and the hip and heel solved to reach it (two bones in the side's plane, the heel bending back as a heron's does);
 //     flying, swung back to trail straight behind (pose.legs 0), the toes curled;
 //   - the wings: folded away into the body (pose.fold 1: shrunk to the shoulder and swept back, inside the trunk's
@@ -267,6 +270,69 @@ function solveLeg(hip, target, upper, lower) {
   return { tibia, tarsus: angleOf(target.x - heelX, target.y - heelY) };
 }
 
+const NECK_CHAIN = [...JOINTS.neck, JOINTS.head];
+const FLOOR_PASSES = 6, FLOOR_CLOSE = 0.003;   // a strike's search for its floor (poseStanding): at most so many passes, to within so many m of it
+
+/**
+ * A standing kind's neck's chain posed (into `out`, from bodyWorld): each link's direction (the photograph's, or toward
+ * a pose's), bent at its joint by what turns its rest direction to that, less what the links before it turned already.
+ */
+function poseNeck(out, skeleton, neck, tuck, strike, lookTo, aim, bill) {
+  const look = lookTo * (1 - strike);
+  step.copy(bodyWorld);
+  let turned = 0;
+  NECK_CHAIN.forEach((joint, index) => {
+    const rest = skeleton.neckRest[index];
+    const drawnIn = degrees(NECK_LINKS.drawnIn[index] + (NECK_LINKS.flying[index] - NECK_LINKS.drawnIn[index]) * tuck);
+    let direction = neck < NECK_PHOTO ? drawnIn + (rest - drawnIn) * (neck / NECK_PHOTO)
+      : rest + (degrees(NECK_LINKS.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
+    direction += (degrees(NECK_LINKS.strike[index]) - direction) * strike;
+    if (index === NECK_CHAIN.length - 1) direction += bill;   // the head tipped about its nape: its bill down at the water, or up
+    const bend = direction - rest - turned;
+    turned += bend;
+    const point = skeleton.neck[index];
+    about(local, jointPoint.set(point.x, point.y, 0), AXIS_Z, bend);
+    // Its share of the look, about the body's up: the chain has turned this link `turned` about the side's normal
+    // (the bends before it and its own), so the body's up is, in the link's own frame, up turned back by as much.
+    const yaw = look * LOOK_SHARES[index] + aim * AIM_SHARES[index];
+    if (yaw !== 0) local.multiply(about(world, jointPoint, lookAxis.set(Math.sin(turned), Math.cos(turned), 0), yaw));
+    step.multiply(local);
+    step.toArray(out, joint * 16);
+  });
+}
+
+/** The world height of a posed standing model's bill's tip (its head's joint, out, applied to skeleton.billTip). */
+function billTipY(out, skeleton) {
+  const at = JOINTS.head * 16, { x, y } = skeleton.billTip;
+  return out[at + 1] * x + out[at + 5] * y + out[at + 13];
+}
+
+// A fish caught (pose.prey: 0 none, 1 held), built at its grip in the bill as the head stands at rest (src/birdMeshes.js
+// skeleton.prey: `grip`, the bill's direction `along` and its mandibles' `across`, both in the side's plane), its
+// length across the bill, rolled `HELD` rad about the bill's line (its tail hanging below the bill, so a side view
+// shows it crossing the bill, as in the photographs), wriggling about that line (pose.preyWriggle, rad); turned to lie
+// along the bill head first (pose.preyTurn, 0 to 1), and drawn in down the throat as it is swallowed (pose.preyIn, 0
+// to 1: `INTO` m along the bill, shrinking as it goes into the head's tube).
+const HELD = 0.9, INTO = 0.1;
+const preyAxis = new THREE.Vector3(), preyScratch = new THREE.Matrix4(), preyGrip = new THREE.Vector3();
+
+/** The prey's joint (into `out`): hidden (scaled to nothing) with no catch held, else held in the bill (the head's joint). */
+function posePrey(out, skeleton, pose) {
+  const held = THREE.MathUtils.clamp(pose.prey ?? 0, 0, 1), prey = skeleton.prey;
+  if (!prey || held <= 0) { local.makeScale(0, 0, 0).toArray(out, JOINTS.prey * 16); return; }
+  const turned = THREE.MathUtils.clamp(pose.preyTurn ?? 0, 0, 1);
+  const into = THREE.MathUtils.clamp(pose.preyIn ?? 0, 0, 1), size = held * (1 - 0.7 * into);
+  const { grip, along, across } = prey;
+  preyGrip.set(grip.x - along.x * INTO * into, grip.y - along.y * INTO * into, 0);
+  // T(grip, slid in) · R(across, turned) · R(bill's line, held and wriggling) · S(size) · T(-grip).
+  step.makeTranslation(preyGrip.x, preyGrip.y, 0);
+  step.multiply(preyScratch.makeRotationAxis(preyAxis.set(across.x, across.y, 0), turned * Math.PI / 2));
+  step.multiply(preyScratch.makeRotationAxis(preyAxis.set(along.x, along.y, 0), (1 - turned) * HELD + (pose.preyWriggle ?? 0)));
+  step.multiply(preyScratch.makeScale(size, size, size));
+  step.multiply(preyScratch.makeTranslation(-grip.x, -grip.y, 0));
+  world.fromArray(out, JOINTS.head * 16).multiply(step).toArray(out, JOINTS.prey * 16);
+}
+
 /**
  * The joints' matrices (into `out`) for a standing kind's model (src/birdMeshes.js buildStandingModel: its `skeleton`)
  * posed as `pose` (src/birds.js), with its kind's `flight` for its wingbeat.
@@ -296,35 +362,38 @@ export function poseStanding(out, model, flight, pose) {
     bodyWorld.toArray(out, JOINTS.body * 16);
     bodyWorld.toArray(out, JOINTS.tail * 16);
   }
-  // The neck's chain: each link's direction (the photograph's, or toward a pose's), bent at its joint by what turns its
-  // rest direction to that, less what the links before it turned already.
+  // The neck's chain (poseNeck). A strike stops where its bill's tip reaches `pose.floor` (world y; the bed, or as deep
+  // as it reaches into the water): the strike's share that puts the tip there found by regula falsi on the tip's
+  // height (a few more passes of the chain, only while it would go deeper).
   const neck = THREE.MathUtils.clamp(pose.neck ?? NECK_PHOTO, 0, 1);
   const tuck = THREE.MathUtils.clamp(pose.tuck ?? (flying ? 1 : 0), 0, 1);
   const strike = THREE.MathUtils.clamp(pose.strike ?? 0, 0, 1);
-  const chain = [...JOINTS.neck, JOINTS.head];
-  const look = (pose.look ?? 0) * (1 - strike);
   const aim = pose.aim ?? 0, bill = pose.bill ?? 0;
-  step.copy(bodyWorld);
-  let turned = 0;
-  chain.forEach((joint, index) => {
-    const rest = skeleton.neckRest[index];
-    const drawnIn = degrees(NECK_LINKS.drawnIn[index] + (NECK_LINKS.flying[index] - NECK_LINKS.drawnIn[index]) * tuck);
-    let direction = neck < NECK_PHOTO ? drawnIn + (rest - drawnIn) * (neck / NECK_PHOTO)
-      : rest + (degrees(NECK_LINKS.stretched[index]) - rest) * ((neck - NECK_PHOTO) / (1 - NECK_PHOTO));
-    direction += (degrees(NECK_LINKS.strike[index]) - direction) * strike;
-    if (index === chain.length - 1) direction += bill;   // the head tipped about its nape: its bill down at the water, or up
-    const bend = direction - rest - turned;
-    turned += bend;
-    const point = skeleton.neck[index];
-    about(local, jointPoint.set(point.x, point.y, 0), AXIS_Z, bend);
-    // Its share of the look, about the body's up: the chain has turned this link `turned` about the side's normal
-    // (the bends before it and its own), so the body's up is, in the link's own frame, up turned back by as much.
-    const yaw = look * LOOK_SHARES[index] + aim * AIM_SHARES[index];
-    if (yaw !== 0) local.multiply(about(world, jointPoint, lookAxis.set(Math.sin(turned), Math.cos(turned), 0), yaw));
-    step.multiply(local);
-    step.toArray(out, joint * 16);
-  });
-  // The legs.
+  poseNeck(out, skeleton, neck, tuck, strike, pose.look ?? 0, aim, bill);
+  const floor = pose.floor;
+  if (floor !== undefined && strike > 0) {
+    let deep = strike, deepTip = billTipY(out, skeleton) - floor;
+    if (deepTip < 0) {
+      poseNeck(out, skeleton, neck, tuck, 0, pose.look ?? 0, aim, bill);
+      let shallow = 0, shallowTip = billTipY(out, skeleton) - floor, side = 0;
+      // Regula falsi, Illinois's way (the end kept twice in a row halved, so it closes from both sides), to within 3 mm.
+      for (let pass = 0; pass < FLOOR_PASSES && shallowTip > 0; pass++) {
+        const share = shallow + (deep - shallow) * shallowTip / (shallowTip - deepTip);
+        poseNeck(out, skeleton, neck, tuck, share, pose.look ?? 0, aim, bill);
+        const tip = billTipY(out, skeleton) - floor;
+        if (tip < 0) { deep = share; deepTip = tip; if (side < 0) shallowTip /= 2; side = -1; }
+        else { shallow = share; shallowTip = tip; if (side > 0) deepTip /= 2; side = 1; }
+        if (Math.abs(tip) < FLOOR_CLOSE) break;
+      }
+      if (billTipY(out, skeleton) < floor - FLOOR_CLOSE) poseNeck(out, skeleton, neck, tuck, shallow, pose.look ?? 0, aim, bill);
+    }
+  }
+  posePrey(out, skeleton, pose);
+  // The legs. Standing, each foot is set where it should be on the level ground (`planted`, 0 to 1: flying, wherever
+  // the body's pitch swings it), and its toes kept level: tipped forward into a strike or settling from a landing's
+  // flare, the body turns over its feet as a heron's does, never lifting one off the bed.
+  const planted = THREE.MathUtils.clamp(pose.plant ?? (flying ? 0 : 1), 0, 1) * legsDown;
+  const levelPitch = -(pose.pitch ?? 0) * planted, levelCos = Math.cos(levelPitch), levelSin = Math.sin(levelPitch);
   skeleton.legs.forEach((leg, index) => {
     const [hipJoint, heelJoint, footJoint] = index === 0 ? [JOINTS.rightHip, JOINTS.rightHeel, JOINTS.rightFoot] : [JOINTS.leftHip, JOINTS.leftHeel, JOINTS.leftFoot];
     // Where its foot should be (model space): planted where it stood, the hips sunk over it; walking, a step forward or
@@ -342,7 +411,7 @@ export function poseStanding(out, model, flight, pose) {
         footY += walking * STEP_LIFT * Math.sin(Math.PI * swing);
       }
     }
-    const solved = solveLeg(leg.hip, { x: footX, y: footY }, leg.upper, leg.lower);
+    const solved = solveLeg(leg.hip, { x: footX * levelCos - footY * levelSin, y: footX * levelSin + footY * levelCos }, leg.upper, leg.lower);
     // Trailing: the whole leg swung back from its rest, straight.
     const trailTibia = leg.restTibia + TRAIL + TRAIL_SLIM * slim, trailTarsus = trailTibia;
     const tibia = trailTibia + (solved.tibia - trailTibia) * legsDown;
@@ -353,7 +422,7 @@ export function poseStanding(out, model, flight, pose) {
     about(local, jointPoint.set(leg.heel.x, leg.heel.y, leg.z), AXIS_Z, heelTurn);
     elbowWorld.multiplyMatrices(shoulderWorld, local).toArray(out, heelJoint * 16);
     // The toes level with the body standing; curled back along the tarsus trailing.
-    const toes = -(hipTurn + heelTurn) * legsDown + degrees(-60) * (1 - legsDown);
+    const toes = -(hipTurn + heelTurn) * legsDown + levelPitch + degrees(-60) * (1 - legsDown);
     about(local, jointPoint.set(leg.foot.x, leg.foot.y, leg.z), AXIS_Z, toes);
     step.multiplyMatrices(elbowWorld, local).toArray(out, footJoint * 16);
   });

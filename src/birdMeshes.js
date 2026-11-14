@@ -55,7 +55,7 @@ const FOLDER = new URL('../assets/birds/', import.meta.url);
 /** The kinds drawn as models (each with its flight, src/birdRig.js, and its model in models.json); src/main.js draws the rest as pictures. */
 export const MODELLED_KINDS = new Set(Object.keys(FLIGHT));
 const MODELS_URL = new URL('models.json', FOLDER);
-const PART = { body: 0, wing: 1, tail: 2 };
+const PART = { body: 0, wing: 1, tail: 2, prey: 3 };
 const RING = 16;                 // a body station's ring of vertices
 const WING_COLUMNS = 24;         // a wing's stations along the span
 const WING_ROWS = 6;             // and across the chord
@@ -135,8 +135,15 @@ void main() {
     if (!gl_FrontFacing) normal = -normal;
   }
   vec4 picture = texture2D(uAtlas, rect.xy + vUv * rect.zw);
+  if (vPart > 2.5) {
+    // A fish in its bill (PART.prey): no picture, a small pond fish's colours (a dark olive back over silver flanks
+    // and a pale belly, vUv.y up its side from the belly), its flank catching the light as a fish's scales do.
+    if (!gl_FrontFacing) normal = -normal;
+    vec3 flank = mix(vec3(0.42, 0.43, 0.40), vec3(0.07, 0.08, 0.05), smoothstep(0.55, 0.85, vUv.y));
+    picture = vec4(mix(vec3(0.6, 0.6, 0.56), flank, smoothstep(0.1, 0.3, vUv.y)), 1.0);
+  }
   // The wings' and the tail's outlines are their pictures' alpha; the body's is its shape (its picture is solid over it).
-  if (vPart > 0.5 && picture.a < 0.5) discard;
+  if (vPart > 0.5 && vPart < 2.5 && picture.a < 0.5) discard;
   // The photograph has its own light and shade (an underwing photographed from below is in shadow): lit as a whole
   // by the sky and the sun as the scene is, and only modelled a little by which way it faces the sun.
   float sunUp = smoothstep(-0.02, 0.2, uSunDirection.y);
@@ -372,6 +379,54 @@ const LEG_RING = 6;
 const LEG_SPREAD = 0.045;   // m either side of the middle a leg stands
 const TOE_SPLAY = 0.45;     // rad a front toe turns out from the middle one
 
+// The fish a standing kind catches (src/birdRig.js posePrey): a small pond fish (a roach's or a minnow's size: grey
+// herons mostly take fish of 6 to 12 cm), `length` m, `depth` m deep and `width` across at its deepest, its tail fin
+// `fin` m long, held `grip` m back from the bill's tip.
+const PREY = { length: 0.09, depth: 0.022, width: 0.011, fin: 0.022, grip: 0.028, stations: 10, ring: 8 };
+
+/**
+ * A fish built across the bill at its grip as the head stands at rest, skinned wholly to JOINTS.prey (scaled to nothing
+ * until it is caught): its length along +z (its head at -z), its back toward the bill's top. Returns its grip and the
+ * bill's directions there (in the side's plane), which posePrey turns it by.
+ */
+function addPrey(neck, add, indices) {
+  const tip = neck[neck.length - 1];
+  let back = neck.length - 1;
+  while (back > 0 && Math.hypot(tip[0] - neck[back][0], tip[1] - neck[back][1]) < 0.06) back--;
+  const alongX = tip[0] - neck[back][0], alongY = tip[1] - neck[back][1], alongLength = Math.hypot(alongX, alongY);
+  const along = { x: alongX / alongLength, y: alongY / alongLength }, across = { x: -along.y, y: along.x };
+  const grip = { x: tip[0] - along.x * PREY.grip, y: tip[1] - along.y * PREY.grip };
+  const joint = [JOINTS.prey, JOINTS.prey, 0];
+  const { length, depth, width, fin, stations, ring } = PREY;
+  // Its body: rings along its length, deepest a third of the way back from its head, closing to a point at the snout
+  // and a narrow wrist at the tail; its depth along the bill's `across` (its back up the bill's top), its width along z × that.
+  const first = add.count();
+  for (let station = 0; station <= stations; station++) {
+    const share = station / stations;
+    const z = -length / 2 + share * length;
+    const swell = share < 0.35 ? Math.sin(Math.PI / 2 * share / 0.35) ** 0.6 : 1 - 0.75 * ((share - 0.35) / 0.65) ** 1.5;
+    const half = Math.max(swell, 0.04) * depth / 2, thick = Math.max(swell, 0.04) * width / 2;
+    for (let around = 0; around <= ring; around++) {
+      const angle = (around / ring) * Math.PI * 2, up = Math.cos(angle), side = Math.sin(angle);
+      const position = [grip.x + across.x * half * up, grip.y + across.y * half * up, z + thick * side];
+      const normal = new THREE.Vector3(across.x * up / half, across.y * up / half, side / thick).normalize();
+      add(position, normal.toArray(), [share, 0.5 + 0.5 * up], joint, PART.prey);
+    }
+  }
+  for (let station = 0; station < stations; station++) {
+    for (let around = 0; around < ring; around++) {
+      const a = first + station * (ring + 1) + around, b = a + ring + 1;
+      indices.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  // Its tail fin: a forked sheet in the plane of its depth, from the tail's wrist.
+  const wrist = length / 2, spread = depth * 0.55;
+  const finAt = (z, up) => add([grip.x + across.x * up, grip.y + across.y * up, z], [0, 0, 1], [1, 0.5 + up / depth], joint, PART.prey);
+  const root = finAt(wrist - 0.004, 0), top = finAt(wrist + fin, spread), notch = finAt(wrist + fin * 0.6, 0), bottom = finAt(wrist + fin, -spread);
+  indices.push(root, top, notch, root, notch, bottom);
+  return { grip, along, across };
+}
+
 /**
  * A standing kind's model from its models.json entry (tools/bird-models.py side_part): metres from its hips, its bill
  * along +x, up +y, its right side +z. Every part of it but the wings is painted from its side picture, projected across
@@ -523,6 +578,7 @@ export function buildStandingModel(entry) {
   const shoulderX = trunkRight - 0.32 * (trunkRight - trunkLeft);
   const shoulderY = sample(trunk.stations, trunk.top, shoulderX) - 0.03;
   const wingSkeleton = addWings(wing, shoulderX, shoulderY, add, indices);
+  const prey = addPrey(neck, add, indices);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
@@ -541,7 +597,7 @@ export function buildStandingModel(entry) {
   });
   return {
     geometry, standing: true, span: entry.span, length: trunkRight - trunkLeft, radius: Math.max(entry.span, 1) * 0.6,
-    skeleton: { hipsHeight, neck: neckJoints, neckRest, legs, wing: wingSkeleton },
+    skeleton: { hipsHeight, neck: neckJoints, neckRest, billTip: { x: billTip[0], y: billTip[1] }, prey, legs, wing: wingSkeleton },
   };
 }
 
