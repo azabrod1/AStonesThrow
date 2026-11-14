@@ -404,8 +404,8 @@ function layHunt(ways, at, random) {
   return hunt;
 }
 
-// Seeing a thing coming (wary): every physics step a standing heron follows each moving thing's course `ahead` s on
-// (course: falling as thrown, skipping on off the water as a stone thrown flat does, or in and slowing; on the water or
+// Seeing a thing coming (wary): every `every` s of physics time (its course's own spacing; every step would cost four
+// times as much for nothing) a standing heron follows each moving thing's course `ahead` s on (course: falling as thrown, skipping on off the water as a stone thrown flat does, or in and slowing; on the water or
 // the ground, sliding on as it goes), every `every` s, and goes as soon as it would come within `reach` m (and the
 // thing's radius) of where it stands, below `tall` m over its feet, sooner than `lead` s from now: crouching no longer
 // than leaves it `clear` s to be off before the thing arrives (`quickest` s at least), and off the way that keeps it
@@ -658,15 +658,19 @@ export class BirdPopulation {
     for (const bird of this.birds) {
       if (!STANDING_HABITS.has(bird.habit)) continue;
       const ways = STANDING[bird.kind];
-      // Where it stands now (it may have walked), or where it is coming down.
-      const here = bird.mode === 'stand' ? this.standingPlace(bird, time, scratchStep) : bird.spot;
+      // Where it stands now (it may have walked), or where it is coming down: looked up only with something thrown, and
+      // standing, afresh every WARY.every s (its walk is slow: 2 mm between), when it also follows what is coming.
+      const wary = things.length > 0 && !(time < bird.waryNext);
+      if (wary) bird.waryNext = time + WARY.every - 1e-9;
+      if (wary || (things.length && !bird.here)) bird.here = bird.mode === 'stand' ? this.standingPlace(bird, time, bird.here ?? {}) : null;
+      const here = bird.mode === 'stand' && bird.here ? bird.here : bird.spot;
       for (const thing of things) {
         if (thing.state === 'air' && thing.velocity.y < 0 && thing.position.y <= here.y + ways.flush.height) {
           const near = Math.hypot(thing.position.x - here.x, thing.position.z - here.z);
           if (near < ways.flush.radius * 1.6) this.disturbed = time;
           if (bird.mode === 'stand' && near < ways.flush.radius) this.flush(bird, time, thing.position.x, thing.position.z);
         }
-        if (bird.mode !== 'stand' && bird.mode !== 'land') continue;
+        if (!wary || (bird.mode !== 'stand' && bird.mode !== 'land')) continue;
         // Coming its way (WARY): off at once, or round again.
         const reach = (bird.mode === 'land' ? WARY.aside : WARY.reach) + (thing.radius ?? 0.05);
         const level = Math.hypot(thing.velocity.x, thing.velocity.z);
@@ -695,6 +699,7 @@ export class BirdPopulation {
         bird.foldSince = time;
         bird.alerts = [];
         bird.gazes = [];
+        bird.here = null;   // its place on this stay, looked up afresh
       }
     }
   }
