@@ -54,6 +54,20 @@ import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 const FOLDER = new URL('../assets/birds/', import.meta.url);
 /** The kinds drawn as models (each with its flight, src/birdRig.js, and its model in models.json); src/main.js draws the rest as pictures. */
 export const MODELLED_KINDS = new Set(Object.keys(FLIGHT));
+
+/**
+ * A geometry drawing `source`'s vertices (its attributes and index, so one GPU buffer each, however many share them)
+ * and bounded by `bounds`, a sphere its bird moves each frame: a bird's vertices are placed by its joints or its
+ * picture's anchor, its mesh never moved, so three culls each pass's draw by where the bird is (a bird out of the
+ * view, the mirror's or the water's, is not drawn). Never disposed: that would let go of `source`'s buffers.
+ */
+export function boundedGeometry(source, bounds) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setIndex(source.index);
+  for (const [name, attribute] of Object.entries(source.attributes)) geometry.setAttribute(name, attribute);
+  geometry.boundingSphere = bounds;
+  return geometry;
+}
 const MODELS_URL = new URL('models.json', FOLDER);
 const PART = { body: 0, wing: 1, tail: 2, prey: 3 };
 const RING = 16;                 // a body station's ring of vertices
@@ -681,18 +695,21 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     const mirrorMesh = new THREE.Mesh(placeholder, material('mirror', uniforms));
     const belowMesh = new THREE.Mesh(placeholder, material('below', uniforms));
     mirrorMesh.layers.set(mirrorLayer);
-    for (const mesh of [aboveMesh, mirrorMesh, belowMesh]) { mesh.frustumCulled = false; mesh.visible = false; }
+    for (const mesh of [aboveMesh, mirrorMesh, belowMesh]) mesh.visible = false;
     above.add(aboveMesh);
     mirror.add(mirrorMesh);
     below.add(belowMesh);
-    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: belowMesh, uniforms, centre: new THREE.Vector3(), radius: 1, shown: false, still: false, jointArray: new Float32Array(JOINT_COUNT * 16), drawnJoints: new Float32Array(JOINT_COUNT * 16) };
+    // Its bounds (place: about its middle, its kind's radius) and its geometry a kind, sharing the kind's (boundedGeometry).
+    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: belowMesh, uniforms, centre: new THREE.Vector3(), radius: 1, bounds: new THREE.Sphere(new THREE.Vector3(), -1), geometries: new Map(),
+      shown: false, still: false, jointArray: new Float32Array(JOINT_COUNT * 16), drawnJoints: new Float32Array(JOINT_COUNT * 16) };
   }
 
   /** A sprite's meshes given its kind's model and image, once come. */
   function dress(sprite) {
     const loaded = kinds.get(sprite.kind);
     if (!loaded) return;
-    for (const mesh of [...sprite.meshes, sprite.under]) mesh.geometry = loaded.model.geometry;
+    if (!sprite.geometries.has(sprite.kind)) sprite.geometries.set(sprite.kind, boundedGeometry(loaded.model.geometry, sprite.bounds));
+    for (const mesh of [...sprite.meshes, sprite.under]) mesh.geometry = sprite.geometries.get(sprite.kind);
     sprite.uniforms.uAtlas.value = loaded.texture;
     loaded.rects.forEach((rect, index) => sprite.uniforms.uRects.value[index].copy(rect));
   }
@@ -746,6 +763,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     sprite.drawnJoints.set(sprite.jointArray);
     sprite.uniforms.uJoints.value.forEach((matrix, index) => matrix.fromArray(sprite.jointArray, index * 16));
     sprite.radius = loaded.model.radius;
+    sprite.bounds.set(sprite.centre, sprite.radius);
   }
 
   const sphere = new THREE.Sphere();
@@ -773,9 +791,9 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     geometry.setAttribute('part', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count), 1));
     const meshes = [...sprite.meshes, sprite.under];
     const was = meshes.map((mesh) => mesh.geometry);
-    for (const mesh of meshes) { mesh.geometry = geometry; mesh.visible = true; }
+    for (const mesh of meshes) { mesh.geometry = geometry; mesh.visible = true; mesh.frustumCulled = false; }
     sprite.uniforms.uJoints.value.forEach((matrix) => matrix.makeTranslation(0, 0.3, -1.4));
-    return { done() { meshes.forEach((mesh, index) => { mesh.geometry = was[index]; }); geometry.dispose(); if (!sprites.includes(sprite)) hide(sprite); } };
+    return { done() { meshes.forEach((mesh, index) => { mesh.geometry = was[index]; mesh.frustumCulled = true; }); geometry.dispose(); if (!sprites.includes(sprite)) hide(sprite); } };
   }
 
   return {

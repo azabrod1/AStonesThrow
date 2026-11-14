@@ -61,6 +61,7 @@
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
+import { boundedGeometry } from './birdMeshes.js';
 
 const FOLDER = new URL('../assets/birds/', import.meta.url);
 const FRAMES_URL = new URL('birds.json', FOLDER);
@@ -303,20 +304,23 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
   }
 
   function makeSprite() {
-    const aboveMesh = new THREE.Mesh(quad, material('above'));
+    // Its quad bounded by a sphere about its anchor (place: to its picture's farthest corner), so a bird out of a pass's view is not drawn.
+    const bounds = new THREE.Sphere(new THREE.Vector3(), -1);
+    const bounded = boundedGeometry(quad, bounds);
+    const aboveMesh = new THREE.Mesh(bounded, material('above'));
     const frameUniforms = pick(aboveMesh.material.uniforms, ['uAtlas', 'uRect', 'uSize', 'uAnchor', 'uFlip', 'uRoll']);   // one frame, every pass
     const [mirrorMesh, underMesh] = ['mirror', 'below'].map((pass) => {
       const passMaterial = material(pass);
       passMaterial.uniforms = { ...passMaterial.uniforms, ...frameUniforms };
-      return new THREE.Mesh(quad, passMaterial);
+      return new THREE.Mesh(bounded, passMaterial);
     });
     mirrorMesh.layers.set(mirrorLayer);
     const shadow = new THREE.Mesh(flat, shadowMaterial);
-    for (const mesh of [aboveMesh, mirrorMesh, underMesh, shadow]) { mesh.frustumCulled = false; mesh.visible = false; }
+    for (const mesh of [aboveMesh, mirrorMesh, underMesh, shadow]) mesh.visible = false;
     above.add(aboveMesh, shadow);
     mirror.add(mirrorMesh);
     below.add(underMesh);
-    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: underMesh, shadow, uniforms: aboveMesh.material.uniforms, centre: new THREE.Vector3(), radius: 1, shown: false, still: false, drawn: { frame: null, flip: 0, roll: 0, x: 0, y: 0, z: 0 } };
+    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: underMesh, shadow, uniforms: aboveMesh.material.uniforms, centre: new THREE.Vector3(), radius: 1, bounds, shown: false, still: false, drawn: { frame: null, flip: 0, roll: 0, x: 0, y: 0, z: 0 } };
   }
 
   function hide(sprite) {
@@ -372,6 +376,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
     // Its bounds about its anchor (src/main.js redraws the mirror image there): to the picture's farthest corner.
     const [anchorX, anchorY] = frame.anchor;
     sprite.radius = Math.hypot(Math.max(anchorX, 1 - anchorX) * frame.metres[0], Math.max(anchorY, 1 - anchorY) * frame.metres[1]);
+    sprite.bounds.radius = sprite.radius;   // about its mesh's place, its anchor
     uniforms.uRect.value.fromArray(frame.uv);
     uniforms.uSize.value.fromArray(frame.metres);
     uniforms.uAnchor.value.fromArray(frame.anchor);
@@ -445,6 +450,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
     sprite.under.position.set(0, -0.1, -1.4);   // its lower half under the water
     sprite.under.visible = true;
     sprite.uniforms.uSize.value.set(0.4, 0.4);
+    sprite.bounds.radius = 0.6;   // in view, so its programs are built
     return { done() { if (!sprites.includes(sprite)) hide(sprite); } };
   }
 
