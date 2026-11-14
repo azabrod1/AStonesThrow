@@ -112,12 +112,12 @@ PHOTOS = [
          cut='sky', low=35, high=80, metres=1.9, anchor=(0.45, 0.5)),
     dict(frame='eagle-up', bird='eagle', file="Verreaux's Eagle. Black Eagle, Aquila verreauxii, at Walter Sisulu National Botanical Garden, Gauteng, South Africa (19583407276).jpg", author='Derek Keats', licence=CC_BY_2,
          cut='sky', low=35, high=80, metres=1.6, anchor=(0.45, 0.45)),
-    # Egyptian geese, a pair in flight over South Luangwa in the evening, each cut out of the one photo and brought to
-    # daylight: wings rising, wings down.
-    dict(frame='goose-mid', bird='goose', file='Egyptian goose, South Luangwa National Park (51871856029).jpg', author="I've Got It On Film!", licence=CC_BY_2,
-         cut='sky', low=35, high=80, crop=(650, 260, 1150, 600), gain=(0.8, 1.02, 1.65), metres=1.1, anchor=(0.57, 0.25)),
-    dict(frame='goose-down', bird='goose', file='Egyptian goose, South Luangwa National Park (51871856029).jpg', author="I've Got It On Film!", licence=CC_BY_2,
-         cut='sky', low=35, high=80, crop=(180, 250, 690, 420), gain=(0.8, 1.02, 1.65), metres=1.08, anchor=(0.57, 0.3)),
+    # Egyptian geese, a pair flying by side on in daylight (the wings-up frame's light), each cut out of the one photo:
+    # wings going down, and down.
+    dict(frame='goose-mid', bird='goose', file='Nilgans Pärchen.jpg', author='Frank N. Steiner', licence=CC_BY_4,
+         cut='sky', low=35, high=80, crop=(20, 240, 490, 520), flip=True, metres=1.17, anchor=(0.52, 0.72)),
+    dict(frame='goose-down', bird='goose', file='Nilgans Pärchen.jpg', author='Frank N. Steiner', licence=CC_BY_4,
+         cut='sky', low=35, high=80, crop=(480, 300, 980, 650), flip=True, metres=1.135, anchor=(0.55, 0.82)),
     # Two Egyptian geese standing on a shore, both side on and facing right (the Pool's lawn): one upright, on its legs;
     # one resting, its head tucked in, on both. Cut by GrabCut, as the heron is, at the soles of their feet.
     dict(frame='goose-stand', bird='goose', file='Egyptian goose (1).jpg', author='The Blue Rider', licence=CC_BY_4,

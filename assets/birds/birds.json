@@ -222,55 +222,55 @@
   "goose-mid": {
    "atlas": "goose",
    "uv": [
-    0.4765625,
     0.00390625,
-    0.4296875,
-    0.2607421875
+    0.2978515625,
+    0.45703125,
+    0.2265625
    ],
    "metres": [
-    1.1,
-    0.6675
+    1.17,
+    0.58
    ],
    "anchor": [
-    0.57,
-    0.25
+    0.48,
+    0.72
    ],
    "credit": {
-    "file": "Egyptian goose, South Luangwa National Park (51871856029).jpg",
-    "author": "I've Got It On Film!",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose%2C_South_Luangwa_National_Park_%2851871856029%29.jpg"
+    "file": "Nilgans Pärchen.jpg",
+    "author": "Frank N. Steiner",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Nilgans_P%C3%A4rchen.jpg"
    }
   },
   "goose-down": {
    "atlas": "goose",
    "uv": [
-    0.3203125,
-    0.2978515625,
-    0.421875,
-    0.1201171875
+    0.4765625,
+    0.00390625,
+    0.443359375,
+    0.28125
    ],
    "metres": [
-    1.08,
-    0.3075
+    1.135,
+    0.72
    ],
    "anchor": [
-    0.57,
-    0.3
+    0.45,
+    0.82
    ],
    "credit": {
-    "file": "Egyptian goose, South Luangwa National Park (51871856029).jpg",
-    "author": "I've Got It On Film!",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose%2C_South_Luangwa_National_Park_%2851871856029%29.jpg"
+    "file": "Nilgans Pärchen.jpg",
+    "author": "Frank N. Steiner",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Nilgans_P%C3%A4rchen.jpg"
    }
   },
   "goose-stand": {
    "atlas": "goose",
    "uv": [
-    0.00390625,
+    0.46484375,
     0.2978515625,
     0.1767578125,
     0.203125
@@ -294,7 +294,7 @@
   "goose-rest": {
    "atlas": "goose",
    "uv": [
-    0.1845703125,
+    0.6455078125,
     0.2978515625,
     0.1318359375,
     0.12890625
