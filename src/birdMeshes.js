@@ -35,9 +35,11 @@
 // kind's image are uniforms (uRects).
 //
 // Lit as the scene is (src/main.js `lighting`): the photograph's colours
-// taken as the bird's under a bright sky, times the sky's light (more on what
-// faces up) and the sun's on what faces it (a wing's sheet lit from either
-// side, the sun glowing a little through it), written as radiance. Three
+// taken as the bird's under a bright sky, times the sky's light and the
+// sun's on the side seen, as much as that side faces the sun (SUN_ON: a bird
+// between the eye and the sun is lit by the sky, its rim catching the sun; a
+// wing's sheet, lit from either side, glows a little when backlit), written
+// as radiance. Three
 // meshes a bird, one draw each: `above` in the main scene, `mirror` on the
 // mirror's layer (its distance in alpha, as src/boulders.js writes it),
 // which src/main.js draws again only while a bird in its view moves
@@ -80,8 +82,12 @@ const CAMBER = 0.04;             // a wing's arch, a share of its chord
 const BLEND = 0.05;              // m either side of a wing joint over which the skin blends
 const SUN_SHARE = 0.3;            // the sun's and the sky's light on the photograph, as the photo sprites took them
 const SKY_SHARE = 1.0;
-const SHADE_SIDE = 0.72;          // the body modelled: its side away from the sun, and toward it
-const SHADE_SUN = 1.12;
+// How much of SUN_SHARE falls on a side by how squarely it faces the sun (`facing`, the cosine): side on (0) as the
+// photographs were lit, `toward` at most, and turned away the sun's light gone but for `away` (the body: light
+// scattered round it) or, a wing's thin vane, `through` (backlit feathers glow, a share of the light let through);
+// `rise` is how much more it gets per unit of facing (`wingRise`, up to `wingToward`, a wing's). The sky's light on
+// the body: `sky` of it side on, `skySpread` more facing the sun (the sky is brightest about it); on a wing, `side`.
+const SUN_ON = { side: 0.92, rise: 0.9, toward: 1.25, away: 0.12, through: 0.35, wingRise: 0.4, wingToward: 1.15, sky: 0.92, skySpread: 0.08 };
 const MIRROR_NEARNESS_SCALE = 4; // src/boulders.js's
 const CREST_FIN = 0.0035;         // m: half a crest's thickness at its root (it thins to a third of that at its tip)
 // A kind's body's width against its depth along it (0 the tail's tip, 1 the bill's): flat at the tail, round at the
@@ -161,13 +167,16 @@ void main() {
   }
   // The wings' and the tail's outlines are their pictures' alpha; the body's is its shape (its picture is solid over it).
   if (vPart > 0.5 && vPart < 2.5 && picture.a < 0.5) discard;
-  // The photograph has its own light and shade (an underwing photographed from below is in shadow): lit as a whole
-  // by the sky and the sun as the scene is, and only modelled a little by which way it faces the sun.
+  // The photograph has its own light and shade (an underwing photographed from below is in shadow): lit by the sky
+  // and the sun as the scene is, the sun's share by which way the side seen faces it (SUN_ON), so a bird between the
+  // eye and the sun is lit by the sky, its rim and its wings' vanes catching the sun.
   float sunUp = smoothstep(-0.02, 0.2, uSunDirection.y);
-  vec3 light = uSkyAmbient * ${SKY_SHARE.toFixed(2)} + uSunIrradiance * ${SUN_SHARE.toFixed(2)} * sunUp;
   float facing = dot(normal, uSunDirection);
-  float shade = wing ? 0.92 + 0.12 * abs(facing) : mix(${SHADE_SIDE.toFixed(2)}, ${SHADE_SUN.toFixed(2)}, 0.5 + 0.5 * facing);
-  light *= mix(1.0, shade, sunUp);
+  float onSide = wing
+    ? (facing >= 0.0 ? min(${SUN_ON.side.toFixed(2)} + ${SUN_ON.wingRise.toFixed(2)} * facing, ${SUN_ON.wingToward.toFixed(2)}) : mix(${SUN_ON.side.toFixed(2)}, ${SUN_ON.through.toFixed(2)}, -facing))
+    : clamp(${SUN_ON.side.toFixed(2)} + ${SUN_ON.rise.toFixed(2)} * facing, ${SUN_ON.away.toFixed(2)}, ${SUN_ON.toward.toFixed(2)});
+  float skyOn = mix(1.0, wing ? ${SUN_ON.side.toFixed(2)} : ${SUN_ON.sky.toFixed(2)} + ${SUN_ON.skySpread.toFixed(2)} * facing, sunUp);
+  vec3 light = uSkyAmbient * ${SKY_SHARE.toFixed(2)} * skyOn + uSunIrradiance * ${SUN_SHARE.toFixed(2)} * sunUp * onSide;
   vec3 radiance = picture.rgb * light;
   #ifdef MIRROR
     gl_FragColor = vec4(radiance, 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
