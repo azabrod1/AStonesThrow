@@ -1731,7 +1731,11 @@ toward it, rather than standing as a sharp copy of the shore that reads as
 more land; near things the water looks up by their distance (in the splash's
 rectangle the splash, a floater, the thing in the loch; in the Pool its walls
 and deck) spread by it too, as they move, and the cached image's others (the
-boulders, the reeds, the koi's garden, the lagoon's palms) as the sky. Besides
+boulders, the reeds, the koi's garden, the lagoon's palms) as the sky. The
+photo's own land where it stands near (`nearLand` in `src/sky.js`: Lakeside's
+spit, 20 m off) spreads as a near thing's image does, by its distance, so a
+bank meets the water in a crisp mirror of itself rather than a flat band of
+its average. Besides
 its lookup it costs the image's mip levels at each draw of it. Where there is
 foam it replaces the surface, a diffuse white under the sun and the sky; the
 foam specks ride on it. The

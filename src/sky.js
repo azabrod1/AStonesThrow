@@ -257,6 +257,26 @@
 // the sphere sees the photo as ever. The cube's captures, from inside, take
 // it too; the mirror's eye, under the water, sees the sphere's reflection.
 //
+// Near land. The water mirrors the dome's land as it mirrors the sky, as if
+// it stood at infinity: spread down the water by the ripples' whole turn
+// (spreadMirror in src/shaders/scene.js). Where the photographer's own shore
+// stands near and rises over the horizon (Lakeside's: a spit of shale and
+// gums from straight ahead round to the left, some 20 m off), its image so
+// spread is a flat band of its average under the skyline, where real water
+// mirrors a bank that near almost sharply. A sky may list such land
+// (`nearLand`: each stretch's compass bearings, degrees from north toward
+// east, the land's ends NEAR_LAND_EDGE inside them, and its distance in
+// metres, read from the photo by where the land's foot stands below its
+// horizon from a tripod about 1.6 m up), and the water spreads what the dome
+// shows on those bearings as a near thing's image, by 1 − d/D of the sky's
+// (d the water's distance, D the land's), and not at all past it, where the
+// dome's horizon stands for the land's foot. Each hour turns the bearings
+// by its own file's `north` (sky-probe's: every hour of a place with near
+// land needs one), so a place lists its land once; nearLandUniforms holds
+// them turned into the scene, as the dome is (atan(z, x) of the bearing),
+// for the water's shader (src/waterSurface.js). The land is still drawn at
+// infinity: the water runs under it to the horizon, as everywhere.
+//
 // Memory. The panorama's pixels are dropped from the CPU once they are on the
 // GPU (nothing uploads it again), and the strip's ImageBitmaps are closed
 // once its textures are. The captures need no depth buffer: the
@@ -346,6 +366,10 @@ const SKIES = {
     reeds: true,
     anchor: 'afternoon',
     facing: 'afternoon',
+    // The photographer's spit (Near land): its shale and gums, their feet 2° to 5° under the horizon, from file
+    // azimuth 72° to 190° in the afternoon's file (north 263°); then, past dead trunks standing in the water, the gums
+    // of its far point to 207°, their feet 0.5° to 1° under.
+    nearLand: [{ compass: [166, 290], distance: 20 }, { compass: [284, 307], distance: 100 }],
     hours: {
       dawn: { file: 'lakeside_dawn', label: 'Dawn', clock: '06:27' },
       sunrise: { file: 'lakeside_sunrise', label: 'Sunrise', clock: '06:58' },
@@ -419,6 +443,22 @@ const SKIES = {
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
+/**
+ * A sky's near land (Near land) into `vectors` (nearLandUniforms), turned into the scene as the dome turns the hour's
+ * file (`north`, its rotation and mirror: DOME_FRAGMENT's lookup): each stretch's centre (atan(z, x), radians), half
+ * width (radians), distance (m) and edge (radians), and half width 0 past the list, or for a file with no north.
+ */
+function setNearLand(vectors, land = [], north, rotation, mirror) {
+  vectors.forEach((vector, index) => {
+    const stretch = north === undefined ? undefined : land[index];
+    if (!stretch) { vector.set(0, 0, 0, 0); return; }
+    const [from, to] = stretch.compass;
+    const width = (((to - from) % 360) + 360) % 360;
+    const lookup = THREE.MathUtils.degToRad(north + from + width / 2) - Math.PI;   // the dome's azimuth there: panoramaUv.x = lookup / 2π + 0.5
+    const turned = lookup - rotation;                                             // atan(z, x · mirror)
+    vector.set(mirror > 0 ? turned : Math.PI - turned, THREE.MathUtils.degToRad(width / 2), stretch.distance, THREE.MathUtils.degToRad(NEAR_LAND_EDGE));
+  });
+}
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
 export const skyShore = (name) => SKIES[name]?.shore ?? 'sand';
@@ -457,6 +497,8 @@ const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Lig
 const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 const HORIZON_EDGE = 0.5;      // degrees inside the strip's band over which it fades into the panorama
+const NEAR_LAND_SECTORS = 2;   // the most stretches of near land a sky lists (Near land; the water's uNearLand)
+const NEAR_LAND_EDGE = 3;      // degrees inside a stretch's bearings over which its land fades in
 const INSET_EDGE = 0.25;       // degrees inside an inset's window over which it fades into the strip
 export const INSET_COUNT = 2;  // windows a sky may have (`insets`): the dome's uniform arrays
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
@@ -758,6 +800,7 @@ function decodePanorama(buffer) {
 export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
   // The haze's colour and density, shared with every material that hazes (HAZE in src/shaders/scene.js).
   const hazeUniforms = { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } };
+  const nearLandUniforms = { uNearLand: { value: Array.from({ length: NEAR_LAND_SECTORS }, () => new THREE.Vector4()) } };   // Near land
   const sky = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.ShaderMaterial({
@@ -868,7 +911,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
   }
 
   const fog = new THREE.FogExp2(0x000000, 0);   // the haze for the main scene's built-in materials (above)
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, fog, landCube, landLevel, targets: [], panoramaBytes: 0, horizonBytes: 0, horizonReady: Promise.resolve(), assets: [], firstLoad: null, load, prefetch, setWeather, setFlash };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, nearLandUniforms, fog, landCube, landLevel, targets: [], panoramaBytes: 0, horizonBytes: 0, horizonReady: Promise.resolve(), assets: [], firstLoad: null, load, prefetch, setWeather, setFlash };
 
   // The horizon strip (Horizon): the hour's, fetched once its panorama is up; the last asked for wins.
   let horizonRequest = 0;
@@ -1079,6 +1122,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     domeUniforms.uPanorama.value = panorama;
     domeUniforms.uMirror.value = mirror;
     domeUniforms.uRotation.value = rotation;
+    setNearLand(nearLandUniforms.uNearLand.value, place.nearLand, measurement.north, rotation, mirror);
     const backdrop = skyBackdrop(skyName);
     domeUniforms.uBackdrop.value.set(...(backdrop?.centre ?? [0, 0, 0]), backdrop?.radius ?? 0);
     domeUniforms.uScale.value = scale;

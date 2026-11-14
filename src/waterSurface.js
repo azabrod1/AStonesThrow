@@ -193,7 +193,10 @@ const NO_VISITOR = () => ({
   uVisitorReach: { value: new THREE.Vector2() },   // its radius 0: none
 });
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, visitor = null, lean: leanAllowed = false } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, visitor = null, nearLand = null, lean: leanAllowed = false } = {}) {
+  // The sky photo's near land (src/sky.js Near land, the environment's own objects); none without a sky.
+  const nearLandUniforms = nearLand ?? { uNearLand: { value: [new THREE.Vector4()] } };
+  const NEAR_LAND_SECTORS = nearLandUniforms.uNearLand.value.length;
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -235,6 +238,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ...(rain ? rain.uniforms() : { uRainOn: { value: 0 } }),
     ...(dropRings ? dropRings.uniforms() : { uDropRingCount: { value: 0 } }),
     ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
+    ...nearLandUniforms,
     ...(ice ? ice.uniforms : NO_ICE()),
     ...(visitor ? visitor.uniforms : NO_VISITOR()),   // the thing in the loch's wake (src/lochVisitor.js); off without it
     uPool: { value: new THREE.Vector4() },   // the pool's corner (x, z), side and depth; depth 0 in a lake (setPool)
@@ -246,7 +250,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms: inner ? uniforms : { ...uniforms, uInner: { value: 0 } },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, DRY_DISCS },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, DRY_DISCS, NEAR_LAND_SECTORS },
   });
   const innerMaterial = material(true);
   const outerMaterial = material(false);
@@ -260,13 +264,13 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms: { ...uniforms, ...cavityUniforms },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_PUSH: MAX_CAVITIES, DRY_DISCS },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_PUSH: MAX_CAVITIES, DRY_DISCS, NEAR_LAND_SECTORS },
   });
   const cavityMaterial = new THREE.ShaderMaterial({
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms,
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1, DRY_DISCS },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1, DRY_DISCS, NEAR_LAND_SECTORS },
     side: THREE.DoubleSide,
   });
 
