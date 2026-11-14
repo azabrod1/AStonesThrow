@@ -1,12 +1,5 @@
 {
  "atlases": {
-  "heron": {
-   "file": "heron.webp",
-   "size": [
-    2048,
-    1024
-   ]
-  },
   "kelp": {
    "file": "kelp.webp",
    "size": [
@@ -35,13 +28,6 @@
     1024
    ]
   },
-  "fishEagle": {
-   "file": "fishEagle.webp",
-   "size": [
-    1024,
-    512
-   ]
-  },
   "swan": {
    "file": "swan.webp",
    "size": [
@@ -62,136 +48,9 @@
     1024,
     256
    ]
-  },
-  "herring": {
-   "file": "herring.webp",
-   "size": [
-    1024,
-    512
-   ]
   }
  },
  "frames": {
-  "heron-stand": {
-   "atlas": "heron",
-   "uv": [
-    0.79638671875,
-    0.00390625,
-    0.166015625,
-    0.3603515625
-   ],
-   "metres": [
-    0.8947,
-    0.9711
-   ],
-   "anchor": [
-    0.5548,
-    0.0
-   ],
-   "credit": {
-    "file": "Grey heron 2025 10 26 02.jpg",
-    "author": "Alexis Lours",
-    "licence": "CC BY 4.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Grey_heron_2025_10_26_02.jpg"
-   }
-  },
-  "heron-up": {
-   "atlas": "heron",
-   "uv": [
-    0.001953125,
-    0.00390625,
-    0.30615234375,
-    0.59375
-   ],
-   "metres": [
-    1.65,
-    1.6
-   ],
-   "anchor": [
-    0.55,
-    0.45
-   ],
-   "credit": {
-    "file": "Ardea cinerea EM1B6250 (33380183305).jpg",
-    "author": "Bengt Nyman",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Ardea_cinerea_EM1B6250_%2833380183305%29.jpg"
-   }
-  },
-  "heron-mid": {
-   "atlas": "heron",
-   "uv": [
-    0.001953125,
-    0.6015625,
-    0.2412109375,
-    0.28125
-   ],
-   "metres": [
-    1.3,
-    0.7579
-   ],
-   "anchor": [
-    0.5,
-    0.55
-   ],
-   "credit": {
-    "file": "Ardea cinerea EM1B6207 (32566003933).jpg",
-    "author": "Bengt Nyman",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Ardea_cinerea_EM1B6207_%2832566003933%29.jpg"
-   }
-  },
-  "heron-down": {
-   "atlas": "heron",
-   "uv": [
-    0.31005859375,
-    0.00390625,
-    0.2412109375,
-    0.435546875
-   ],
-   "metres": [
-    1.3,
-    1.1737
-   ],
-   "anchor": [
-    0.55,
-    0.7
-   ],
-   "credit": {
-    "file": "Ardea cinerea EM1B1255 (41960911374).jpg",
-    "author": "Bengt Nyman",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Ardea_cinerea_EM1B1255_%2841960911374%29.jpg"
-   }
-  },
-  "heron-land": {
-   "atlas": "heron",
-   "uv": [
-    0.55322265625,
-    0.00390625,
-    0.2412109375,
-    0.365234375
-   ],
-   "metres": [
-    1.3,
-    0.9842
-   ],
-   "anchor": [
-    0.45,
-    0.6
-   ],
-   "credit": {
-    "file": "Ardea cinerea EM1B6259 (32537479404).jpg",
-    "author": "Bengt Nyman",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Ardea_cinerea_EM1B6259_%2832537479404%29.jpg"
-   }
-  },
   "kelp-glide": {
    "atlas": "kelp",
    "uv": [
@@ -480,78 +339,6 @@
     "source": "https://commons.wikimedia.org/wiki/File:Nilgans_%2854254515720%29.jpg"
    }
   },
-  "fishEagle-glide": {
-   "atlas": "fishEagle",
-   "uv": [
-    0.00390625,
-    0.484375,
-    0.390625,
-    0.392578125
-   ],
-   "metres": [
-    2.0,
-    1.005
-   ],
-   "anchor": [
-    0.55,
-    0.45
-   ],
-   "credit": {
-    "file": "2021 sep kenia-62 (51676976311).jpg",
-    "author": "leopoldo de castro",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:2021_sep_kenia-62_%2851676976311%29.jpg"
-   }
-  },
-  "fishEagle-up": {
-   "atlas": "fishEagle",
-   "uv": [
-    0.37890625,
-    0.0078125,
-    0.29296875,
-    0.41796875
-   ],
-   "metres": [
-    1.5,
-    1.07
-   ],
-   "anchor": [
-    0.45,
-    0.45
-   ],
-   "credit": {
-    "file": "African fish eagle, Haliaeetus vocifer, at Chobe National Park, Botswana (32832146603).jpg",
-    "author": "Derek Keats",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:African_fish_eagle%2C_Haliaeetus_vocifer%2C_at_Chobe_National_Park%2C_Botswana_%2832832146603%29.jpg"
-   }
-  },
-  "fishEagle-front": {
-   "atlas": "fishEagle",
-   "uv": [
-    0.00390625,
-    0.0078125,
-    0.37109375,
-    0.46875
-   ],
-   "metres": [
-    1.9,
-    1.2
-   ],
-   "anchor": [
-    0.45,
-    0.55
-   ],
-   "credit": {
-    "file": "African fish eagle, Haliaeetus vocifer, at Lake Chivero, Harare, Zimbabwe (21908277406).jpg",
-    "author": "Derek Keats",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:African_fish_eagle%2C_Haliaeetus_vocifer%2C_at_Lake_Chivero%2C_Harare%2C_Zimbabwe_%2821908277406%29.jpg"
-   }
-  },
   "swan-down": {
    "atlas": "swan",
    "uv": [
@@ -742,78 +529,6 @@
     "licence": "Public domain",
     "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
     "source": "https://commons.wikimedia.org/wiki/File:Common_Raven_on_Seedskadee_NWR_%2823181911180%29.jpg"
-   }
-  },
-  "herring-glide": {
-   "atlas": "herring",
-   "uv": [
-    0.720703125,
-    0.0078125,
-    0.2578125,
-    0.279296875
-   ],
-   "metres": [
-    0.8,
-    0.4333
-   ],
-   "anchor": [
-    0.45,
-    0.6
-   ],
-   "credit": {
-    "file": "Herring Gull (44562549102).jpg",
-    "author": "Mike Prince",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Herring_Gull_%2844562549102%29.jpg"
-   }
-  },
-  "herring-up": {
-   "atlas": "herring",
-   "uv": [
-    0.458984375,
-    0.0078125,
-    0.2578125,
-    0.490234375
-   ],
-   "metres": [
-    0.8,
-    0.7606
-   ],
-   "anchor": [
-    0.5,
-    0.3
-   ],
-   "credit": {
-    "file": "Gråtrut European Herring Gull (13896263568).jpg",
-    "author": "Åsa Berndtsson",
-    "licence": "CC BY 2.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Gr%C3%A5trut_European_Herring_Gull_%2813896263568%29.jpg"
-   }
-  },
-  "herring-front": {
-   "atlas": "herring",
-   "uv": [
-    0.00390625,
-    0.0078125,
-    0.451171875,
-    0.51953125
-   ],
-   "metres": [
-    1.4,
-    0.8061
-   ],
-   "anchor": [
-    0.5,
-    0.5
-   ],
-   "credit": {
-    "file": "Larus argentatus Tuileries 20180324 t144644.jpg",
-    "author": "Marie-Lan Taÿ Pamart",
-    "licence": "CC BY 4.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Larus_argentatus_Tuileries_20180324_t144644.jpg"
    }
   }
  }

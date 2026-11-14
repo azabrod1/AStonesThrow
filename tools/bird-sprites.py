@@ -3,8 +3,10 @@
 # and packed side by side, one image a kind (assets/birds/<kind>.webp, so a
 # place fetches only its own birds'), with assets/birds/birds.json saying
 # which image each frame is in, where it lies, its size in metres, where it
-# is anchored and whose photograph it is. Run it again to rebuild them all
-# (never edit any):
+# is anchored and whose photograph it is. A kind drawn as a model
+# (assets/birds/models.json, by tools/bird-models.py; src/birdMeshes.js) is
+# not written: the page never fetches its pictures. Run it again to rebuild
+# them all (never edit any):
 #
 #   python3 tools/bird-sprites.py          (numpy, scipy, Pillow with WebP, opencv-python-headless)
 #
@@ -323,7 +325,8 @@ def bleed(atlas):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     atlases, entries = {}, {}
-    for kind in dict.fromkeys(spec['bird'] for spec in PHOTOS):
+    modelled = set(json.load(open(OUT / 'models.json')))
+    for kind in dict.fromkeys(spec['bird'] for spec in PHOTOS if spec['bird'] not in modelled):
         frames = []
         for spec in (spec for spec in PHOTOS if spec['bird'] == kind):
             picture, metres, anchor = frame_image(spec)

@@ -720,18 +720,20 @@ Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
 or public domain, and CC BY-SA for the herring gull's model and the jay's
 and cardinal's wings, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
-`assets/birds/birds.json`), cut out of its sky (or, for the standing birds,
+`assets/birds/birds.json`), cut out of its sky (or, for the standing geese,
 its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
-a kind (30 to 330 KB), fetched only when a place with that kind is shown,
+a kind (40 to 200 KB), fetched only when a place with that kind is shown,
 and drawn as a picture that faces the camera, as a game draws a far bird. A
 picture cannot turn, so the birds are flown to be seen side on. Each kind
 has a few frames (gliding; wings up, level and down by its wingbeat; head
 on; legs down; standing or resting). The water mirrors them; the mirror
-image is drawn again only around a bird that moves in its view. The heron
-is cut out whole, down to its toes: what of it is under the water is drawn
-in the under-water pass, bent at the surface as a reed is, so its legs go
-on down to its feet on the bed; on a frozen pond it stands on the ice. A
-bird on the ground or the ice has a soft shadow under it. Each bird costs 2 draw calls (its picture and its mirror image),
+image is drawn again only around a bird that moves in its view. What of a
+standing bird is under the water (the heron's legs) is drawn in the
+under-water pass, bent at the surface as a reed is, so its legs go on down
+to its feet on the bed. A bird on the ground or the ice has a soft shadow
+under it. A bird out of a pass's view (the screen's, the mirror's, the
+water's) is not drawn in it: each bird's mesh is bounded by a sphere moved
+with it. Each bird in view costs 2 draw calls (it and its mirror image),
 the heron 3 (and its legs under the water);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the
 standing birds' flush and return, the frame rate and the cost.
@@ -2042,16 +2044,16 @@ farther out, so it rises into the view rather than filling its corner.
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
 - `python3 tools/bird-sprites.py` writes the birds' pictures,
-  `assets/birds/<kind>.webp` and `birds.json`: 31 frames from 29 Wikimedia Commons
-  photographs of ten kinds (CC BY 2.0, 3.0 and 4.0, CC0 and public domain,
+  `assets/birds/<kind>.webp` and `birds.json`: 20 frames from 18 Wikimedia Commons
+  photographs of seven kinds (CC BY 2.0, 3.0 and 4.0, CC0 and public domain,
   cached in the gitignored `tools/.bird-photos/`), each cut out of its sky
   (by its distance from a smooth fit of the sky, or by blueness; `crop` to
-  take one bird of two) or, the standing heron and geese, out of their shore
-  (OpenCV's GrabCut from an outline and a few strokes; the heron's dark toes
-  keyed off its pale rock), scaled to the bird's
-  size in metres and packed into one image a kind (30 to 330 KB), fetched
-  only when a place with that kind is first shown. Needs numpy, scipy,
-  Pillow and opencv-python-headless.
+  take one bird of two) or, the standing geese, out of their shore
+  (OpenCV's GrabCut from an outline and a few strokes), scaled to the bird's
+  size in metres and packed into one image a kind (40 to 200 KB), fetched
+  only when a place with that kind is first shown. A kind with a model
+  (`models.json`) is skipped. Needs numpy, scipy, Pillow and
+  opencv-python-headless.
 - `node tools/bird-credits.mjs` writes the Birds section of `CREDITS.md`
   and `credits.html` from the credits `birds.json` and `models.json`
   record; rerun it after either bird tool (`--check`, in `npm test`, fails
