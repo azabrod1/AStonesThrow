@@ -36,8 +36,9 @@
 #     bird below the row (the heron's dark toes on a pale rock).
 # `crop` (a box in the 1280-pixel photo: left, top, right, bottom) cuts one
 # bird out of a photo of two before it is keyed; `gain` (per channel)
-# brings a photo taken in evening light to daylight, the kind's other frames'
-# light, matched by the mean colour of its body's mid-tones; `darks` (a knee,
+# brings a photo to the kind's other frames' light (the ibis's glide, under
+# a white sky), matched by the mean colour of its body's mid-tones (a photo
+# whose whites are clipped cannot be: take another); `darks` (a knee,
 # 0-255, and a power) deepens only what is darker than the knee, a photo
 # whose black head and wingtips the haze has washed grey. Each frame faces left
 # (`flip` turns one that faces right) and is scaled so its box is `metres`
