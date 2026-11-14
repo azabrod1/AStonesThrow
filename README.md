@@ -717,8 +717,8 @@ alone through its wingbeat (`--poses=standing`: a standing kind's ways; `--focus
 other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
-or public domain, and CC BY-SA for the herring gull's model and the jay's
-and cardinal's wings, so their
+or public domain, and CC BY-SA for the herring gull's model, the jay's
+and cardinal's wings and the ibis's glide, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky (or, for the standing geese,
 its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
@@ -726,7 +726,8 @@ a kind (40 to 200 KB), fetched only when a place with that kind is shown,
 and drawn as a picture that faces the camera, as a game draws a far bird. A
 picture cannot turn, so the birds are flown to be seen side on. Each kind
 has a few frames (gliding; wings up, level and down by its wingbeat; head
-on; legs down; standing or resting). The water mirrors them; the mirror
+on; legs down; standing or resting); in a flock every other bird glides
+with its wings held lower, so they are not copies. The water mirrors them; the mirror
 image is drawn again only around a bird that moves in its view. What of a
 standing bird is under the water (the heron's legs) is drawn in the
 under-water pass, bent at the surface as a reed is, so its legs go on down
@@ -2044,8 +2045,8 @@ farther out, so it rises into the view rather than filling its corner.
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
 - `python3 tools/bird-sprites.py` writes the birds' pictures,
-  `assets/birds/<kind>.webp` and `birds.json`: 20 frames from 18 Wikimedia Commons
-  photographs of seven kinds (CC BY 2.0, 3.0 and 4.0, CC0 and public domain,
+  `assets/birds/<kind>.webp` and `birds.json`: 21 frames from 19 Wikimedia Commons
+  photographs of seven kinds (CC BY 2.0, 3.0 and 4.0, CC BY-SA 2.0, CC0 and public domain,
   cached in the gitignored `tools/.bird-photos/`), each cut out of its sky
   (by its distance from a smooth fit of the sky, or by blueness; `crop` to
   take one bird of two) or, the standing geese, out of their shore
