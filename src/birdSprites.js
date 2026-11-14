@@ -9,6 +9,9 @@
 // side on (src/birds.js: across the eye's view) and only a few frames are
 // needed, each a role (frameFor), named `<kind>-<role>` in the frames:
 //   - glide: wings spread, still (a soaring bird's from below, as it is seen);
+//     in a flock, every other bird (by its place in it: src/birds.js `rank`)
+//     glides with its wings held lower, its down frame, so a flock gliding
+//     together is not one picture over and over;
 //   - up, mid, down: its wingbeat, chosen by the stroke's phase while it beats
 //     (a kind without mid or down glides there);
 //   - front: coming at the eye or going from it (head on, its bank turning
@@ -335,7 +338,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
   function show(population, camera, iceAt) {
     while (pool.length < population.birds.length) pool.push(makeSprite());
     for (const sprite of pool) hide(sprite);
-    sprites = population.birds.map((bird, index) => Object.assign(pool[index], { kind: bird.kind }));
+    sprites = population.birds.map((bird, index) => Object.assign(pool[index], { kind: bird.kind, rank: bird.rank ?? 0 }));
     for (const sprite of sprites) sprite.uniforms.uAtlas.value = textures.get(sprite.kind) ?? standIn;
     for (const kind of new Set(sprites.map((sprite) => sprite.kind))) load(kind);
     update(population, camera, iceAt);
@@ -365,7 +368,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
     const feet = ice ?? at.y;
     sprite.centre.set(at.x, standing ? feet : at.y, at.z);
     for (const mesh of [...sprite.meshes, sprite.under]) mesh.position.copy(sprite.centre);
-    const { role, flip, roll } = frameFor(sprite.kind, at, sprite.centre, camera);
+    const { role, flip, roll } = frameFor(sprite.kind, at, sprite.centre, camera, sprite.rank);
     const frame = catalogue.frames[`${sprite.kind}-${role}`];
     // Still when what is drawn is last frame's: its picture, which way it faces and turns, and where (mirrorBounds).
     const { drawn } = sprite;
@@ -406,7 +409,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
    * whether it is mirrored (−1: it goes to the right on the screen, and
    * every frame faces left) and how far it is turned in the picture's plane.
    */
-  function frameFor(kind, at, centre, camera) {
+  function frameFor(kind, at, centre, camera, rank = 0) {
     forward.set(Math.cos(at.heading), 0, -Math.sin(at.heading));   // src/birds.js: heading about up, 0 along +x
     cameraRight.setFromMatrixColumn(camera.matrixWorld, 0);
     toBird.copy(centre).sub(camera.position).normalize();
@@ -414,7 +417,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
     if (at.flying === false) return { role: roleOf(kind, at.posture ?? 'stand'), flip, roll: 0 };
     const along = forward.dot(toBird);
     if (Math.abs(along) > HEAD_ON && roleOf(kind, 'front')) return { role: 'front', flip: 1, roll: at.bank * Math.sign(along) };
-    let wanted = 'glide';
+    let wanted = rank % 2 === 1 && roleOf(kind, 'glide') === 'glide' && roleOf(kind, 'down') === 'down' ? 'down' : 'glide';   // every other bird of a flock: its wings held lower (the header)
     if (at.legs > LEGS_DOWN) wanted = 'land';
     else if (at.beat > BEATING) {
       const stroke = Math.sin(at.phase);

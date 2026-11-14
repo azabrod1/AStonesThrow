@@ -411,6 +411,30 @@
     "source": "https://commons.wikimedia.org/wiki/File:Mute_Swan_%288940930326%29.jpg"
    }
   },
+  "ibis-glide": {
+   "atlas": "ibis",
+   "uv": [
+    0.642578125,
+    0.0078125,
+    0.3154296875,
+    0.439453125
+   ],
+   "metres": [
+    0.95,
+    0.6618
+   ],
+   "anchor": [
+    0.5,
+    0.5
+   ],
+   "credit": {
+    "file": "Flying (16591530356).jpg",
+    "author": "Charles Lam",
+    "licence": "CC BY-SA 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Flying_%2816591530356%29.jpg"
+   }
+  },
   "ibis-down": {
    "atlas": "ibis",
    "uv": [

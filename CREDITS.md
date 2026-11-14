@@ -23,7 +23,7 @@ The stitched backdrops' skies are Poly Haven's Qwantani pure skies (below).
 
 ## Birds
 
-The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the herring gull's, blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
+The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the herring gull's, african sacred ibis's, blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
 
 | Shows | Photograph | Author | Licence |
 |---|---|---|---|
@@ -46,6 +46,7 @@ The birds are photographs of real ones from Wikimedia Commons, cut out of their 
 | Mute swan (Wooded lake) | [After eating the family was leaving Houten - panoramio](https://commons.wikimedia.org/wiki/File:After_eating_the_family_was_leaving_Houten_-_panoramio.jpg) | Henk Mons | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Mute swan (Wooded lake) | [Banking to the Left](https://commons.wikimedia.org/wiki/File:Banking_to_the_Left.jpg) | Charlie From Bristol | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Mute swan (Wooded lake) | [Mute Swan (8940930326)](https://commons.wikimedia.org/wiki/File:Mute_Swan_%288940930326%29.jpg) | Andy Morffew | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| African sacred ibis (Harbour) | [Flying (16591530356)](https://commons.wikimedia.org/wiki/File:Flying_%2816591530356%29.jpg) | Charles Lam | [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0/) |
 | African sacred ibis (Harbour) | [Threskiornis aethiopicus (29779757897)](https://commons.wikimedia.org/wiki/File:Threskiornis_aethiopicus_%2829779757897%29.jpg) | Donald Hobern | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | African sacred ibis (Harbour) | [Threskiornis aethiopicus (44667354662)](https://commons.wikimedia.org/wiki/File:Threskiornis_aethiopicus_%2844667354662%29.jpg) | Donald Hobern | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Egyptian goose (Mesas) | [Egyptian goose, South Luangwa National Park (51871856029)](https://commons.wikimedia.org/wiki/File:Egyptian_goose%2C_South_Luangwa_National_Park_%2851871856029%29.jpg) | I've Got It On Film! | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |

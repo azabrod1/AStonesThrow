@@ -37,7 +37,9 @@
 # `crop` (a box in the 1280-pixel photo: left, top, right, bottom) cuts one
 # bird out of a photo of two before it is keyed; `gain` (per channel)
 # brings a photo taken in evening light to daylight, the kind's other frames'
-# light, matched by the mean colour of its body's mid-tones. Each frame faces left
+# light, matched by the mean colour of its body's mid-tones; `darks` (a knee,
+# 0-255, and a power) deepens only what is darker than the knee, a photo
+# whose black head and wingtips the haze has washed grey. Each frame faces left
 # (`flip` turns one that faces right) and is scaled so its box is `metres`
 # wide (or tall, `measure: 'height'`), at its kind's PIXELS_PER_METRE: about
 # 400 pixels across a flying bird's wings, more for the heron, seen nearest.
@@ -61,6 +63,7 @@ PIXELS_PER_METRE = {'heron': 380, 'herring': 330, 'kelp': 300, 'frigate': 190, '
 CC_BY_2 = ('CC BY 2.0', 'https://creativecommons.org/licenses/by/2.0/')
 CC_BY_3 = ('CC BY 3.0', 'https://creativecommons.org/licenses/by/3.0/')
 CC_BY_4 = ('CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/')
+CC_BY_SA_2 = ('CC BY-SA 2.0', 'https://creativecommons.org/licenses/by-sa/2.0/')
 CC0 = ('CC0', 'https://creativecommons.org/publicdomain/zero/1.0/')
 PUBLIC_DOMAIN = ('Public domain', 'https://creativecommons.org/publicdomain/mark/1.0/')
 
@@ -144,7 +147,11 @@ PHOTOS = [
          cut='sky', low=20, high=48, fill=True, flip=True, metres=1.7, anchor=(0.45, 0.6)),
     dict(frame='swan-up', bird='swan', file='Mute Swan (8940930326).jpg', author='Andy Morffew', licence=CC_BY_2,
          cut='sky', low=20, high=48, fill=True, flip=True, metres=1.9, anchor=(0.45, 0.25)),
-    # African sacred ibises, one photographer's: wings down and up.
+    # African sacred ibises: wings down and up (one photographer's, in a warm light), and gliding, seen from a little
+    # below (one of Taiwan's feral birds, under a white sky: brought to the others' light), so a gliding flock is not
+    # one wingbeat's picture over and over.
+    dict(frame='ibis-glide', bird='ibis', file='Flying (16591530356).jpg', author='Charles Lam', licence=CC_BY_SA_2,
+         cut='sky', low=20, high=48, fill=True, flip=True, gain=(0.92, 0.78, 0.66), darks=(110, 2.5), metres=0.95, anchor=(0.5, 0.5)),
     dict(frame='ibis-down', bird='ibis', file='Threskiornis aethiopicus (29779757897).jpg', author='Donald Hobern', licence=CC_BY_2,
          cut='sky', low=20, high=48, fill=True, flip=True, metres=0.95, anchor=(0.45, 0.55)),
     dict(frame='ibis-up', bird='ibis', file='Threskiornis aethiopicus (44667354662).jpg', author='Donald Hobern', licence=CC_BY_2,
@@ -272,6 +279,9 @@ def frame_image(spec):
         alpha, colour = cut_from_sky(image, spec['low'], spec['high'], spec['cut'] == 'blue', spec.get('fill', False))
     if 'gain' in spec:
         colour = np.clip(colour * np.array(spec['gain']), 0, 255)
+    if 'darks' in spec:
+        knee, power = spec['darks']
+        colour = np.where(colour < knee, knee * (colour / knee) ** power, colour)
     ys, xs = np.nonzero(alpha > 0.02)
     left, top, right, bottom = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
     picture = Image.fromarray(np.dstack([colour, alpha * 255]).astype(np.uint8)).crop((left, top, right, bottom))
