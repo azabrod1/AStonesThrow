@@ -12,7 +12,8 @@
 //     over the garden now and then instead (BIRDS_WHEN_FROZEN).
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
 //     bank, as herons stand in every garden pond with fish in it (wade),
-//     somewhere along it of its own each time (laySpot). It
+//     somewhere along it of its own each time (laySpot), out where the
+//     garden's mounds leave its legs in view (CLEAR). It
 //     stands still for long spells, its head turning now and then, its neck
 //     drawn in or stretched up; it walks a few steps along the bank, turning
 //     about as it steps, its head first; it hunts (layHunt): peers down at a
@@ -82,11 +83,18 @@
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiFloorDepthAt } from './pondFloor.js';
+import { plantingFront } from './koiGarden.js';
 import { STEP_LENGTH } from './birdRig.js';
 
 const GRAVITY = 9.81;
 const NIGHT_SUN = 4;   // degrees: the true sun this far below the horizon (not the moon that lights a night), no bird is about
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where visits are laid out from
+// Where a wading bird may stand (clearOffshore): far enough out that its legs are seen, the Koi pond's drawn planting
+// (src/koiGarden.js plantingFront: where it begins behind the waterline at a ball's `height` and `span` m about it,
+// low mounds hanging up to 18 cm out over the water) at least `gap` m behind its feet. Fitted to rays from the eye to
+// its feet, shins and heels, either foot (each clear of the planting by 3 cm where this is); its spot drawn again up
+// to `tries` times until it is clear, its walks kept to where it stays so, looked at every `step` m along the bank.
+const CLEAR = { gap: 0.07, height: 0.1, span: 0.1, tries: 12, step: 0.02 };
 
 // How a kind flaps (flapBout): its time cut into `window`-second spells, and in `share` of them a bout of `least` to
 // `most` seconds of beating from the spell's start, eased in and out over `ease`; and it beats while it climbs,
@@ -219,9 +227,9 @@ const HERON = {
   //   come down) and the spell's number, so no two stays go alike and none repeats on a beat.
   spells: { length: [6, 20], rest: [1.5, 5] },
   // walk: in a `share` of its spells (none in the first: it has just come down) it walks `distance` m (drawn) along
-  //   the bank (its waterline, in the same depth: onBank), kept within `reach` of its own spot, at `speed` (a stalking
-  //   heron's slow walk: under 60 steps a minute, here about 50; adult grey herons fishing average 6 to 9 a minute,
-  //   mostly standing), setting off `start` s into the spell (drawn). It looks the way it will go (its head first),
+  //   the bank (its waterline, in the same depth: onBank), kept within `reach` of its own spot and to where the
+  //   planting leaves its legs in view (laySpot: CLEAR), at `speed` (a stalking heron's slow walk: under 60 steps a
+  //   minute, here about 50; adult grey herons fishing average 6 to 9 a minute, mostly standing), setting off `start` s into the spell (drawn). It looks the way it will go (its head first),
   //   turns to it stepping round (`turnSettle` s, `turnStep` m of stepping a radian turned), sets off once mostly
   //   turned (`setOff` s after it began to turn), its neck eased to `neck` as it goes (`carry` s to settle, and back
   //   once it stops) and, as it stops, turns to face the water a little (`facePond` rad from the bank), facing so
@@ -267,6 +275,11 @@ const smoother = (edge0, edge1, value) => { const share = THREE.MathUtils.clamp(
 /** A number in [0, 1) from a seed and an integer: the same every time it is asked. */
 const hashed = (seed, index, salt = 0) => seededRandom(seed, index, salt)();
 const between = ([least, most], share) => least + (most - least) * share;
+/** How far out from the Koi pond's waterline (m) a wading bird at `angle` about its centre stands clear of the planting (CLEAR). */
+function clearOffshore(angle) {
+  const radius = koiShoreRadius(angle);
+  return CLEAR.gap - plantingFront(KOI_SHORE.centre[0] + Math.cos(angle) * radius, CLEAR.height, KOI_SHORE.centre[1] + Math.sin(angle) * radius, CLEAR.span);
+}
 /** The angle from `from` to `to`, the short way round (rad). */
 const turnBetween = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
@@ -611,8 +624,15 @@ export class BirdPopulation {
   laySpot(bird, stay) {
     const { group } = bird;
     const random = seededRandom(bird.seed, stay, 53);
-    const angle = between(group.angles, random());
-    const offshore = between(group.offshore, random());
+    // Drawn again until its feet are clear of the planting (CLEAR), so its legs are seen; past `tries`, out as far as that needs.
+    let angle, offshore;
+    for (let attempt = 0; ; attempt++) {
+      angle = between(group.angles, random());
+      offshore = between(group.offshore, random());
+      const least = clearOffshore(angle);
+      if (offshore >= least) break;
+      if (attempt === CLEAR.tries) { offshore = least; break; }
+    }
     const radius = koiShoreRadius(angle) - offshore;
     const x = KOI_SHORE.centre[0] + Math.cos(angle) * radius;
     const z = KOI_SHORE.centre[1] + Math.sin(angle) * radius;
@@ -621,6 +641,13 @@ export class BirdPopulation {
     const inward = Math.atan2(-(KOI_SHORE.centre[1] - z), KOI_SHORE.centre[0] - x);
     // `angle`, `radius` and `offshore` lay its walks along the waterline (onBank), as far out from it as it came down.
     bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: across + Math.sign(turnBetween(across, inward)) * random() * group.toPond, angle, radius, offshore };
+    // How far it may walk either way (its kind's `reach`): as far as its feet stay clear of the planting at its depth.
+    const [least, most] = STANDING[bird.kind].walk?.reach ?? [0, 0];
+    const clearAt = (offset) => offshore >= clearOffshore(angle + offset / radius);
+    let back = 0, on = 0;
+    while (back - CLEAR.step >= least && clearAt(back - CLEAR.step)) back -= CLEAR.step;
+    while (on + CLEAR.step <= most && clearAt(on + CLEAR.step)) on += CLEAR.step;
+    bird.spot.reach = [back, on];
   }
 
   /** Every bird as it starts at `time`: one that stands, standing at its spot; a visitor's visits from now. */
@@ -1222,9 +1249,9 @@ export class BirdPopulation {
     plan.faced = plan.facing;
     // When it is next free to do something (s into the spell): just down, once its wings are folded.
     let free = index === 0 && stay > 0 ? ways.land.hold + ways.land.fold + 0.3 : 0.5;
-    if (index > 0 && random() < walk.share) {
+    const [least, most] = bird.spot.reach ?? walk.reach;   // where its legs stay in view (laySpot)
+    if (index > 0 && most - least >= walk.distance[0] && random() < walk.share) {
       const distance = between(walk.distance, random());
-      const [least, most] = walk.reach;
       let way = random() < (most - plan.from) / (most - least) ? 1 : -1;   // more likely toward the more room
       let to = THREE.MathUtils.clamp(plan.from + way * distance, least, most);
       if (Math.abs(to - plan.from) < walk.distance[0]) { way = -way; to = THREE.MathUtils.clamp(plan.from + way * distance, least, most); }

@@ -18,6 +18,8 @@
 // - the heron stands wading at its spot: its feet on the bed, in the water,
 //   a few centimetres to a few tens deep, inside the pond; its spot differs
 //   from seed to seed, along the far bank, inside an upright phone's frame;
+//   its legs are seen from the eye wherever it stands and walks, the
+//   garden's planting (src/koiGarden.js) never in front of them;
 // - its ways are smooth: it turns about unhurried, stepping round as it
 //   turns, holds still between its moves, and peers into the water a while
 //   (its bill pointed down) before it strikes, sometimes to one side; it keeps no rhythm (over twenty seeds the gaps
@@ -42,7 +44,8 @@
 import * as THREE from 'three';
 import { costClock, costSince } from './cost-clock.mjs';
 import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRD_KINDS } from '../src/birds.js';
-import { koiShoreDistance, koiFloorDepthAt } from '../src/pondFloor.js';
+import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt } from '../src/pondFloor.js';
+import { plantingFront } from '../src/koiGarden.js';
 import { buildStandingModel } from '../src/birdMeshes.js';
 import { poseStanding, FLIGHT, JOINT_COUNT } from '../src/birdRig.js';
 import { readFileSync } from 'node:fs';
@@ -58,6 +61,7 @@ const FRAME_TOP = THREE.MathUtils.degToRad(7.4);   // the home view's frame reac
 const DAY = { solarElevation: 37 };
 const NIGHT = { solarElevation: -28.3 };   // Lakeside Night: lit by a moon high up, the true sun well down
 const realRandom = Math.random;
+plantingFront(0, 0, 0, 0);   // the garden's catch table built first (its geometries' ids are three's Math.random), as the page has it by the time the heron stands
 Math.random = () => { throw new Error('the birds drew Math.random'); };
 
 /** A population of `place` run from 0 to `seconds`, stepped at the physics step and posed every `frame`: each frame's poses. */
@@ -230,6 +234,51 @@ const heronAt = (frame) => frame.birds[0];
   const least = Math.min(...bearings), most = Math.max(...bearings);
   check(most - least > 12 && least > -13.5 && most < 12, `it stands somewhere of its own each time: ${least.toFixed(1)}° to ${most.toFixed(1)}° from straight ahead over 20 seeds`);
   check(sideOn === 20, `side on to the eye (${sideOn} of 20)`);
+}
+
+// Its legs are seen (src/birds.js CLEAR): over 40 seeds and four stays each, at its spot and all along where it may walk,
+// the lines from the eye (the home view's) to its feet, shins and heels, either foot, run clear of the garden's planting
+// by 3 cm (src/koiGarden.js plantingFront: where the drawn garden begins behind the waterline, height by height).
+{
+  const [centreX, centreZ] = KOI_SHORE.centre;
+  const inPlanting = (x, y, z) => {
+    const toEyeX = EYE.x - x, toEyeY = EYE.y - y, toEyeZ = EYE.z - z, flat = Math.hypot(toEyeX, toEyeZ);
+    for (let along = 0; along <= 1.5; along += 0.01) {
+      const pointX = x + toEyeX / flat * along, pointY = y + toEyeY / flat * along, pointZ = z + toEyeZ / flat * along;
+      const angle = Math.atan2(pointZ - centreZ, pointX - centreX);
+      const inland = Math.hypot(pointX - centreX, pointZ - centreZ) - koiShoreRadius(angle);
+      if (inland < -0.4) return false;   // out over the water, toward the eye
+      if (inland > plantingFront(pointX, pointY, pointZ, 0.005) - 0.03) return true;
+    }
+    return false;
+  };
+  const legsSeen = (angle, offshore) => {
+    const radius = koiShoreRadius(angle) - offshore;
+    const at = (turned) => [centreX + Math.cos(turned) * radius, centreZ + Math.sin(turned) * radius];
+    const [x, z] = at(angle), [aheadX, aheadZ] = at(angle + 0.01 / radius);
+    const alongX = (aheadX - x) / 0.01, alongZ = (aheadZ - z) / 0.01;
+    return [-0.07, 0, 0.07].every((side) => [0.03, 0.12, 0.22].every((height) => !inPlanting(x + alongX * side, height, z + alongZ * side)));
+  };
+  let spots = 0, hidden = 0, walksHidden = 0, reach = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const birds = new BirdPopulation({ seed });
+    birds.setPlace('koi');
+    const heron = birds.birds[0];
+    for (let stay = 0; stay < 4; stay++) {
+      birds.laySpot(heron, stay);
+      const { spot } = heron;
+      spots++;
+      reach += spot.reach[1] - spot.reach[0];
+      if (!legsSeen(spot.angle, spot.offshore)) hidden++;
+      const steps = Math.round((spot.reach[1] - spot.reach[0]) / 0.01);
+      for (let step = 0; step <= steps; step++) {
+        const offset = spot.reach[0] + (spot.reach[1] - spot.reach[0]) * step / Math.max(steps, 1);
+        if (!legsSeen(spot.angle + offset / spot.radius, spot.offshore)) { walksHidden++; break; }
+      }
+    }
+  }
+  check(hidden === 0 && walksHidden === 0, `its legs are seen where it stands (hidden at ${hidden} of ${spots} spots) and walks (${walksHidden})`);
+  check(reach / spots > 0.3, `room to walk, ${(reach / spots).toFixed(2)} m on average`);
 }
 
 // The heron's ways, smooth (src/birds.js sprung): it turns about unhurried, stepping round as it turns (never spinning
