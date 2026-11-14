@@ -182,9 +182,11 @@ export function poseJoints(out, model, flight, pose) {
 //     or swung forward a step: pose.stride, pose.walking)
 //     and the hip and heel solved to reach it (two bones in the side's plane, the heel bending back as a heron's does);
 //     flying, swung back to trail straight behind (pose.legs 0), the toes curled;
+//   - the feet reaching ahead of the hips (pose.feetAhead, m), as a heron's do as it comes down;
 //   - the wings: folded away into the body (pose.fold 1: shrunk to the shoulder and swept back, inside the trunk's
 //     picture of its folded wings), spread and beating as FLIGHT's wingbeat (src/birdRig.js flapAngles) as they open;
-//     standing, held open to the sun (pose.spread, 0 to 1: SPREAD), as a heron suns or dries itself.
+//     standing, held open to the sun (pose.spread, 0 to 1: SPREAD), as a heron suns or dries itself; braking as it lands
+//     (pose.brake, BRAKE), beating high and forward.
 const NECK_PHOTO = 0.55;
 // The neck's directions in the side's plane (degrees from forward, up positive), at six places along it from the
 // breast up to the nape (NECK_POSE_AT, shares of the way), and the head's (nape to bill): drawn in (an S folded down
@@ -240,6 +242,12 @@ const lookAxis = new THREE.Vector3();
 // edge up, a little at the shoulder (`rootTilt`: more would lift the sheet's root above the back) and more from the
 // elbow out (`tilt`), so it hangs toward upright, its upper side out to the sun, its primaries toward the water.
 const SPREAD = { shoulder: degrees(-14), armSweep: degrees(18), elbowSweep: degrees(10), hand: degrees(-40), handSweep: degrees(28), rootTilt: degrees(8), tilt: degrees(28) };
+// A heron braking to land (pose.brake 1), as in every photograph of one coming down: its wings raised high and spread,
+// beating forward against its way; its stroke `depth` of its flight's, about `centre` (rad up from level, so its
+// downstroke never comes below its back), the arms brought `forward` (rad) and the hands cupped (`cup`, rad), and the
+// whole wing held against its body's pitch (`level` of it), so that pitched up near upright its wings are still
+// raised over it rather than swung back behind it.
+const BRAKE = { centre: degrees(28), depth: 0.55, forward: degrees(14), cup: degrees(-14), level: 0.85 };
 const FLIGHT_TRUNK = { depth: 0.28, width: 0.12 };   // shares the trunk's depth and width are slimmed by in flight
 const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
 const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
@@ -400,7 +408,7 @@ export function poseStanding(out, model, flight, pose) {
     // back of it (the stance foot sliding back under the body as it goes on, the other swung forward and lifted).
     const walking = pose.walking ?? 0;
     const cycle = (((pose.stride ?? 0) + index * 0.5) % 1 + 1) % 1;
-    let footX = leg.foot.x, footY = leg.foot.y + CROUCH_DROP * crouch;
+    let footX = leg.foot.x + (pose.feetAhead ?? 0), footY = leg.foot.y + CROUCH_DROP * crouch;
     if (walking > 0) {
       const half = STEP_LENGTH / 2;
       if (cycle < 0.5) footX += walking * (half - cycle * 2 * STEP_LENGTH);
@@ -431,12 +439,20 @@ export function poseStanding(out, model, flight, pose) {
   const fold = THREE.MathUtils.clamp(pose.fold ?? 0, 0, 1);
   const spread = THREE.MathUtils.clamp(pose.spread ?? 0, 0, 1.2);
   if (spread > 0) for (const name of ['shoulder', 'elbowSweep', 'hand', 'handSweep']) angles[name] += (SPREAD[name] - angles[name]) * spread;
+  // Braking as it lands (pose.brake, 0 to 1: BRAKE): its strokes shallower and held high, never below its back.
+  const brake = THREE.MathUtils.clamp(pose.brake ?? 0, 0, 1);
+  if (brake > 0) {
+    angles.shoulder += (BRAKE.centre + (angles.shoulder - flight.centre) * BRAKE.depth - angles.shoulder) * brake;
+    angles.hand += BRAKE.cup * brake;
+  }
   const { shoulder, elbow, wrist } = skeleton.wing;
   for (const side of [1, -1]) {
     const raise = side > 0 ? -1 : 1;
     const shoulderPoint = new THREE.Vector3(shoulder.x, shoulder.y, shoulder.z * side);
     about(shoulderMatrix, shoulderPoint, AXIS_X, raise * angles.shoulder * (1 - fold));
-    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Y, side * (degrees(70) * fold + SPREAD.armSweep * spread)));
+    // Braking, its wings held against its body's pitch (BRAKE.level of it): raised up, as the world's up, not its back's.
+    if (brake > 0) shoulderMatrix.premultiply(about(local, shoulderPoint, AXIS_Z, -(pose.pitch ?? 0) * BRAKE.level * brake));
+    shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Y, side * (degrees(70) * fold + SPREAD.armSweep * spread - BRAKE.forward * brake)));
     const shrink = 1 - 0.94 * fold;
     shoulderMatrix.multiply(local.makeTranslation(shoulderPoint.x, shoulderPoint.y, shoulderPoint.z).scale(scratch.vector.set(shrink, shrink, shrink)).multiply(world.makeTranslation(-shoulderPoint.x, -shoulderPoint.y, -shoulderPoint.z)));
     shoulderMatrix.multiply(about(local, shoulderPoint, AXIS_Z, angles.twist * 0.4 + SPREAD.rootTilt * spread));

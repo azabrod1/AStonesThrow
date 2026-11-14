@@ -327,7 +327,9 @@ const heronAt = (frame) => frame.birds[0];
   probe.laySpot(probe.birds[0], 1);
   const next = probe.birds[0].spot;   // where it comes down after its first flight (src/birds.js laySpot)
   check(Math.hypot(next.x - spot.x, next.z - spot.z) > 0.3, `somewhere new (${Math.hypot(next.x - spot.x, next.z - spot.z).toFixed(1)} m from where it stood)`);
-  check(landed && Math.hypot(landed.pose.x - next.x, landed.pose.z - next.z) < 1e-6 && Math.abs(landed.pose.heading - next.heading) < 0.05, 'it comes down where it was going, facing as it meant to');
+  // Its feet come down on its spot, reaching ahead of its hips (pose.feetAhead along its heading).
+  const feetX = landed ? landed.pose.x + Math.cos(landed.pose.heading) * landed.pose.feetAhead : NaN, feetZ = landed ? landed.pose.z - Math.sin(landed.pose.heading) * landed.pose.feetAhead : NaN;
+  check(landed && Math.hypot(feetX - next.x, feetZ - next.z) < 1e-3 && Math.abs(landed.pose.heading - next.heading) < 0.05, `it comes down where it was going, facing as it meant to (${(Math.hypot(feetX - next.x, feetZ - next.z) * 100).toFixed(2)} cm off)`);
   check(thrown.frames.at(-1).birds[0].mode === 'stand', 'and stands again');
   // Its landing (src/birds.js `land`): a flare, pitched well up; down, its wings up still, then folded; its pitch and
   // neck carried over from the flare, never jumping.

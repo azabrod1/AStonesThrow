@@ -199,18 +199,20 @@ const ROLL_EASE = 0.5;
 //     last `quiet` s.
 //   land: it comes back in over `glide` s from `from` m out and `high` m up, still beating for its first `flapping` s,
 //     then gliding on bowed wings, its legs coming down and forward, and flaring over the last `flare` s as herons do
-//     in every photograph of one landing: its body pitched up to `flarePitch` rad (its feet swung forward under it,
-//     its neck out of its tuck in a loose S, its head kept level), braking with deep beats (`braking` a second,
-//     timed so its wings are up as its feet touch), its body coming down to `touchPitch` as its feet reach for the
-//     bed. Down, its legs give (`absorb`, a crouch, springing back), its body settles forward over its feet
-//     (`settle` s, a little past level and back), its neck eases into its standing ways (`neckSettle`), and it
-//     holds its wings up a moment (`hold` s) before folding them over `fold` s.
+//     in every photograph of one landing: its body pitched up toward upright (`flarePitch` rad), its legs swung
+//     forward, its neck out of its tuck and reaching toward where it will land (`reachOut` of a strike's line), its
+//     head tipped down to watch the spot (`lookDown` rad), braking with its wings raised high and beating forward
+//     (src/birdRig.js pose.brake; `braking` beats a second, timed so its wings are up as its feet touch); its feet
+//     reach for the bed `ahead` m before its hips, its body coming down to `touchPitch` and its neck drawn back as
+//     they touch. Down, its body is carried on over its feet (`carry` s), its legs give (`absorb`, a crouch, springing
+//     back), its body settles forward (`settle` s, a little past level and back), its neck eases into its standing
+//     ways (`neckSettle`), and it holds its wings up a moment (`hold` s) before folding them over `fold` s.
 const HERON = {
   idle: { lookEvery: 4.6, jitter: 3.4, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
   alert: { alert: 9, hold: 4.5, settle: 0.6, most: 2.3, refocus: 0.5 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 5.5, far: 38, climb: 13, hard: 1.8, legsUp: 1.0, neckIn: 1.1, quicker: 0.35, quickFor: 1.4, cruise: 0.9 },
   away: { absent: [25, 55], retry: 12, quiet: 8 },
-  land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.6, flarePitch: 0.8, touchPitch: 0.3, braking: 1.9, absorb: 0.45, settle: 0.7, neckSettle: 1.2, hold: 0.3, fold: 1.0 },
+  land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.6, flarePitch: 1.05, touchPitch: 0.45, braking: 1.9, reachOut: 0.35, lookDown: 0.35, ahead: 0.16, carry: 0.5, absorb: 0.45, settle: 0.7, neckSettle: 1.2, hold: 0.45, fold: 1.0 },
   tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
   // spells: its standing cut into spells from when it began to stand, each `length` s long (drawn), or longer if what
   //   it does in it needs more; each spell's plan (spellPlan) is drawn from its seed, its stay (how many times it has
@@ -833,7 +835,7 @@ export class BirdPopulation {
   land(bird, time) {
     const { spot } = bird;
     const side = hashed(bird.groupSeed, Math.floor(time * 10), 5) < 0.5 ? 1 : -1;
-    const { from, high } = STANDING[bird.kind].land;
+    const { from, high, ahead } = STANDING[bird.kind].land;
     // Out behind it along the bank, a little off to one side (so it crosses the eye's view, side on); in along its
     // heading for the last few metres, coming down.
     const headingX = Math.cos(spot.heading), headingZ = -Math.sin(spot.heading);
@@ -842,7 +844,8 @@ export class BirdPopulation {
     const stand = BIRD_KINDS[bird.kind].stand;
     const start = [spot.x + (outX / length) * from, spot.y + stand + high, spot.z + (outZ / length) * from - from * 0.15];
     bird.flight = {
-      points: [start, [spot.x + (outX / length) * from * 0.6, spot.y + stand + high * 0.7, spot.z + (outZ / length) * from * 0.6 - from * 0.1], [spot.x - headingX * 3.2, spot.y + stand + 0.7, spot.z - headingZ * 3.2], [spot.x, spot.y + stand, spot.z]],
+      points: [start, [spot.x + (outX / length) * from * 0.6, spot.y + stand + high * 0.7, spot.z + (outZ / length) * from * 0.6 - from * 0.1], [spot.x - headingX * 3.2, spot.y + stand + 0.7, spot.z - headingZ * 3.2],
+        [spot.x - headingX * ahead, spot.y + stand, spot.z - headingZ * ahead]],   // its hips; its feet reach on to the spot
     };
     bird.mode = 'land';
     bird.since = time;
@@ -1138,7 +1141,7 @@ export class BirdPopulation {
       return;
     }
     if (bird.mode === 'land') {
-      const { glide, flare, flarePitch, touchPitch, braking } = ways.land;
+      const { glide, flare, flarePitch, touchPitch, braking, reachOut, lookDown, ahead } = ways.land;
       const share = Math.min(since / glide, 1);
       // Slowing all the way in.
       const along = 1 - (1 - share) ** 1.5;
@@ -1153,14 +1156,20 @@ export class BirdPopulation {
       const pitchUp = flarePitch * (1 - smoother(0.35, flare, toLand)) - (flarePitch - touchPitch) * (1 - smoother(0, 0.35, toLand));
       pose.pitch = pose.pitch * (1 - flaring) + pitchUp;   // its path's descent no longer tips it once it flares
       pose.legs = 1 - smoother(flare * 0.6, flare + 1.2, toLand);
+      // Its legs swung forward with its body as it pitches up, but held down under it most of the way (its feet
+      // reaching for the bed ahead of it, not out level), and all the way down to the bed as it comes in.
+      pose.plant = 0.85 * flaring + 0.15 * (1 - smoother(0, 0.4, toLand));
+      pose.feetAhead = ahead;
+      pose.brake = flaring;
       pose.neck = 0.35 * flaring;
       pose.tuck = 1 - flaring;
       pose.slim = 1 - flaring;
-      pose.bill = -0.6 * pitchUp;   // its head kept level as its body pitches up
+      pose.strike = reachOut * flaring * smoother(0.1, 0.55, toLand);   // reaching toward the spot, drawn back as it touches
+      pose.bill = -0.6 * pitchUp - lookDown * flaring;   // its head tipped down to the spot, whatever its body's pitch
       pose.fold = 0;
       pose.look = 0;
       pose.walking = 0;
-      pose.strike = pose.aim = 0;
+      pose.aim = pose.prey = 0;
       return;
     }
     // Away: unseen.
@@ -1375,9 +1384,13 @@ export class BirdPopulation {
     // from the flare's into its ways.
     const land = ways.land, landed = time - bird.foldSince;
     pose.fold = smoother(land.hold, land.hold + land.fold, landed);
-    pose.beat = 1 - pose.fold;
+    pose.beat = pose.brake = 1 - pose.fold;   // held as its last braking beat left them (src/birdRig.js BRAKE)
     pose.phase = 0;
-    let landingPitch = 0, absorbing = 0;
+    // Its body carried on over its feet, which stay where they came down `ahead` of its hips.
+    const behind = landed < settledAfter(land.carry) ? land.ahead * (1 - springStep(landed, land.carry)) : 0;
+    pose.x -= Math.cos(pose.heading) * behind; pose.z += Math.sin(pose.heading) * behind;
+    pose.feetAhead = behind;
+    let landingPitch = 0, absorbing = 0, lookingDown = 0;
     const touching = landed < settledAfter(land.neckSettle);
     // Stepping: its stride's phase from how far it has gone and turned (two steps a stride), so its feet never slide.
     pose.walking = place.walking;
@@ -1389,6 +1402,7 @@ export class BirdPopulation {
       landingPitch = land.touchPitch * (1 - springStep(landed, land.settle, 0.6));
       absorbing = sprung(landed, 0, [[0, land.absorb, 0.15], [0.15, 0, 0.8]]);
       neck = 0.35 + (neck - 0.35) * springStep(landed, land.neckSettle);   // the flare's (poseStanding's `land`)
+      lookingDown = land.lookDown * (1 - springStep(landed, land.neckSettle));
     }
     // Stepping, it looks where it goes (its head turned ahead of its body), its neck at its ease.
     look = look * (1 - place.striding) + 1.2 * Math.tanh(turnBetween(place.heading, place.lead) / 1.2);   // as far round as it can look, softly
@@ -1455,7 +1469,7 @@ export class BirdPopulation {
     pose.strike = thrown;
     pose.floor = Math.max(place.y + ways.strike.clear, -ways.strike.depth);   // as deep as its stab goes (src/birdRig.js)
     pose.aim = aim;
-    pose.bill = bill - 0.6 * landingPitch;   // its head kept level as its body settles (the flare's)
+    pose.bill = bill - 0.6 * landingPitch - lookingDown;   // its head kept level as its body settles, still looking down a moment (the flare's)
     pose.crouch = crouch * (1 - alerted) + absorbing;
     pose.pitch = ways.tilt + landingPitch - 0.3 * thrown - (spreading ? spreading.lean * THREE.MathUtils.clamp(spread, 0, 1) : 0);   // tipped forward into its strike, and a little as it holds its wings open
     pose.look = look;
