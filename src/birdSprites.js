@@ -27,7 +27,8 @@
 // Lit as the scene is: the photograph's colours are its own light's, so its
 // pixels are taken as the bird's colour under a bright sky, and lit by the
 // sky's sun and ambient light (src/main.js `lighting`: dim at dusk, grey
-// under cloud), written as radiance like the rest of the scene. Its edge is
+// under cloud), written as radiance like the rest of the scene, and faded
+// into the weather's haze as it is (BIRD_HAZE, src/birdMeshes.js). Its edge is
 // blended into what lies behind (the image's colour runs on under its clear
 // pixels, so its edge never darkens). Two meshes a bird, each one quad and
 // one draw call: `above` in the main scene, and `mirror` on the mirror's
@@ -64,7 +65,7 @@
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
-import { boundedGeometry } from './birdMeshes.js';
+import { boundedGeometry, BIRD_HAZE } from './birdMeshes.js';
 
 const FOLDER = new URL('../assets/birds/', import.meta.url);
 const FRAMES_URL = new URL('birds.json', FOLDER);
@@ -150,6 +151,7 @@ uniform vec3 uSkyAmbient;
 uniform vec3 uSunDirection;
 uniform vec3 uExtinction;   // the water's, per metre (lighting.extinction)
 uniform vec3 uWaterColor;   // the water's own radiance, for an eye under it
+${BIRD_HAZE}
 varying vec2 vUv;
 varying vec3 vViewPosition;
 varying vec3 vWorld;
@@ -174,14 +176,14 @@ void main() {
   vec3 radiance = picture.rgb * light;
   #ifdef MIRROR
     if (picture.a < 0.5) discard;
-    gl_FragColor = vec4(radiance, 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
+    gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
   #elif defined(BELOW)
     if (picture.a < 0.02) discard;
     if (cameraPosition.y < 0.0) radiance = mix(uWaterColor, radiance, exp(-uExtinction * length(cameraPosition - vWorld)));
     gl_FragColor = vec4(radiance, picture.a);
   #else
     if (picture.a < 0.02) discard;
-    gl_FragColor = vec4(radiance, picture.a);
+    gl_FragColor = vec4(birdHazed(radiance, vWorld), picture.a);
   #endif
 }
 `;
@@ -220,7 +222,7 @@ const cameraRight = new THREE.Vector3();
  * A kind that `modelled` says is drawn as a model (src/birdMeshes.js) is
  * left to it: never fetched or shown here.
  */
-export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, modelled = () => false }) {
+export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {}, modelled = () => false }) {
   const above = new THREE.Group(), below = new THREE.Group(), mirror = new THREE.Group();
   const standIn = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
   standIn.needsUpdate = true;
@@ -232,6 +234,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {}, mod
     uSunDirection: { value: lighting.sunDirection },
     uExtinction: { value: lighting.extinction },
     uWaterColor: { value: lighting.waterColor },
+    ...haze,   // the sky's haze uniforms themselves (BIRD_HAZE in src/birdMeshes.js)
   };
   const shadowMaterial = new THREE.ShaderMaterial({
     uniforms: { uSunDirection: shared.uSunDirection },

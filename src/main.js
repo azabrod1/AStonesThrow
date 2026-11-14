@@ -1169,8 +1169,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // or a still heron would have no reflection until it stirred.
   // A kind with a model (src/birdMeshes.js) is drawn as one; the rest as pictures (src/birdSprites.js), till each has one.
   const birdViews = [
-    createBirdModels({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } }),
-    createBirdView({ lighting, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; }, modelled: (kind) => MODELLED_KINDS.has(kind) }),
+    createBirdModels({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } }),
+    createBirdView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; }, modelled: (kind) => MODELLED_KINDS.has(kind) }),
   ];
   const birdView = {
     above: new THREE.Group().add(...birdViews.map((view) => view.above)),

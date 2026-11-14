@@ -39,7 +39,8 @@
 // sun's on the side seen, as much as that side faces the sun (SUN_ON: a bird
 // between the eye and the sun is lit by the sky, its rim catching the sun; a
 // wing's sheet, lit from either side, glows a little when backlit), written
-// as radiance. Three
+// as radiance, and faded into the weather's haze as the scene is (BIRD_HAZE:
+// a gull 50 m off in a fog all but gone). Three
 // meshes a bird, one draw each: `above` in the main scene, `mirror` on the
 // mirror's layer (its distance in alpha, as src/boulders.js writes it),
 // which src/main.js draws again only while a bird in its view moves
@@ -54,11 +55,30 @@
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
 import { JOINTS, JOINT_COUNT, NECK_SHARES, FLIGHT, poseJoints, poseStanding } from './birdRig.js';
-import { SEEN_THROUGH_WATER } from './shaders/scene.js';
+import { SEEN_THROUGH_WATER, HAZE } from './shaders/scene.js';
 
 const FOLDER = new URL('../assets/birds/', import.meta.url);
 /** The kinds drawn as models (each with its flight, src/birdRig.js, and its model in models.json); src/main.js draws the rest as pictures. */
 export const MODELLED_KINDS = new Set(Object.keys(FLIGHT));
+
+/**
+ * The weather's haze on a bird (src/sky.js setWeather; HAZE in src/shaders/scene.js), for both views' `above` and
+ * `mirror` (the drawings and the models): faded toward the haze by the light's way from it to the eye. In the
+ * mirror that way is only its leg down to the water (the share of the mirrored eye's ray above the water, y = 0,
+ * which the mirror's centimetres off it under ice or a gale hardly change): the water hazes what it shows by its own
+ * distance (withHaze in the water's shader), the rest of the way. `below` needs none: the water hazes it too.
+ * Its uniforms are the sky's own (environment.hazeUniforms), shared, so a change of weather reaches every bird.
+ */
+export const BIRD_HAZE = /* glsl */ `
+${HAZE}
+vec3 birdHazed(vec3 radiance, vec3 world) {
+  float distance = length(world - cameraPosition);
+  #ifdef MIRROR
+    distance *= clamp(world.y / max(world.y - cameraPosition.y, 1e-4), 0.0, 1.0);
+  #endif
+  return withHaze(radiance, distance);
+}
+`;
 
 /**
  * A geometry drawing `source`'s vertices (its attributes and index, so one GPU buffer each, however many share them)
@@ -140,6 +160,7 @@ uniform vec3 uSkyAmbient;
 uniform vec3 uSunDirection;
 uniform vec3 uExtinction;   // the water's, per metre (lighting.extinction)
 uniform vec3 uWaterColor;   // the water's own radiance, for an eye under it
+${BIRD_HAZE}
 varying vec2 vUv;
 varying float vPart;
 varying vec3 vNormal;
@@ -179,7 +200,7 @@ void main() {
   vec3 light = uSkyAmbient * ${SKY_SHARE.toFixed(2)} * skyOn + uSunIrradiance * ${SUN_SHARE.toFixed(2)} * sunUp * onSide;
   vec3 radiance = picture.rgb * light;
   #ifdef MIRROR
-    gl_FragColor = vec4(radiance, 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
+    gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
   #elif defined(BELOW)
     if (vWorld.y > 0.0) discard;
     radiance *= exp(-uExtinction * (-vWorld.y) * 1.5);   // the light down to it, and some of its way back up (as src/reeds.js)
@@ -187,7 +208,7 @@ void main() {
     gl_FragColor = vec4(radiance, 1.0);
   #else
     if (vWorld.y < 0.0) discard;
-    gl_FragColor = vec4(radiance, 1.0);
+    gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0);
   #endif
 }
 `;
@@ -634,7 +655,7 @@ export function buildStandingModel(entry) {
  * mirrorBounds tells src/main.js where a moving bird's mirror image is;
  * onLoaded is called when a kind's image has come.
  */
-export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
+export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
   const above = new THREE.Group(), below = new THREE.Group(), mirror = new THREE.Group();
   const standIn = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
   standIn.needsUpdate = true;
@@ -646,6 +667,7 @@ export function createBirdView({ lighting, mirrorLayer, onLoaded = () => {} }) {
     uSunDirection: { value: lighting.sunDirection },
     uExtinction: { value: lighting.extinction },
     uWaterColor: { value: lighting.waterColor },
+    ...haze,   // the sky's haze uniforms themselves (BIRD_HAZE)
   };
   const pool = [];
   let sprites = [];
