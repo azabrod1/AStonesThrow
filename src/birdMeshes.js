@@ -6,7 +6,8 @@
 // and glides as a bird does, seen from any side. The kinds with a model are
 // MODELLED_KINDS (each with its flight, src/birdRig.js FLIGHT); src/main.js
 // draws the rest as pictures (src/birdSprites.js) until each has one. A
-// model is drawn in flight only, for now.
+// standing kind (the heron: buildStandingModel) has legs and a jointed neck
+// too, and is drawn standing as well as flying.
 //
 // A kind's model (buildModel), metres, its bill along +x, up +y, its right
 // wing out along +z:
@@ -40,9 +41,11 @@
 // meshes a bird, one draw each: `above` in the main scene, `mirror` on the
 // mirror's layer (its distance in alpha, as src/boulders.js writes it),
 // which src/main.js draws again only while a bird in its view moves
-// (mirrorBounds), and `below`, kept empty for a flying bird.
-// Every bird of a kind shares its geometry and its image; each bird its own
-// joints (uJoints). Every kind is the same three programs (above, mirror,
+// (mirrorBounds), and `below`, what of a bird is under the water (a wading
+// heron's legs, its bill as it strikes, its feet as it rises), shown only
+// near it. Every bird of a kind shares its geometry's buffers and its
+// image; each bird has its own joints (uJoints) and its own bounds, so a pass
+// whose view it is out of does not draw it (boundedGeometry). Every kind is the same three programs (above, mirror,
 // below), built under the veil (warmUp) with a texel standing in for the
 // image. A kind's image is fetched the first time a place with that kind is
 // shown; a failed fetch leaves that kind unshown.
