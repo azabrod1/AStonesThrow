@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { Tropics, PALMS, LODS, MOTUS, NEAR_SHADOW, SHADOW, palmCullMargin, palmGeometry } from '../src/tropics.js';
 import { LAND_VERTEX, PALM_FOOT } from '../src/shaders/scene.js';
 import { lagoonLandGeometry, setShoreKind } from '../src/pondFloor.js';
+import { frustumOfRegion } from '../src/mirrorRegion.js';
 
 setShoreKind('lagoon');
 const land = lagoonLandGeometry();
@@ -236,7 +237,7 @@ console.log(`ok: quality changes reuse geometry, placements and masks; coarse sc
   const drawn = () => tropics.group.children.filter((mesh) => mesh.visible && mesh.count > 0 && mesh.layers.isEnabled(2));
   const triangles = (meshes) => meshes.reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 3, 0);
   const whole = drawn(), wholeTriangles = triangles(whole);
-  tropics.keepToRegion(mirror, region, width, height);
+  tropics.keepToRegion(frustumOfRegion(mirror, region, width, height));
   const kept = drawn();
   // Whether a sphere is seen through the region: a ray from the mirror camera through one of the region's pixels (every
   // fourth each way, and its edges) meets it.

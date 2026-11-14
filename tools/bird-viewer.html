@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<!-- One kind's bird model (src/birdMeshes.js) alone, posed through its wingbeat and seen from several sides, for
+     tools/bird-look.mjs to shoot: ?kind=fishEagle&beat=1. Rows: its wingbeat's phases (or, with &poses=standing, a
+     standing kind's ways: standing as photographed, neck drawn in, stretched up, striking, mid-step, crouched to go,
+     flying, opening its wings to the sun and holding them open, peering down ahead and to one side, striking to one side, its bill tossed up); columns: side on, from below, from in front and below, from above (standing: side on, from the front,
+     from three-quarters behind, from above). &sides=x,y,z;x,y,z;... chooses the columns' eye directions instead (the
+     eye offset from the bird, +z its left side, +x ahead of it), and &fold=0..1 folds its wings (a bound). &focus=x,y,z
+     aims the eye there instead of a metre up (a close-up, with &distance), and &look=rad turns a standing kind's head. -->
+<html><head><meta charset="utf-8">
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js" } }</script>
+<style>html, body { margin: 0; background: #7aaad6; }</style></head>
+<body><canvas id="view" width="1280" height="960"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { createBirdView } from '../src/birdMeshes.js';
+const parameters = new URLSearchParams(location.search);
+const kind = parameters.get('kind') ?? 'fishEagle';
+const beat = Number(parameters.get('beat') ?? 1);
+const STANDING_POSES = [
+  {}, { neck: 0 }, { neck: 1 }, { strike: 1, neck: 0.3 }, { walking: 1, stride: 0.75 }, { crouch: 1, neck: 0.2 },
+  { flying: true, legs: 0, fold: 0, neck: 0, beat: 1, y: 1.3 }, { flying: true, legs: 0, fold: 0, neck: 0, beat: 1, phase: Math.PI, y: 1.3 },
+  { fold: 0.5, spread: 0.5, neck: 0.4, pitch: -0.06 }, { fold: 0, spread: 1, neck: 0.3, pitch: -0.12 },   // opening its wings and holding them open (src/birds.js HERON.spread)
+  { neck: 0.2, bill: -0.75, strike: 0.12, crouch: 0.3, pitch: -0.04 }, { neck: 0.2, bill: -0.75, strike: 0.12, crouch: 0.3, pitch: -0.04, aim: 0.45 },   // peering down at a fish, ahead and to one side
+  { strike: 1, neck: 0.3, crouch: 0.35, pitch: -0.3, aim: 0.45 }, { neck: 0.9, bill: 0.55 },   // striking to one side; its bill up, tossing its catch
+];
+const chosenSides = parameters.get('sides')?.split(';').map((side) => side.split(',').map(Number));
+const rows = parameters.get('poses') === 'standing' ? STANDING_POSES.length : Number(parameters.get('rows') ?? 4), columns = chosenSides?.length ?? 4;
+const canvas = document.getElementById('view');
+const height = standingPosesWanted() ? STANDING_POSES.length * 300 : 960;
+function standingPosesWanted() { return new URLSearchParams(location.search).get('poses') === 'standing'; }
+canvas.height = height;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(1280, height, false);
+renderer.setClearColor(0x7aaad6);
+renderer.autoClear = false;
+const lighting = { sunIrradiance: new THREE.Vector3(3, 2.9, 2.7), skyAmbient: new THREE.Vector3(0.75, 0.82, 0.95), sunDirection: new THREE.Vector3(0.4, 0.8, 0.3).normalize(), extinction: new THREE.Vector3(0.4, 0.2, 0.15), waterColor: new THREE.Vector3(0.02, 0.05, 0.06) };
+const standingPoses = parameters.get('poses') === 'standing';
+const scene = new THREE.Scene();
+const view = createBirdView({ lighting, mirrorLayer: 5 });
+scene.add(view.above);
+const fold = Number(parameters.get('fold') ?? 0);
+const pose = () => ({ x: 0, y: 1, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: beat * (1 - fold), fold, look: 0, legs: 0, shown: true, flying: true });
+const birds = Array.from({ length: rows }, (unused, row) => ({ kind, pose: standingPoses
+  ? { ...pose(), y: 0.6, flying: false, legs: 1, fold: 1, beat: 0, neck: 0.55, look: Number(parameters.get('look') ?? 0), ...STANDING_POSES[row] }
+  : { ...pose(), phase: (row / rows) * Math.PI * 2 } }));
+const population = { birds: [birds[0]] };
+const camera = new THREE.PerspectiveCamera(30, (1280 / columns) / (height / rows), 0.1, 100);
+view.show(population, camera);
+const sides = chosenSides ?? (standingPoses ? [[0, 0.1, 6], [6, 0.5, 0.4], [-4, 1.5, 4], [-1, 5, 3]] : [[0, 0.15, 6], [0, -5, 2.5], [5, -2.5, 1], [-1, 5, 3]]);   // eye offsets
+const focus = new THREE.Vector3(...(parameters.get('focus')?.split(',').map(Number) ?? [0, 1, 0]));
+window.ready = new Promise((resolve) => {
+  const draw = () => {
+    if (!view.count) { view.update(population, camera); requestAnimationFrame(draw); return; }
+    renderer.clear();
+    for (let row = 0; row < rows; row++) {
+      population.birds[0] = birds[row];
+      view.update(population, camera);
+      for (let column = 0; column < columns; column++) {
+        const [x, y, z] = sides[column];
+        camera.position.set(x, y, z).normalize().multiplyScalar(Number(parameters.get('distance') ?? 3)).add(focus);
+        camera.lookAt(focus);
+        const width = 1280 / columns, cell = height / rows;
+        renderer.setViewport(column * width, (rows - 1 - row) * cell, width, cell);
+        renderer.setScissor(column * width, (rows - 1 - row) * cell, width, cell);
+        renderer.setScissorTest(true);
+        renderer.render(scene, camera);
+      }
+    }
+    resolve();
+  };
+  draw();
+});
+</script></body></html>

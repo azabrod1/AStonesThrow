@@ -349,7 +349,9 @@ full screen, which only a press or a key may ask for):
 - Effects: Fish on (the default) or off. Off, every water is empty:
   nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
   the page, `--fish=none` for the harness; remembered on the device like
-  the other settings).
+  the other settings). Birds on (the default) or off, the same way
+  (`?birds=off`, `--birds=none`): gulls at the Rocky cove, a heron at the
+  Koi pond.
 - Full screen: On or Off, and the F key, where the browser lets a page take
   the whole screen (Android, an iPad, a desktop browser: the Fullscreen
   API, `src/screen.js`). Safari on an iPhone lets no page do that, so there
@@ -627,6 +629,115 @@ from above, its outline taking the water's colour; and a soft shadow on the
 bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
+
+**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). Every place but
+the Pool (whose view looks down into the water) has its own, the ones that
+live where its photograph was taken (Poly Haven's coordinates put most of
+the skies in South Africa):
+
+| Place | Birds |
+|---|---|
+| Rocky cove (Cape Town) | kelp gulls coming by to work the water past the rocks |
+| Loch Ness | herring gulls, likewise |
+| Koi pond (Nagoya) | a grey heron wading at the far bank |
+| Lakeside (Sterkfontein Dam) | an African fish eagle coming over the open water |
+| Harbour (Sterkfontein Dam) | a string of five sacred ibises now and then |
+| Mesas (above the dam) | a pair of Egyptian geese now and then |
+| Highlands (eastern Free State) | a grey heron flying over now and then |
+| Desert oasis (Richtersveld) | a Verreaux's eagle under the koppies |
+| Swiss Alps | two ravens |
+| Wooded lake (Radków) | a pair of mute swans now and then |
+| Polynesian lagoon | great frigatebirds soaring |
+| Reflecting Pool (Washington, D.C.) | a blue jay and a northern cardinal crossing between the elms |
+
+The flying birds come and go: now and then one (or a flock) comes into
+the view from beyond a side of the frame, goes about over the water and
+leaves, and is away a while before it comes again. Each visit is a path of
+its own, drawn from the bird's seed and the visit's number: across from one
+side to the other, wandering nearer and farther; in, round in a wide turn
+and back out; or, for the eagles and frigatebirds, round and round in a
+thermal, rising, and off. The path is a smooth spline flown at the bird's
+speed, laid out so that no turn on it needs more than 28° of bank, so it
+banks into its turns gently, as a glider does, and never jerks. A place
+shown finds its birds anywhere in their comings and goings, and every visit
+to the page has its own seed (`?birdSeed=` chooses one; a page driven by a
+tool has seed 1, so frames are reproducible). Each
+kind flaps as it does (a gull a few beats now and then, a fish eagle in
+bouts, an eagle hardly, a raven mostly, a jay steadily, a cardinal in
+bounds: a few beats, then its wings shut a moment as it arcs on, its path
+rising and dipping a few centimetres about the visit's). The
+heron stands somewhere of its own along the far bank (a new place each time
+it comes down, and on each visit to the page): it looks about, sets its
+neck, walks a few steps along the bank (turning about as it steps, its head
+first), and hunts: it peers down at a fish ahead or to one side, its neck
+cocked and its bill pointed at it, holds still but for a tilt of its head
+now and then, stabs, and tosses its catch up and swallows it, or stabs
+again, or gives up, every part of it drawn afresh. Now and then it opens its wings and holds them
+open a few seconds, still, as herons do to sun or dry themselves. When the
+pond is frozen it doesn't stand on the ice: it flies over the garden now and
+then instead (`BIRDS_WHEN_FROZEN`). Each movement is a spring's, closed form in time
+(`sprung` in `src/birds.js`): every part settles on its own time, so they
+overlap as a bird's do rather than starting and stopping together. A
+splash nearby makes it stretch up and turn its head and neck to look at it,
+over its shoulder if the splash is behind it; a thing thrown near puts it up, and it flies off
+the way it faces. It comes back half a minute to a minute later, gliding in
+and flaring as herons do (pitched up, legs forward, braking with deep beats)
+to land somewhere new on the far bank, holding its wings up a moment before
+folding them. None are
+about after dark. They
+are scenery, as the fish are: nothing thrown meets them, and they keep out
+of reach and in the home view's sky. Their state changes only in the
+physics steps and they are posed at each frame's time from closed forms,
+from their own seeded stream, so a seeded game goes alike at any frame rate.
+
+The African fish eagle is a 3D model shaped and painted from photographs of
+real ones (`tools/bird-models.py`, `src/birdMeshes.js`): its body lofted from
+a side-on outline and painted from that photograph, its wings rectified flat
+from a photograph from below, slotted primaries and all, on a skeleton
+(`src/birdRig.js`) whose wingbeat is a bird's (a cosine stroke, the hand
+lagging the arm, twisting on the downstroke), so it beats, glides and banks
+smoothly from any side. The Reflecting Pool's blue jay and cardinal are
+made the same way, their bodies cut from perched birds (GrabCut from a
+traced outline, levelled along the body, the cardinal's tail and head
+swung into line, its crest a thin fin over its skull, and the folded wing of
+the perched photo painted out, since in flight it is spread) and their wings from a bird with its wing spread above
+or below, the other side derived from it. Loch Ness's herring gull is
+cut from a gull flying side on, its raised near wing painted out of its
+back and flank (the mantle grey, the flank white), its wings from an
+underwing photographed as the gull banked overhead (the shade of its body
+on the wing's root lifted) and its grey upper side made from those same
+feathers, black tips and white trailing edge kept. The grey heron is one too: its trunk, twelve-jointed
+neck (its poses read off a smooth curve, so its S bends without corners) and legs shaped from a side-on photograph, so it stands, looks about,
+draws its neck in or stretches it, walks the bank, strikes at fish, holds
+its wings open in a drooped spread (`SPREAD`), crouches
+and takes off trailing its legs, its legs seen through the water
+(`poseStanding` in `src/birdRig.js`). `tools/bird-look.mjs` shoots a model
+alone through its wingbeat (`--poses=standing`: a standing kind's ways; `--focus` and
+`--distance` for a close-up, `--look` to turn its head). The
+other kinds are still pictures, as follows, until each has its model.
+
+Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
+or public domain, and CC BY-SA for the herring gull's model, the jay's
+and cardinal's wings and the ibis's glide, so their
+images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
+`assets/birds/birds.json`), cut out of its sky (or, for the standing geese,
+its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
+a kind (40 to 200 KB), fetched only when a place with that kind is shown,
+and drawn as a picture that faces the camera, as a game draws a far bird. A
+picture cannot turn, so the birds are flown to be seen side on. Each kind
+has a few frames (gliding; wings up, level and down by its wingbeat; head
+on; legs down; standing or resting); in a flock every other bird glides
+with its wings held lower, so they are not copies. The water mirrors them; the mirror
+image is drawn again only around a bird that moves in its view. What of a
+standing bird is under the water (the heron's legs) is drawn in the
+under-water pass, bent at the surface as a reed is, so its legs go on down
+to its feet on the bed. A bird on the ground or the ice has a soft shadow
+under it. A bird out of a pass's view (the screen's, the mirror's, the
+water's) is not drawn in it: each bird's mesh is bounded by a sphere moved
+with it. Each bird in view costs 2 draw calls (it and its mirror image),
+the heron 3 (and its legs under the water);
+`tools/bird-probe.mjs` checks every place's birds, where they fly, the
+standing birds' flush and return, the frame rate and the cost.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -1674,7 +1785,7 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
-  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`, `tools/bird-probe.mjs`,
   `tools/garden-probe.mjs`, `tools/tropics-probe.mjs` and
   `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
@@ -1933,6 +2044,21 @@ farther out, so it rises into the view rather than filling its corner.
   never kept): each photoscan's normal and the detail of its colour packed
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
+- `python3 tools/bird-sprites.py` writes the birds' pictures,
+  `assets/birds/<kind>.webp` and `birds.json`: 21 frames from 19 Wikimedia Commons
+  photographs of seven kinds (CC BY 2.0, 3.0 and 4.0, CC BY-SA 2.0, CC0 and public domain,
+  cached in the gitignored `tools/.bird-photos/`), each cut out of its sky
+  (by its distance from a smooth fit of the sky, or by blueness; `crop` to
+  take one bird of two) or, the standing geese, out of their shore
+  (OpenCV's GrabCut from an outline and a few strokes), scaled to the bird's
+  size in metres and packed into one image a kind (40 to 200 KB), fetched
+  only when a place with that kind is first shown. A kind with a model
+  (`models.json`) is skipped. Needs numpy, scipy, Pillow and
+  opencv-python-headless.
+- `node tools/bird-credits.mjs` writes the Birds section of `CREDITS.md`
+  and `credits.html` from the credits `birds.json` and `models.json`
+  record; rerun it after either bird tool (`--check`, in `npm test`, fails
+  if either file is not as it would write it).
 - `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
   Reflecting Pool's skies, one an hour, from its plan,
   `tools/mall-backdrop.json`: it fetches the photographs (cached in
@@ -2236,6 +2362,8 @@ Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).
 
 ## Credits
+
+The bird photographs are credited in [CREDITS.md](CREDITS.md).
 
 The sky panoramas are from [Poly Haven](https://polyhaven.com), CC0:
 *Meadow 2* by Sergej Majboroda; *Lakeside* by Greg Zaal; *Lakeside Sunrise*,
