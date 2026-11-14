@@ -217,11 +217,14 @@ const HERON = {
   //   come down) and the spell's number, so no two stays go alike and none repeats on a beat.
   spells: { length: [6, 20], rest: [1.5, 5] },
   // walk: in a `share` of its spells (none in the first: it has just come down) it walks `distance` m (drawn) along
-  //   the bank, kept within `reach` of its own spot, at `speed`, setting off `start` s into the spell (drawn). It looks
-  //   the way it will go (its head first), turns to it stepping round (`turnSettle` s, `turnStep` m of stepping a
-  //   radian turned), sets off once mostly turned (`setOff` s after it began to turn) and, as it stops, turns to face
-  //   the water a little (`facePond` rad from the bank), facing so until it walks again.
-  walk: { share: 0.5, distance: [0.12, 0.6], reach: [-0.4, 0.5], speed: 0.17, start: [0.3, 3], turnSettle: 2.2, setOff: 1.5, turnStep: 0.12, facePond: 0.5 },
+  //   the bank (its waterline, in the same depth: onBank), kept within `reach` of its own spot, at `speed` (a stalking
+  //   heron's slow walk: under 60 steps a minute, here about 50; adult grey herons fishing average 6 to 9 a minute,
+  //   mostly standing), setting off `start` s into the spell (drawn). It looks the way it will go (its head first),
+  //   turns to it stepping round (`turnSettle` s, `turnStep` m of stepping a radian turned), sets off once mostly
+  //   turned (`setOff` s after it began to turn), its neck eased to `neck` as it goes (`carry` s to settle, and back
+  //   once it stops) and, as it stops, turns to face the water a little (`facePond` rad from the bank), facing so
+  //   until it walks again.
+  walk: { share: 0.5, distance: [0.12, 0.6], reach: [-0.4, 0.5], speed: 0.11, start: [0.3, 3], turnSettle: 2.2, setOff: 1.5, turnStep: 0.12, facePond: 0.5, neck: 0.5, carry: 1.4 },
   // strike: in a `share` of its spells (`afterWalk` of those it walks in), `at` s (drawn) into it or after its walk, it
   //   hunts a fish it has seen (layHunt: every part of it drawn, so no two go alike), as herons do in the photographs and
   //   films of them:
@@ -469,7 +472,8 @@ function splineAt(path, parameter, out, first, second) {
 
 const scratchSample = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };
 const scratchRoll = { position: new THREE.Vector3(), velocity: new THREE.Vector3(), bend: new THREE.Vector3(), turn: 0 };   // the bank's average's samples, and a path's tightest turn's
-const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, lead: 0, walked: 0, walking: 0, stride: 0, spell: 0, walks: false, plan: null, into: 0 };
+const scratchStep = { x: 0, y: 0, z: 0, heading: 0, lead: 0, walked: 0, walking: 0, striding: 0, stride: 0, spell: 0, walks: false, plan: null, into: 0 };
+const scratchPlace = { x: 0, y: 0, z: 0, heading: 0, lead: 0, walked: 0, walking: 0, striding: 0, stride: 0, spell: 0, walks: false, plan: null, into: 0 };
 
 /**
  * Where a path is `along` m along it (into `out`): its point, its direction (velocity: its derivative there) and its
@@ -554,13 +558,15 @@ export class BirdPopulation {
     const { group } = bird;
     const random = seededRandom(bird.seed, stay, 53);
     const angle = between(group.angles, random());
-    const radius = koiShoreRadius(angle) - between(group.offshore, random());
+    const offshore = between(group.offshore, random());
+    const radius = koiShoreRadius(angle) - offshore;
     const x = KOI_SHORE.centre[0] + Math.cos(angle) * radius;
     const z = KOI_SHORE.centre[1] + Math.sin(angle) * radius;
     // Across the eye's line of sight, one way or the other; turned a little toward the water (the pond's centre).
     const across = Math.atan2(-(z - EYE.z), x - EYE.x) + (random() < 0.5 ? 1 : -1) * Math.PI / 2;
     const inward = Math.atan2(-(KOI_SHORE.centre[1] - z), KOI_SHORE.centre[0] - x);
-    bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: across + Math.sign(turnBetween(across, inward)) * random() * group.toPond };
+    // `angle`, `radius` and `offshore` lay its walks along the waterline (onBank), as far out from it as it came down.
+    bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: across + Math.sign(turnBetween(across, inward)) * random() * group.toPond, angle, radius, offshore };
   }
 
   /** Every bird as it starts at `time`: one that stands, standing at its spot; a visitor's visits from now. */
@@ -1074,7 +1080,7 @@ export class BirdPopulation {
         plan.walks = true;
         plan.to = to;
         plan.walkAt = between(walk.start, random());
-        plan.faced = this.facingFor(bird.spot, Math.sign(to - plan.from));
+        plan.faced = this.facingFor(bird.spot, plan.from, to);
         const duration = Math.abs(to - plan.from) / walk.speed;
         free = plan.walkAt + walk.setOff + duration - 0.5 + settledAfter(walk.turnSettle, 3) + 0.4;   // its last turn settled
       }
@@ -1113,14 +1119,14 @@ export class BirdPopulation {
   standingPlace(bird, time, out) {
     const { spot } = bird;
     const walk = STANDING[bird.kind].walk;
-    out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.lead = spot.heading; out.walked = 0; out.walking = 0; out.stride = 0;
+    out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.lead = spot.heading; out.walked = 0; out.walking = 0; out.striding = 0; out.stride = 0;
     out.spell = 0; out.walks = false; out.plan = null; out.into = 0;
     if (!walk) { out.y = spot.y; return out; }
     const since = Math.max(0, time - bird.standSince);
     const { plan, index } = this.spellAt(bird, since);
     const into = since - plan.start;
-    const { alongX, alongZ } = this.bank(spot);
     const { from, to, facing } = plan;
+    const { alongX, alongZ } = this.bank(spot, from, to);
     const distance = Math.abs(to - from), way = Math.sign(to - from);
     let offset = from;
     out.spell = index;
@@ -1150,24 +1156,45 @@ export class BirdPopulation {
       const moving = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
       // Stepping round as it turns, as much as it is turning (its turn starts gently, so its steps do too).
       out.walking = Math.max(moving, 0.7 * Math.min(1, turning * turning));
+      // Its bearing as it goes (its neck and head), eased into from as it begins to turn and out of once it stops.
+      out.striding = sprung(into, 0, [[turnAt, 1, walk.carry], [goAt + duration, 0, walk.carry]]);
       out.stride = (out.walked + walk.turnStep * turned) / (2 * STEP_LENGTH);
     }
-    out.x = spot.x + alongX * offset;
-    out.z = spot.z + alongZ * offset;
+    this.onBank(spot, offset, out);
     out.y = -koiFloorDepthAt(out.x, out.z);
     return out;
   }
 
-  /** Along the bank at a standing bird's spot (the pond's tangent there), the way that runs to the eye's right. */
-  bank(spot) {
-    const tangentX = -(spot.z - KOI_SHORE.centre[1]), tangentZ = spot.x - KOI_SHORE.centre[0];
-    const length = Math.hypot(tangentX, tangentZ);
-    return { alongX: tangentX / length, alongZ: tangentZ / length };
+  /**
+   * The point `offset` m along the bank from a standing bird's spot (into `out`): along the waterline, as far out from it
+   * as the spot (spot.offshore), so it wades in the same depth wherever it walks; the bank's shelf is steep (src/
+   * pondFloor.js KOI_SHORE.shelf), and a straight line along it would take it out into deep water.
+   */
+  onBank(spot, offset, out) {
+    if (spot.angle === undefined) { out.x = spot.x; out.z = spot.z; return out; }
+    const angle = spot.angle + offset / spot.radius;
+    const radius = koiShoreRadius(angle) - spot.offshore;
+    out.x = KOI_SHORE.centre[0] + Math.cos(angle) * radius;
+    out.z = KOI_SHORE.centre[1] + Math.sin(angle) * radius;
+    return out;
   }
 
-  /** How a standing bird faces once it has stopped walking `way` (±1 along the bank): that way, turned a little to the water. */
-  facingFor(spot, way) {
-    const { alongX, alongZ } = this.bank(spot);
+  /**
+   * Along the bank at a standing bird's spot, the way that runs to the eye's right (increasing offset): the line from
+   * `from` to `to` m along it (onBank), or the waterline's own direction at `from` if they are the same place.
+   */
+  bank(spot, from = 0, to = from) {
+    const start = this.onBank(spot, from, { x: 0, z: 0 });
+    const end = this.onBank(spot, to === from ? from + 0.05 : to, { x: 0, z: 0 });
+    const sign = to < from ? -1 : 1;
+    const alongX = (end.x - start.x) * sign, alongZ = (end.z - start.z) * sign, length = Math.hypot(alongX, alongZ);
+    return { alongX: alongX / length, alongZ: alongZ / length };
+  }
+
+  /** How a standing bird faces once it has walked from `from` to `to` (m along the bank): that way, turned a little to the water. */
+  facingFor(spot, from, to) {
+    const way = Math.sign(to - from);
+    const { alongX, alongZ } = this.bank(spot, from, to);
     const walkHeading = Math.atan2(-alongZ * way, alongX * way);
     const inward = Math.atan2(-(KOI_SHORE.centre[1] - spot.z), KOI_SHORE.centre[0] - spot.x);
     return walkHeading + Math.sign(turnBetween(walkHeading, inward)) * STANDING.heron.walk.facePond;
@@ -1226,8 +1253,8 @@ export class BirdPopulation {
       neck = 0.35 + (neck - 0.35) * springStep(landed, land.neckSettle);   // the flare's (poseStanding's `land`)
     }
     // Stepping, it looks where it goes (its head turned ahead of its body), its neck at its ease.
-    look = look * (1 - place.walking) + 1.2 * Math.tanh(turnBetween(place.heading, place.lead) / 1.2);   // as far round as it can look, softly
-    neck += (0.5 - neck) * place.walking;
+    look = look * (1 - place.striding) + 1.2 * Math.tanh(turnBetween(place.heading, place.lead) / 1.2);   // as far round as it can look, softly
+    neck += (ways.walk.neck - neck) * place.striding;
     // A hunt, when its spell's plan says (its kind's `strike`, layHunt): it peers down at a fish, holds still but for
     // its head, stabs, and swallows its catch or stabs again; or gives up. Each part a spring of its own.
     let thrown = 0, crouch = 0, aim = 0, bill = 0, prey = 0, preyTurn = 0, preyIn = 0, preyWriggle = 0;

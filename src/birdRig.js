@@ -244,7 +244,7 @@ const FLIGHT_TRUNK = { depth: 0.28, width: 0.12 };   // shares the trunk's depth
 const CROUCH_DROP = 0.09;      // m the hips sink in a full crouch
 const TRAIL = degrees(-100);   // the hip's swing back, legs trailing in flight
 const TRAIL_SLIM = degrees(-4);   // and further back as its trunk is slimmed (pose.slim), its thighs drawn up into its belly
-const STEP_LIFT = 0.07;        // m a walking foot is lifted at the middle of its swing
+const STEP_LIFT = 0.09;        // m a walking foot is lifted at the middle of its swing (a heron wading lifts each foot clear)
 export const STEP_LENGTH = 0.13;   // m a foot moves a step (two steps a stride), src/birds.js walks it so
 
 const legScratch = { solved: new THREE.Vector2(), heel: new THREE.Vector2() };
