@@ -402,6 +402,58 @@ function layHunt(ways, at, random) {
   return hunt;
 }
 
+// Seeing a thing coming (wary): every physics step a standing heron follows each moving thing's course `ahead` s on
+// (course: falling as thrown, skipping on off the water as a stone thrown flat does, or in and slowing; on the water or
+// the ground, sliding on as it goes), every `every` s, and goes as soon as it would come within `reach` m (and the
+// thing's radius) of where it stands, below `tall` m over its feet, sooner than `lead` s from now: crouching no longer
+// than leaves it `clear` s to be off before the thing arrives (`quickest` s at least), and off the way that keeps it
+// farthest from the thing's course. Coming in to land, it goes round again (goAround) if anything is coming within
+// `aside` m of where it would come down. So nothing thrown ever comes through it, however fast and flat, or skipped.
+const WARY = { ahead: 1.6, every: 1 / 60, reach: 1.0, tall: 1.4, lead: 1.2, clear: 0.8, quickest: 0.05, aside: 2.5, still: 0.02 };
+const COURSE_SAMPLES = Math.ceil(WARY.ahead / WARY.every) + 1;
+const courseScratch = new Float32Array(COURSE_SAMPLES * 3);
+
+/**
+ * A thing's course from now (WARY), into `out` (x, y, z every WARY.every s): how many samples, or 0 if it is still. In
+ * the air it falls (gravity, no drag: a little ahead of the real thing, which is the safe side); meeting the water
+ * flat and fast it skips on (a share of its fall turned back up, a little speed lost), else goes in and all but stops.
+ */
+function course(thing, out) {
+  const { position, velocity } = thing;
+  let x = position.x, y = position.y, z = position.z, vx = velocity.x, vy = velocity.y, vz = velocity.z;
+  if (Math.hypot(vx, vy, vz) < WARY.still) return 0;
+  let flying = thing.state === 'air';
+  const step = WARY.every;
+  for (let index = 0; index < COURSE_SAMPLES; index++) {
+    out[index * 3] = x; out[index * 3 + 1] = y; out[index * 3 + 2] = z;
+    if (flying) {
+      vy -= GRAVITY * step;
+      x += vx * step; y += vy * step; z += vz * step;
+      if (y <= 0 && vy < 0) {
+        const level = Math.hypot(vx, vz);
+        if (level > 3 && -vy < 0.6 * level) { vy = -0.55 * vy; vx *= 0.85; vz *= 0.85; }
+        else { flying = false; vx *= 0.3; vz *= 0.3; }
+        y = 0;
+      }
+    } else {
+      const slowing = thing.state === 'water' ? Math.exp(-2 * step) : 1;
+      vx *= slowing; vz *= slowing;
+      x += vx * step; y += vy * (thing.state === 'water' ? step : 0); z += vz * step;
+    }
+  }
+  return COURSE_SAMPLES;
+}
+
+/** When (s from now) a course (course: `samples` of `points`) first comes within `reach` m of (x, z), between `bottom` and `top` m up; Infinity if never. */
+function arrivalOf(points, samples, x, z, bottom, top, reach) {
+  for (let index = 0; index < samples; index++) {
+    const y = points[index * 3 + 1];
+    if (y > top || y < bottom - 0.5) continue;
+    if (Math.hypot(points[index * 3] - x, points[index * 3 + 2] - z) < reach) return index * WARY.every;
+  }
+  return Infinity;
+}
+
 /** A point on the cubic Bézier through four [x, y, z] points at u (into `out`). */
 function bezier(points, along, out) {
   const left = 1 - along;
@@ -603,15 +655,28 @@ export class BirdPopulation {
   step(time, things) {
     for (const bird of this.birds) {
       if (!STANDING_HABITS.has(bird.habit)) continue;
-      const { spot } = bird;
       const ways = STANDING[bird.kind];
+      // Where it stands now (it may have walked), or where it is coming down.
+      const here = bird.mode === 'stand' ? this.standingPlace(bird, time, scratchStep) : bird.spot;
       for (const thing of things) {
-        if (thing.state !== 'air' || thing.velocity.y >= 0 || thing.position.y > spot.y + ways.flush.height) continue;
-        const near = Math.hypot(thing.position.x - spot.x, thing.position.z - spot.z);
-        if (near < ways.flush.radius * 1.6) this.disturbed = time;
-        if (bird.mode === 'stand' && near < ways.flush.radius) this.flush(bird, time, thing.position.x, thing.position.z);
+        if (thing.state === 'air' && thing.velocity.y < 0 && thing.position.y <= here.y + ways.flush.height) {
+          const near = Math.hypot(thing.position.x - here.x, thing.position.z - here.z);
+          if (near < ways.flush.radius * 1.6) this.disturbed = time;
+          if (bird.mode === 'stand' && near < ways.flush.radius) this.flush(bird, time, thing.position.x, thing.position.z);
+        }
+        if (bird.mode !== 'stand' && bird.mode !== 'land') continue;
+        // Coming its way (WARY): off at once, or round again.
+        const reach = (bird.mode === 'land' ? WARY.aside : WARY.reach) + (thing.radius ?? 0.05);
+        const level = Math.hypot(thing.velocity.x, thing.velocity.z);
+        if (Math.hypot(thing.position.x - here.x, thing.position.z - here.z) - reach > level * WARY.ahead + 0.5 * GRAVITY) continue;   // cannot get there in time
+        const samples = course(thing, courseScratch);
+        const arrival = arrivalOf(courseScratch, samples, here.x, here.z, here.y, here.y + WARY.tall, reach);
+        if (arrival >= (bird.mode === 'land' ? WARY.ahead : WARY.lead)) continue;
+        this.disturbed = time;
+        if (bird.mode === 'stand') this.flush(bird, time, thing.position.x, thing.position.z, { arrival, samples });
+        else this.goAround(bird, time);
       }
-      if (bird.mode === 'flee' && time >= bird.since + ways.flush.crouch + ways.flush.flight) {
+      if (bird.mode === 'flee' && time >= bird.since + (bird.crouchFor ?? ways.flush.crouch) + ways.flush.flight) {
         bird.mode = 'away';
         bird.since = time;
         this.laySpot(bird, bird.stay + 1);   // where it will come down next, out of sight now
@@ -637,7 +702,8 @@ export class BirdPopulation {
     for (const bird of this.birds) {
       if (!STANDING_HABITS.has(bird.habit)) continue;
       const ways = STANDING[bird.kind];
-      const near = Math.hypot(x - bird.spot.x, z - bird.spot.z);
+      const here = bird.mode === 'stand' ? this.standingPlace(bird, time, scratchStep) : bird.spot;
+      const near = Math.hypot(x - here.x, z - here.z);
       if (near < ways.flush.radius * 1.6) this.disturbed = time;
       if (bird.mode !== 'stand') continue;
       if (near < ways.flush.splash) this.flush(bird, time, x, z);
@@ -672,10 +738,13 @@ export class BirdPopulation {
    * Put a standing bird up at `time`: off across the eye's view the way it
    * faces (as a heron springs off forward; facing the eye or away from it,
    * the side away from (x, z)), and a little away from the eye, low over the
-   * garden; across, so it is seen side on. The rest of its group, standing,
-   * go with it.
+   * garden; across, so it is seen side on. A thing coming at it (`threat`:
+   * when it would arrive, and its course in courseScratch) hurries it: its
+   * crouch no longer than leaves it WARY.clear s to be off, and off the other
+   * way if that keeps it farther from the thing's course. The rest of its
+   * group, standing, go with it.
    */
-  flush(bird, time, x, z) {
+  flush(bird, time, x, z, threat = null) {
     const spot = { ...this.standingPlace(bird, time, scratchPlace) };   // where it stands now (it may have walked)
     const ways = STANDING[bird.kind];
     const fromEyeX = spot.x - EYE.x, fromEyeZ = spot.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
@@ -685,9 +754,18 @@ export class BirdPopulation {
     const thingSide = acrossX * fromThingX + acrossZ * fromThingZ;
     const flip = Math.abs(facing) > 0.3 ? facing < 0 : thingSide < 0 || (thingSide === 0 && hashed(bird.seed, Math.floor(time * 10), 4) < 0.5);
     if (flip) { acrossX = -acrossX; acrossZ = -acrossZ; }
-    let awayX = acrossX + 0.45 * fromEyeX / fromEye, awayZ = acrossZ + 0.45 * fromEyeZ / fromEye;
-    const length = Math.hypot(awayX, awayZ);
-    awayX /= length; awayZ /= length;
+    const crouch = threat ? THREE.MathUtils.clamp(threat.arrival - WARY.clear, WARY.quickest, ways.flush.crouch) : ways.flush.crouch;
+    const away = (sign) => {
+      let awayX = sign * acrossX + 0.45 * fromEyeX / fromEye, awayZ = sign * acrossZ + 0.45 * fromEyeZ / fromEye;
+      const length = Math.hypot(awayX, awayZ);
+      return [awayX / length, awayZ / length];
+    };
+    let [awayX, awayZ] = away(1);
+    if (threat) {
+      // The way that keeps it farther from the thing's course (its nearest pass, where the thing is low enough to meet it).
+      const [otherX, otherZ] = away(-1);
+      if (this.passing(bird, spot, threat, crouch, otherX, otherZ) > this.passing(bird, spot, threat, crouch, awayX, awayZ)) { awayX = otherX; awayZ = otherZ; }
+    }
     const { far, climb } = ways.flush;
     // From its feet, a short hop up and forward, then out and up along `away`.
     const start = [spot.x, spot.y + BIRD_KINDS[bird.kind].stand, spot.z];
@@ -696,9 +774,59 @@ export class BirdPopulation {
     };
     bird.mode = 'flee';
     bird.since = time;
+    bird.crouchFor = crouch;
+    bird.aloft = null;
     bird.fleeHeading = spot.heading;   // it turns from where it faced as it springs off
-    bird.returnAt = time + ways.flush.crouch + ways.flush.flight + between(ways.away.absent, hashed(bird.groupSeed, Math.floor(time * 10), 3));
-    for (const other of this.birds) if (other.group === bird.group && other.mode === 'stand') this.flush(other, time, x, z);
+    bird.returnAt = time + crouch + ways.flush.flight + between(ways.away.absent, hashed(bird.groupSeed, Math.floor(time * 10), 3));
+    for (const other of this.birds) if (other.group === bird.group && other.mode === 'stand') this.flush(other, time, x, z, threat);
+  }
+
+  /**
+   * How near (m, across) a thing's course (`threat`: its samples in courseScratch) comes to a bird put up from `spot`
+   * that crouches `crouch` s and goes off along (awayX, awayZ): where it would be then, by a getaway's first second
+   * (a metre and a half out, then on), taken against each of the course's samples low enough to meet it.
+   */
+  passing(bird, spot, threat, crouch, awayX, awayZ) {
+    let nearest = Infinity;
+    for (let index = 0; index < threat.samples; index++) {
+      const y = courseScratch[index * 3 + 1];
+      if (y > spot.y + WARY.tall + 1) continue;
+      const out = 1.5 * Math.max(0, index * WARY.every - crouch);
+      nearest = Math.min(nearest, Math.hypot(courseScratch[index * 3] - (spot.x + awayX * out), courseScratch[index * 3 + 2] - (spot.z + awayZ * out)));
+    }
+    return nearest;
+  }
+
+  /**
+   * A bird coming in to land at `time` goes round again (something thrown is coming down near where it would land):
+   * on from where it is, as fast as it is going, climbing away across the eye's view the way it is heading and off
+   * over the garden; it eases from its landing's pose into its flight's (poseStanding's `aloft`), and stays away.
+   */
+  goAround(bird, time) {
+    const ways = STANDING[bird.kind];
+    this.poseStanding(bird, time);
+    const from = { ...bird.pose };
+    const next = time + 0.02;
+    this.poseStanding(bird, next);
+    const velocityX = (bird.pose.x - from.x) / 0.02, velocityY = (bird.pose.y - from.y) / 0.02, velocityZ = (bird.pose.z - from.z) / 0.02;
+    const { flight, far, climb } = ways.flush;
+    const headingX = Math.cos(from.heading), headingZ = -Math.sin(from.heading);
+    const fromEyeX = from.x - EYE.x, fromEyeZ = from.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
+    let awayX = headingX + 0.45 * fromEyeX / fromEye, awayZ = headingZ + 0.45 * fromEyeZ / fromEye;
+    const length = Math.hypot(awayX, awayZ);
+    awayX /= length; awayZ /= length;
+    // Its curve's first leg its velocity now (a Bézier's start is three times its first leg over its time), then away and up.
+    const start = [from.x, from.y, from.z];
+    bird.flight = {
+      points: [start, [from.x + velocityX * flight / 3, Math.max(from.y + velocityY * flight / 3, from.y + 1), from.z + velocityZ * flight / 3],
+        [from.x + awayX * far * 0.6, bird.spot.y + climb * 0.55, from.z + awayZ * far * 0.6], [from.x + awayX * far, bird.spot.y + climb, from.z + awayZ * far]],
+    };
+    bird.mode = 'flee';
+    bird.since = time;
+    bird.crouchFor = 0;
+    bird.aloft = from;
+    bird.fleeHeading = from.heading;
+    bird.returnAt = time + flight + between(ways.away.absent, hashed(bird.groupSeed, Math.floor(time * 10), 3));
   }
 
   /** Bring a standing bird back at `time`: a glide in from one side (its group's), to its spot (new this time: laySpot), ending along its heading. */
@@ -964,7 +1092,8 @@ export class BirdPopulation {
       return;
     }
     if (bird.mode === 'flee') {
-      const { crouch, flight, hard, legsUp, neckIn } = ways.flush;
+      const { flight, hard, legsUp, neckIn } = ways.flush;
+      const crouch = bird.crouchFor ?? ways.flush.crouch;
       if (since < crouch) {
         // It crouches, its neck drawn in, its wings starting to open.
         this.standing(bird, bird.since);
@@ -977,8 +1106,8 @@ export class BirdPopulation {
       }
       const flying = since - crouch;
       const share = Math.min(flying / flight, 1);
-      // Off from a standstill, faster and faster.
-      const along = share ** 1.25;
+      // Off from a standstill, faster and faster; going round again, on as fast as it was going (goAround).
+      const along = bird.aloft ? share : share ** 1.25;
       this.flyAlong(bird, along, Math.min(along + 0.01, 1), along > 0.99);
       pose.heading = bird.fleeHeading + turnBetween(bird.fleeHeading, pose.heading) * smoother(0, 0.45, flying);
       // Off the bed: its feet leave the water as it springs, so its middle starts where its standing middle was.
@@ -995,6 +1124,15 @@ export class BirdPopulation {
       pose.neck = 0.3 * (1 - smoother(0, neckIn, flying));
       pose.tuck = pose.slim = smoother(0, neckIn, flying);
       pose.look = 0;
+      if (bird.aloft) {
+        // Going round again: from its landing's pose into its flight's, its wingbeat going on from where it was.
+        const from = bird.aloft, easing = smoother(0, 0.8, flying);
+        pose.fold = 0;
+        pose.crouch = 0;
+        for (const key of ['pitch', 'legs', 'plant', 'neck', 'tuck', 'slim', 'bill', 'strike', 'brake', 'feetAhead']) pose[key] = from[key] + (pose[key] - from[key]) * easing;
+        pose.beat = Math.max(pose.beat, from.beat);
+        pose.phase = from.phase + 2 * Math.PI * kind.beat * flying;
+      }
       // Out of sight over the garden: gone the moment it is far enough (the Koi pond's land ends at 35 m: src/sky.js backdrop).
       if (share >= 1) pose.shown = false;
       return;

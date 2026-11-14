@@ -43,6 +43,9 @@ import * as THREE from 'three';
 import { costClock, costSince } from './cost-clock.mjs';
 import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRD_KINDS } from '../src/birds.js';
 import { koiShoreDistance, koiFloorDepthAt } from '../src/pondFloor.js';
+import { buildStandingModel } from '../src/birdMeshes.js';
+import { poseStanding, FLIGHT, JOINT_COUNT } from '../src/birdRig.js';
+import { readFileSync } from 'node:fs';
 import { PLACES } from '../src/places.js';
 
 const failures = [];
@@ -359,6 +362,137 @@ const heronAt = (frame) => frame.birds[0];
     if ((heron.pose.x - spot.x) * Math.cos(spot.heading) - (heron.pose.z - spot.z) * Math.sin(spot.heading) <= 0) backward++;
   }
   check(backward === 0, `it takes off the way it faces (${backward} of 20 the other way)`);
+}
+
+// Nothing thrown ever comes through it (src/birds.js WARY): tosses, lobs and hard throws at it and round it, and
+// stones skipped at it, each at a moment of its own (walking, hunting, standing), and things thrown where it is coming
+// down as it lands. Each thing flies on physics of its own here (a little air drag; skipping off the water a little
+// livelier than the heron reckons, then sinking and slowing), and wherever it passes within reach, every vertex of the
+// drawn heron (src/birdMeshes.js, skinned as the shader skins it) is kept clear of it.
+{
+  const entry = JSON.parse(readFileSync(new URL('../assets/birds/models.json', import.meta.url))).heron;
+  Math.random = realRandom;   // three.js's geometry ids, not the birds'
+  const model = buildStandingModel(entry);
+  Math.random = () => { throw new Error('the birds drew Math.random'); };
+  const { position, joints, jointBlend, part } = model.geometry.attributes;
+  const out = new Float32Array(JOINT_COUNT * 16), first = new THREE.Vector3(), second = new THREE.Vector3(), matrix = new THREE.Matrix4();
+  const vertices = [];
+  for (let index = 0; index < position.count; index += 2) if (part.getX(index) < 2.5) vertices.push(index);   // its fish is scaled to nothing until caught
+  /** The least distance (m) from the drawn heron (posed as `pose`) to the segment from `from` to `to`. */
+  const clearance = (pose, from, to) => {
+    poseStanding(out, model, FLIGHT.heron, pose);
+    let least = Infinity;
+    const segment = new THREE.Line3(from, to), closest = new THREE.Vector3();
+    for (const index of vertices) {
+      first.fromBufferAttribute(position, index).applyMatrix4(matrix.fromArray(out, joints.getX(index) * 16));
+      second.fromBufferAttribute(position, index).applyMatrix4(matrix.fromArray(out, joints.getY(index) * 16));
+      first.lerp(second, jointBlend.getX(index));
+      segment.closestPointToPoint(first, true, closest);
+      least = Math.min(least, closest.distanceTo(first));
+    }
+    return least;
+  };
+  const GRAVITY = 9.81, STEP = 1 / 240, hand = new THREE.Vector3(0.25, 0.95, 2.2);
+  /** A thing let go at `at` from `from` with `velocity`, its radius `radius`, flown on (this probe's own physics). */
+  const fly = (thing, step) => {
+    const { position: where, velocity } = thing;
+    if (thing.state === 'air') {
+      velocity.multiplyScalar(1 - 0.01 * velocity.length() * step);
+      velocity.y -= GRAVITY * step;
+      where.addScaledVector(velocity, step);
+      if (where.y <= 0 && velocity.y < 0) {
+        const level = Math.hypot(velocity.x, velocity.z);
+        if (level > 3 && -velocity.y < 0.7 * level) { velocity.y = -0.62 * velocity.y; velocity.x *= 0.9; velocity.z *= 0.9; where.y = 0; }
+        else { thing.state = 'water'; velocity.x *= 0.35; velocity.z *= 0.35; velocity.y = -0.6; }
+      }
+    } else if (thing.state === 'water') {
+      velocity.x *= Math.exp(-3 * step); velocity.z *= Math.exp(-3 * step);
+      where.addScaledVector(velocity, step);
+      const bed = -koiFloorDepthAt(where.x, where.z);
+      if (where.y < bed + thing.radius) { where.y = bed + thing.radius; velocity.set(0, 0, 0); thing.state = 'rest'; }
+    }
+  };
+  const tossTime = (distance, power, manner) => {
+    const normal = THREE.MathUtils.clamp(0.42 + 0.11 * distance, 0.5, 1.0);
+    if (manner === 'lob') return { soft: 1.3, normal: 1.5, hard: 1.7 }[power];
+    if (power === 'soft') return normal * 1.3;
+    return power === 'hard' ? 0.72 * normal * 0.85 : normal;   // a hard throw: fast and flat (a little faster than src/rock.js's, the harder case)
+  };
+  let trials = 0, hits = 0, worst = Infinity, worstLabel = '';
+  const trial = (seed, at, launch, label, landing = false) => {
+    const birds = new BirdPopulation({ seed });
+    birds.setPlace('koi'); birds.setConditions(DAY);
+    const heron = birds.birds[0];
+    let time = 0;
+    if (landing) { birds.flush(heron, 0.5, heron.spot.x + 0.5, heron.spot.z + 0.5); }
+    while (time < at) { time += STEP; birds.step(time, []); }
+    const thing = launch(birds, heron, time);
+    const before = new THREE.Vector3();
+    trials++;
+    let least = Infinity;
+    for (let index = 0; index < 4 / STEP && thing.state !== 'rest'; index++) {
+      before.copy(thing.position);
+      fly(thing, STEP);
+      time += STEP;
+      birds.step(time, thing.state === 'rest' ? [] : [thing]);
+      birds.showAt(time);
+      const pose = heron.pose;
+      if (!pose.shown) continue;
+      const centreY = pose.flying ? pose.y : pose.y + 0.6;
+      const apart = new THREE.Line3(before, thing.position).closestPointToPoint(new THREE.Vector3(pose.x, centreY, pose.z), true, new THREE.Vector3()).distanceTo(new THREE.Vector3(pose.x, centreY, pose.z));
+      if (apart > 1.7 + thing.radius) continue;
+      least = Math.min(least, clearance(pose, before, thing.position) - thing.radius);
+    }
+    if (least <= 0.02) hits++;
+    if (least < worst) { worst = least; worstLabel = label; }
+  };
+  // At it and round it, from the hand: tosses, lobs, hard throws.
+  for (let seed = 1; seed <= 6; seed++) {
+    for (const [manner, power] of [['toss', 'soft'], ['toss', 'normal'], ['toss', 'hard'], ['lob', 'normal'], ['lob', 'hard']]) {
+      for (const [aside, radius] of [[0, 0.03], [0.4, 0.05], [0.9, 0.12], [1.6, 0.04]]) {
+        const at = 4 + ((seed * 7.3 + aside * 11 + radius * 50) % 40);
+        trial(seed, at, (birds, heron, time) => {
+          const place = birds.standingPlace(heron, time, {});
+          const turn = seed * 2.1 + aside * 3;
+          const target = new THREE.Vector3(place.x + Math.cos(turn) * aside, -koiFloorDepthAt(place.x, place.z) * 0, place.z + Math.sin(turn) * aside);
+          const flight = tossTime(hand.distanceTo(target), power, manner);
+          const velocity = target.clone().sub(hand).divideScalar(flight); velocity.y += 0.5 * GRAVITY * flight;
+          return { state: 'air', position: hand.clone(), velocity, radius };
+        }, `${manner} ${power} ${aside} m off, seed ${seed}`);
+      }
+    }
+  }
+  // Skipped at it: let go nearly level a little over the water, touching down a few metres short of it.
+  for (let seed = 1; seed <= 6; seed++) {
+    for (const speed of [7, 10, 13]) {
+      for (const [short, aside] of [[1.5, 0], [3, 0.2], [4.5, -0.3]]) {
+        const at = 4 + ((seed * 5.1 + speed + short * 3) % 40);
+        trial(seed, at, (birds, heron, time) => {
+          const place = birds.standingPlace(heron, time, {});
+          const from = new THREE.Vector3(0.25, 0.3, 2.2), toward = new THREE.Vector3(place.x + aside, 0, place.z).sub(from).setY(0).normalize();
+          const touch = new THREE.Vector3(place.x + aside, 0, place.z).addScaledVector(toward, -short);
+          const level = Math.hypot(touch.x - from.x, touch.z - from.z), flight = level / speed;
+          const velocity = new THREE.Vector3(toward.x * speed, (-from.y + 0.5 * GRAVITY * flight * flight) / flight, toward.z * speed);
+          return { state: 'air', position: from, velocity, radius: 0.03 };
+        }, `skip ${speed} m/s, touching ${short} m short, seed ${seed}`);
+      }
+    }
+  }
+  // Thrown where it is coming down, as it comes in to land: it goes round again.
+  for (let seed = 1; seed <= 6; seed++) {
+    const probe = new BirdPopulation({ seed }); probe.setPlace('koi'); probe.setConditions(DAY);
+    probe.flush(probe.birds[0], 0.5, probe.birds[0].spot.x + 0.5, probe.birds[0].spot.z + 0.5);
+    const landStart = probe.birds[0].returnAt, glide = 6.5;
+    for (const ahead of [0.6, 1.5, 3]) {
+      trial(seed, landStart + glide - ahead, (birds, heron) => {
+        const target = new THREE.Vector3(heron.spot.x + 0.3, 0, heron.spot.z - 0.2);
+        const flight = tossTime(hand.distanceTo(target), 'normal', 'toss');
+        const velocity = target.clone().sub(hand).divideScalar(flight); velocity.y += 0.5 * GRAVITY * flight;
+        return { state: 'air', position: hand.clone(), velocity, radius: 0.05 };
+      }, `thrown ${ahead} s before it lands, seed ${seed}`, true);
+    }
+  }
+  check(hits === 0, `nothing thrown comes through it: ${hits} of ${trials} throws at it touch it (the nearest ${(worst * 100).toFixed(1)} cm clear: ${worstLabel})`);
 }
 
 // After dark: none.
