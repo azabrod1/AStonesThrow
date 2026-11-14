@@ -196,10 +196,14 @@ const largestHeight = (page) => page.evaluate(() => {
 // ---- 1. the real clock -------------------------------------------------------
 console.log('automatic quality on the real clock, 390×844');
 part('the page, the idle and the splash measurements');
-const phone = await openPage({ query: 'quality=auto' });
+// The preset the page starts on, taken as window.__pond is set (index.html sets it before the first frame): on a loaded
+// machine the idle measurement can be over before the probe's first look.
+const startQuality = `Object.defineProperty(window, '__pond', { configurable: true, get() { return this.__pondSet; }, set(pond) { this.__pondSet = pond; this.__startQuality = pond.quality; } });`;
+const phone = await openPage({ query: 'quality=auto', initScript: startQuality });
 const { page } = phone;
 const atStart = await pageState(page);
-check(atStart.quality === 'high', `starts on high (got ${atStart.quality})`);
+const startedOn = await page.evaluate(() => window.__startQuality);
+check(startedOn === 'high', `starts on high (got ${startedOn})`);
 await checkBuilt(phone, 'at the start');
 
 // The idle measurement: 30 warm-up frames and 60 measured. Wait for the readout to show a preset and the calibration
@@ -229,25 +233,62 @@ check(ringsBeforeThrow.live === 0 && ringsBeforeThrow.passes === 0, `the idle po
 const programNames = (page) => page.evaluate(() => window.__pond.renderer.info.programs.map((program) => `${program.name} (${program.cacheKey.slice(0, 40)})`));
 const programsBeforeThrow = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThrow = await programNames(page);
-await page.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
-await page.waitForFunction(() => window.__pond.splash.count > 0, undefined, { timeout: 300000 });
-const splashStart = Date.now();
-// The spray (src/spray.js) flies with the splash, and is drawn no more once it has landed.
-const sprayFlew = await page.waitForFunction(() => window.__pond.budget.spray.flying, undefined, { timeout: 300000, polling: 50 }).then(() => true, () => false);
-await page.waitForFunction(() => window.__pond.splash.count === 0, undefined, { timeout: 900000 }).catch(() => {});
+// The throw and its watch in one call. On the real clock the splash's droplets last half a second, and on a loaded
+// machine a round trip to the page can take longer: a watch begun by the next call missed the splash and waited out
+// its timeout. So each frame the page notes what is checked below, as it happens: the splash, the spray (src/spray.js)
+// flying with it and then landed, and the rings as the splash ends.
+await page.evaluate(() => {
+  const pond = window.__pond;
+  const seen = window.__firstThrow = { splash: false, ended: false, sprayFlew: false, sprayLanded: false, ringsAtEnd: null, seconds: 0 };
+  let started = 0;
+  const watch = () => {
+    const { count } = pond.splash, flying = pond.splash.spray.alive;
+    if (count > 0 && !seen.splash) { seen.splash = true; started = performance.now(); }
+    if (flying) seen.sprayFlew = true;
+    else if (seen.sprayFlew) seen.sprayLanded = true;
+    if (seen.splash && count === 0 && !seen.ended) Object.assign(seen, { ended: true, seconds: (performance.now() - started) / 1000, ringsAtEnd: pond.budget.rings });
+    if (!(seen.ended && seen.sprayLanded)) requestAnimationFrame(watch);
+  };
+  requestAnimationFrame(watch);
+  pond.throwAt(0, -1.4, { radius: 0.03 });
+});
+await page.waitForFunction(() => window.__firstThrow.splash, undefined, { timeout: 300000 }).catch(async (error) => {
+  // No splash: say what the page was doing (whether its clock ran, where the stone is, its context, its errors).
+  const seen = await page.evaluate(() => {
+    const pond = window.__pond;
+    return {
+      time: pond.time, quality: pond.quality, contextLost: pond.renderer.getContext().isContextLost(), visibility: document.visibilityState,
+      rocks: pond.rocks.map((rock) => `${rock.thing.name} ${rock.state} at ${rock.position.toArray().map((value) => value.toFixed(2)).join(',')}`),
+    };
+  }).catch((evaluateError) => `the page did not answer (${evaluateError.message})`);
+  console.log(`  no splash after the first throw: ${JSON.stringify(seen)}; the page's errors: ${problems.join(' | ') || 'none'}`);
+  throw error;
+});
+await page.waitForFunction(() => window.__firstThrow.ended, undefined, { timeout: 900000 }).catch(() => {});
 const afterSplash = await pageState(page);
-console.log(`  splash: ${afterSplash.readout} after ${((Date.now() - splashStart) / 1000).toFixed(0)} s of splash`);
+const firstThrow = await page.evaluate(() => window.__firstThrow);
+console.log(`  splash: ${afterSplash.readout} after ${firstThrow.seconds.toFixed(1)} s of splash`);
 const programsAfterSplash = await page.evaluate(() => window.__pond.budget.programs);
 const namesAfterSplash = await programNames(page);
 const compiled = namesAfterSplash.filter((name) => !namesBeforeThrow.includes(name));
 check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash${compiled.length ? `; new: ${compiled.join(', ')}` : ''})`);
+// Its drops' rings' table is fetched at its impact (src/dropRings.js), and a drop that lands before it comes has no ring.
+// It comes in time; on a loaded machine, this probe's own file server starved, it may not: if no drop drew a ring, the
+// table's coming is checked here and the next throw's drops (mid-splash, below) are checked for rings instead.
 const dropRingsAfterSplash = await page.evaluate(() => ({ ready: window.__pond.dropRings.ready, added: window.__pond.dropRings.added }));
-check(dropRingsAfterSplash.ready && dropRingsAfterSplash.added > 0, `its drops drew rings of their own (${dropRingsAfterSplash.added}), their table fetched at its impact`);
-const sprayLanded = await page.waitForFunction(() => !window.__pond.budget.spray.flying, undefined, { timeout: 300000 }).then(() => true, () => false);
+const dropRingsLate = dropRingsAfterSplash.added === 0;
+if (dropRingsLate) {
+  const came = await page.waitForFunction(() => window.__pond.dropRings.ready, undefined, { timeout: 120000 }).then(() => true, () => false);
+  check(came, `its drops drew no ring, their table, fetched at its impact, ${came ? 'come after they landed (a slow server)' : 'never come'}`);
+} else {
+  check(dropRingsAfterSplash.ready, `its drops drew rings of their own (${dropRingsAfterSplash.added}), their table fetched at its impact`);
+}
+const { sprayFlew } = firstThrow;
+const sprayLanded = await page.waitForFunction(() => window.__firstThrow.sprayLanded, undefined, { timeout: 300000 }).then(() => true, () => false);
 const sprayAfter = await page.evaluate(() => window.__pond.budget.spray);
 check(sprayFlew && sprayLanded, `the first throw's spray flies (${sprayFlew}) and is drawn no more once it has landed (${sprayLanded}; ${sprayAfter.drawn} slots written)`);
-const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
-check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 2 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass, a partial pass and one resolve pass each)`);
+const ringsAfterSplash = firstThrow.ringsAtEnd;
+check(ringsAfterSplash?.live >= 1 && ringsAfterSplash.passes === 2 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash?.live} live, ${ringsAfterSplash?.passes} passes a frame as it ends (a spectrum pass, a partial pass and one resolve pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
 check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === 'auto' && afterSplash.row.toLowerCase().endsWith(afterSplash.quality), `the settings show Auto, drawing ${afterSplash.quality} (row: ${afterSplash.row})`);
 await checkBuilt(phone, 'after the splash measurement');
@@ -266,7 +307,7 @@ for (const name of ['high', 'medium', 'low', 'high', 'low', 'medium', 'high']) {
 }
 
 // A change of preset in the middle of a splash carries the waves to the new grid.
-await page.evaluate(() => { window.__pond.pause(); window.__pond.throwAt(0, -1.4, { radius: 0.04 }); window.__pond.advance(1.1); });
+const ringsBeforeMidSplash = await page.evaluate(() => { const pond = window.__pond, added = pond.dropRings.added; pond.pause(); pond.throwAt(0, -1.4, { radius: 0.04 }); pond.advance(1.1); return added; });
 const onHigh = await largestHeight(page);
 await page.evaluate(() => window.__pond.setQuality('medium'));
 const onMedium = await largestHeight(page);
@@ -275,6 +316,10 @@ check(onHigh > 1e-4 && onMedium > 0.5 * onHigh && onMedium < 1.5 * onHigh, `a sw
 await page.evaluate(() => { window.__pond.advance(0.2); window.__pond.setQuality('high'); });
 const backOnHigh = await largestHeight(page);
 check(backOnHigh > 1e-4 && Number.isFinite(backOnHigh), `and back on 512² (${(backOnHigh * 1000).toFixed(2)} mm)`);
+if (dropRingsLate) {
+  const added = await page.evaluate(() => window.__pond.dropRings.added) - ringsBeforeMidSplash;
+  check(added > 0, `the next throw's drops drew rings of their own (${added}), the table come`);
+}
 await checkBuilt(phone, 'after the switches mid-splash');
 
 // The pool, and back to the lake: on low (whatever a preset's sizes, it draws the pool's quads; switched to medium in it).
