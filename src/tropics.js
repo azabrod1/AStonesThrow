@@ -1146,10 +1146,7 @@ export class Tropics {
     this.frustum = new THREE.Frustum();
     this.viewProjection = new THREE.Matrix4();
     this.sphere = new THREE.Sphere();
-    // A region of the mirror image redrawn (keepToRegion): its sub-frustum, and the meshes hidden and twins shown for it.
-    this.regionCrop = new THREE.Matrix4();
-    this.regionViewProjection = new THREE.Matrix4();
-    this.regionFrustum = new THREE.Frustum();
+    // A region of the mirror image redrawn (keepToRegion): the meshes hidden and twins shown for it.
     this.regionHidden = [];
     this.regionShown = [];
     // Until it is built, one far palm on the near motu stands for all of it: the warm-up compiles both programs on it
@@ -1493,19 +1490,14 @@ export class Tropics {
    * drawMirror: the splash's image, or a floater's, drawn again each frame
    * it moves; the scissor saves the pixels outside it, not the vertices):
    * of the instances each mesh draws (cull), only those whose spheres reach
-   * into what `mirrorCamera` sees through `region` (x, y, width and height,
-   * in pixels of a target `width` × `height`). A mesh with none of them is
+   * into `frustum`, what the mirror's camera sees through the region
+   * (frustumOfRegion, src/mirrorRegion.js). A mesh with none of them is
    * left out, one with only some draws them through its twin (regionTwins),
    * in the same order. Nothing drawn inside the region changes; endRegion
    * puts the meshes back.
    */
-  keepToRegion(mirrorCamera, region, width, height) {
+  keepToRegion(frustum) {
     if (!this.shown || !this.built) return;
-    // The region's sub-frustum: the mirror's projection cropped to it, a pixel wider each way than the scissor.
-    const left = 2 * (region.x - 1) / width - 1, right = 2 * (region.x + region.z + 1) / width - 1;
-    const bottom = 2 * (region.y - 1) / height - 1, top = 2 * (region.y + region.w + 1) / height - 1;
-    this.regionCrop.set(2 / (right - left), 0, 0, -(right + left) / (right - left), 0, 2 / (top - bottom), 0, -(top + bottom) / (top - bottom), 0, 0, 1, 0, 0, 0, 0, 1);
-    const frustum = this.regionFrustum.setFromProjectionMatrix(this.regionViewProjection.multiplyMatrices(this.regionCrop, mirrorCamera.projectionMatrix).multiply(mirrorCamera.matrixWorldInverse));
     const sphere = this.sphere;
     for (const family of this.families) {
       const { spheres, byLevel } = family;

@@ -340,6 +340,7 @@ import { createBirdView as createBirdModels, MODELLED_KINDS } from './birdMeshes
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
 import { compileOnly } from './precompile.js';
+import { frustumOfRegion, keepMeshesToRegion, showRegionAgain } from './mirrorRegion.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -1436,6 +1437,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     reflectionMatrix.multiply(mirrorCamera.projectionMatrix).multiply(mirrorCamera.matrixWorldInverse);
   }
 
+  const regionFrustum = new THREE.Frustum(), regionHidden = [];
   /** The mirror image, over `region` of the target (or all of it), with the splash's `objects` in it. */
   function drawMirror(region, objects) {
     if (region) {
@@ -1451,11 +1453,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     renderer.setRenderTarget(reflectionTarget);
     renderer.setClearColor(0x000000, 1);
     renderer.clear(true, true, false);
-    if (region) tropics.keepToRegion(mirrorCamera, region, reflectionTarget.width, reflectionTarget.height);   // the lagoon's palms: only those the region shows (src/tropics.js)
+    if (region) {
+      // Only what reaches into the region is drawn (src/mirrorRegion.js): the lagoon's palms, a shore's boulders, the birds.
+      const frustum = frustumOfRegion(mirrorCamera, region, reflectionTarget.width, reflectionTarget.height, regionFrustum);
+      tropics.keepToRegion(frustum);
+      keepMeshesToRegion(frustum, [boulders.mirror, birdView.mirror], regionHidden);
+    }
     // three.js makes a target's mip levels after each render() into it: only after the last of them here.
     reflectionTarget.texture.generateMipmaps = objects.length === 0;
     renderer.render(sceneMain, mirrorCamera);
     tropics.endRegion();
+    showRegionAgain(regionHidden);
     if (objects.length > 0) {
       renderer.render(splash.particleScene, mirrorCamera);
       for (const object of objects) object.material = object.userData.mirrorDistanceMaterial;
