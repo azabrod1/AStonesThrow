@@ -41,7 +41,9 @@
 // wing's sheet, lit from either side, glows a little when backlit), written
 // as radiance, and faded into the weather's haze as the scene is (BIRD_HAZE:
 // a gull 50 m off in a fog all but gone). Three
-// meshes a bird, one draw each: `above` in the main scene, `mirror` on the
+// meshes a bird, one draw each: `above` in the main scene (blended, so the
+// wings' and tail's cutouts have an anti-aliased edge: the renderer has no
+// MSAA), `mirror` on the
 // mirror's layer (its distance in alpha, as src/boulders.js writes it),
 // which src/main.js draws again only while a bird in its view moves
 // (mirrorBounds), and `below`, what of a bird is under the water (a wading
@@ -187,7 +189,22 @@ void main() {
     picture = vec4(mix(vec3(0.6, 0.6, 0.56), flank, smoothstep(0.1, 0.3, vUv.y)), 1.0);
   }
   // The wings' and the tail's outlines are their pictures' alpha; the body's is its shape (its picture is solid over it).
-  if (vPart > 0.5 && vPart < 2.5 && picture.a < 0.5) discard;
+  // In the main scene the outline is a cutout anti-aliased by its own rate across the screen (the renderer has no
+  // MSAA, so no alpha to coverage): its edge a pixel's blend, not a hard step that crawls as the wings beat against a
+  // bright sky. Its alpha is raised a little each mip level down (Golus's mip scale), as a level's average of the
+  // primaries' slots and the trailing edge's feathers falls under the cut and a far bird's wings would thin away.
+  // Taken outside the branches, where derivatives are defined.
+  vec2 texel = (rect.xy + vUv * rect.zw) * vec2(textureSize(uAtlas, 0));
+  float mipLevel = max(0.0, 0.5 * log2(max(dot(dFdx(texel), dFdx(texel)), dot(dFdy(texel), dFdy(texel)))));
+  float cutAlpha = picture.a * (1.0 + 0.25 * mipLevel);
+  float coverage = clamp((cutAlpha - 0.5) / max(fwidth(cutAlpha), 1e-4) + 0.5, 0.0, 1.0);
+  bool cutout = vPart > 0.5 && vPart < 2.5;
+  #if defined(MIRROR) || defined(BELOW)
+    if (cutout && picture.a < 0.5) discard;
+  #else
+    if (!cutout) coverage = 1.0;
+    if (coverage <= 0.0) discard;
+  #endif
   // The photograph has its own light and shade (an underwing photographed from below is in shadow): lit by the sky
   // and the sun as the scene is, the sun's share by which way the side seen faces it (SUN_ON), so a bird between the
   // eye and the sun is lit by the sky, its rim and its wings' vanes catching the sun.
@@ -211,7 +228,7 @@ void main() {
     gl_FragColor = vec4(radiance, 1.0);
   #else
     if (vWorld.y < 0.0) discard;
-    gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0);
+    gl_FragColor = vec4(birdHazed(radiance, vWorld), coverage);
   #endif
 }
 `;
@@ -715,6 +732,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
       defines: pass === 'mirror' ? { MIRROR: '' } : pass === 'below' ? { BELOW: '' } : {},
+      transparent: pass === 'above',   // its cutout's edge blended (FRAGMENT); still writing depth, its body solid
       side: THREE.DoubleSide,
       toneMapped: false,
     });
