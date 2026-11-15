@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- One kind's bird model (src/birdMeshes.js) alone, posed through its wingbeat and seen from several sides, for
-     tools/bird-look.mjs to shoot: ?kind=fishEagle&beat=1. Rows: its wingbeat's phases (or, with &poses=standing, a
+     tools/bird-look.mjs to shoot: ?kind=fishEagle&beat=1. Rows: its wingbeat's phases (or, with &poses=landing, the Koi heron's last 1.6 s to touchdown; with &poses=standing, a
      standing kind's ways: standing as photographed, neck drawn in, stretched up, striking, mid-step, crouched to go,
      flying, opening its wings to the sun and holding them open, peering down ahead and to one side, striking to one side, its bill tossed up); columns: side on, from below, from in front and below, from above (standing: side on, from the front,
      from three-quarters behind, from above). &sides=x,y,z;x,y,z;... chooses the columns' eye directions instead (the
@@ -13,6 +13,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { createBirdView } from '../src/birdMeshes.js';
+import { BirdPopulation } from '../src/birds.js';
 const parameters = new URLSearchParams(location.search);
 const kind = parameters.get('kind') ?? 'fishEagle';
 const beat = Number(parameters.get('beat') ?? 1);
@@ -23,18 +24,40 @@ const STANDING_POSES = [
   { neck: 0.2, bill: -0.75, strike: 0.12, crouch: 0.3, pitch: -0.04 }, { neck: 0.2, bill: -0.75, strike: 0.12, crouch: 0.3, pitch: -0.04, aim: 0.45 },   // peering down at a fish, ahead and to one side
   { strike: 1, neck: 0.3, crouch: 0.35, pitch: -0.3, aim: 0.45 }, { neck: 0.9, bill: 0.55 },   // striking to one side; its bill up, tossing its catch
 ];
+// &poses=landing: the Koi pond's heron coming down after it was put up (src/birds.js `land`), the last 1.6 s to
+// touchdown down the rows, as the population poses it (seed 1, stepped at the physics step), its feet's ground where
+// a standing pose's is.
+function landingPoses() {
+  const population = new BirdPopulation({ seed: 1 });
+  population.setPlace('koi'); population.setConditions({ solarElevation: 37 });
+  const heron = population.birds[0], step = 1 / 240;
+  population.step(0, []); population.showAt(0);
+  const spot = { ...heron.pose }, wanted = [1.6, 1.2, 0.9, 0.65, 0.45, 0.25, 0.1, 0.02], posed = [];
+  let landing = null;
+  for (let time = 0; time < 150 && posed.length < wanted.length; time += step) {
+    if (time > 2 && time - step <= 2) population.startle(time, spot.x, spot.z);
+    population.step(time, []);
+    if (heron.mode === 'land' && landing === null) landing = time;
+    if (landing !== null && time >= landing + 6.5 - wanted[posed.length]) {
+      population.showAt(time);
+      posed.push({ ...heron.pose, x: 0, z: 0, heading: 0, look: 0, y: heron.pose.y - spot.y + 0.6, floor: heron.pose.floor - spot.y + 0.6 });
+    }
+  }
+  return posed;
+}
+if (parameters.get('poses') === 'landing') STANDING_POSES.splice(0, STANDING_POSES.length, ...landingPoses());
 const chosenSides = parameters.get('sides')?.split(';').map((side) => side.split(',').map(Number));
-const rows = parameters.get('poses') === 'standing' ? STANDING_POSES.length : Number(parameters.get('rows') ?? 4), columns = chosenSides?.length ?? 4;
+const rows = ['standing', 'landing'].includes(parameters.get('poses')) ? STANDING_POSES.length : Number(parameters.get('rows') ?? 4), columns = chosenSides?.length ?? 4;
 const canvas = document.getElementById('view');
 const height = standingPosesWanted() ? STANDING_POSES.length * 300 : 960;
-function standingPosesWanted() { return new URLSearchParams(location.search).get('poses') === 'standing'; }
+function standingPosesWanted() { return ['standing', 'landing'].includes(new URLSearchParams(location.search).get('poses')); }
 canvas.height = height;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(1280, height, false);
 renderer.setClearColor(0x7aaad6);
 renderer.autoClear = false;
 const lighting = { sunIrradiance: new THREE.Vector3(3, 2.9, 2.7), skyAmbient: new THREE.Vector3(0.75, 0.82, 0.95), sunDirection: new THREE.Vector3(0.4, 0.8, 0.3).normalize(), extinction: new THREE.Vector3(0.4, 0.2, 0.15), waterColor: new THREE.Vector3(0.02, 0.05, 0.06) };
-const standingPoses = parameters.get('poses') === 'standing';
+const standingPoses = ['standing', 'landing'].includes(parameters.get('poses'));
 const scene = new THREE.Scene();
 const view = createBirdView({ lighting, mirrorLayer: 5 });
 scene.add(view.above);

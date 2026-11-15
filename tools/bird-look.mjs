@@ -5,6 +5,7 @@
 //   node tools/bird-look.mjs fishEagle [--beat=1] [--rows=4] [--distance=3] [--label=name]
 //   node tools/bird-look.mjs cardinal --sides='6,0.2,0;4,0.5,4' --fold=1   (eye directions of its own; wings folded, a bound)
 //   node tools/bird-look.mjs heron --poses=standing   (a standing kind's ways down the rows: tools/bird-viewer.html)
+//   node tools/bird-look.mjs heron --poses=landing   (its landing's last 1.6 s as the Koi pond's heron flies it)
 //   node tools/bird-look.mjs heron --poses=standing --distance=1 --focus=0.3,1.0,0 --look=0.8   (its neck close up, head turned)
 //
 // The page's console errors are printed. The Three.js modules are served from
@@ -30,7 +31,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((resolve) => server.listen(0, resolve));
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1280, height: poses === 'standing' ? 2400 : 960 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: ['standing', 'landing'].includes(poses) ? 2400 : 960 } });
 await page.route('https://cdn.jsdelivr.net/npm/three@0.183.2/**', async (route) => {
   const relative = new URL(route.request().url()).pathname.replace('/npm/three@0.183.2/', '');
   try { await route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(path.join(root, 'node_modules/three', relative)) }); } catch { await route.fulfill({ status: 404, body: '' }); }

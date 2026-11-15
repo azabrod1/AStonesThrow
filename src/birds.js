@@ -228,7 +228,7 @@ const HERON = {
   alert: { alert: 9, hold: 4.5, settle: 0.6, most: 2.3, refocus: 0.5 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 5.5, far: 38, climb: 13, hard: 1.8, legsUp: 1.0, neckIn: 1.1, quicker: 0.35, quickFor: 1.4, cruise: 0.9 },
   away: { absent: [25, 55], retry: 12, quiet: 8 },
-  land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.6, flarePitch: 1.05, touchPitch: 0.45, braking: 1.9, reachOut: 0.35, lookDown: 0.35, ahead: 0.16, carry: 0.5, absorb: 0.45, settle: 0.7, neckSettle: 1.2, hold: 0.45, fold: 1.0 },
+  land: { glide: 6.5, from: 34, high: 11, flapping: 2.4, flare: 1.6, flarePitch: 1.05, touchPitch: 0.45, braking: 1.9, reachOut: 0.35, lookDown: 0.35, ahead: 0.08, carry: 0.5, absorb: 0.45, settle: 0.7, neckSettle: 1.2, hold: 0.45, fold: 1.0 },
   tilt: 0,   // its body standing, nose up from level (its model stands as photographed)
   // spells: its standing cut into spells from when it began to stand, each `length` s long (drawn), or longer if what
   //   it does in it needs more; each spell's plan (spellPlan) is drawn from its seed, its stay (how many times it has
