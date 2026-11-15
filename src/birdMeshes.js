@@ -380,20 +380,43 @@ function addWings(wing, shoulderX, shoulderY, add, indices) {
   };
 }
 
-/** A kind's model from its models.json entry (the header): its geometry, and its joints' places (model space). */
-export function buildModel(entry) {
+/**
+ * A model's vertices and triangles as they are built (buildModel, buildStandingModel): `add(position, normal, uv,
+ * joint, part)` a vertex (its joints [first, second, the second's share]; `part` PART's, the body if none), giving its
+ * index (`add.count()` how many so far); `indices` its triangles; and `geometry(front)` the geometry of them, with each
+ * vertex's front-photo paint (frontPaint; none if not given). Every attribute VERTEX reads is made here alone.
+ */
+function modelBuilder() {
   const positions = [], normals = [], uvs = [], joints = [], blends = [], parts = [], indices = [];
-  const { body, wing } = entry;
-  const [left, bottom, right, top] = body.rect;
-  const length = right - left;
-  const middleAt = (x) => (sample(body.stations, body.top, x) + sample(body.stations, body.bottom, x)) / 2;
-  const depthAt = (x) => (sample(body.stations, body.top, x) - sample(body.stations, body.bottom, x)) / 2;
-  const add = (position, normal, uv, joint, part) => {
+  const add = (position, normal, uv, joint, part = PART.body) => {
     positions.push(...position); normals.push(...normal); uvs.push(...uv);
     joints.push(joint[0], joint[1]); blends.push(joint[2]); parts.push(part);
     return positions.length / 3 - 1;
   };
   add.count = () => positions.length / 3;
+  const geometry = (front = new Float32Array(parts.length * 3)) => {
+    const made = new THREE.BufferGeometry();
+    made.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    made.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    made.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    made.setAttribute('joints', new THREE.Float32BufferAttribute(joints, 2));
+    made.setAttribute('jointBlend', new THREE.Float32BufferAttribute(blends, 1));
+    made.setAttribute('part', new THREE.Float32BufferAttribute(parts, 1));
+    made.setAttribute('front', new THREE.Float32BufferAttribute(front, 3));
+    made.setIndex(indices);
+    return made;
+  };
+  return { positions, normals, indices, add, geometry };
+}
+
+/** A kind's model from its models.json entry (the header): its geometry, and its joints' places (model space). */
+export function buildModel(entry) {
+  const { positions, normals, indices, add, geometry: makeGeometry } = modelBuilder();
+  const { body, wing } = entry;
+  const [left, bottom, right, top] = body.rect;
+  const length = right - left;
+  const middleAt = (x) => (sample(body.stations, body.top, x) + sample(body.stations, body.bottom, x)) / 2;
+  const depthAt = (x) => (sample(body.stations, body.top, x) - sample(body.stations, body.bottom, x)) / 2;
   const neckX = left + SKELETON.neck * length, tailX = left + SKELETON.tail * length;
 
   // The body: rings along it, a ring's vertex at angle θ round (0 up the right side... the side's picture both ways).
@@ -469,15 +492,7 @@ export function buildModel(entry) {
     }
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('joints', new THREE.Float32BufferAttribute(joints, 2));
-  geometry.setAttribute('jointBlend', new THREE.Float32BufferAttribute(blends, 1));
-  geometry.setAttribute('part', new THREE.Float32BufferAttribute(parts, 1));
-  geometry.setAttribute('front', new THREE.Float32BufferAttribute(new Float32Array(parts.length * 3), 3));   // painted from the side alone (a flier is seen side on, or far off)
-  geometry.setIndex(indices);
+  const geometry = makeGeometry();   // painted from the side alone (a flier is seen side on, or far off): no front
   return { geometry, joints: modelJoints, span: entry.span, length, radius: Math.max(entry.span, length) * 0.6 };
 }
 
@@ -602,16 +617,10 @@ function frontPaint(front, positions, normals, indices, count) {
  * forward on its breast and neck is painted from its front picture instead, where it has one (frontPaint).
  */
 export function buildStandingModel(entry) {
-  const positions = [], normals = [], uvs = [], joints = [], blends = [], parts = [], indices = [];
+  const { positions, normals, indices, add, geometry: makeGeometry } = modelBuilder();
   const { side, wing } = entry;
   const [left, bottom, right, top] = side.rect;
   const pictureUv = (x, y) => [(x - left) / (right - left), (top - y) / (top - bottom)];
-  const add = (position, normal, uv, joint, part = PART.body) => {
-    positions.push(...position); normals.push(...normal); uvs.push(...uv);
-    joints.push(joint[0], joint[1]); blends.push(joint[2]); parts.push(part);
-    return positions.length / 3 - 1;
-  };
-  add.count = () => positions.length / 3;
   // The trunk.
   const { trunk } = side;
   const trunkLeft = trunk.stations[0], trunkRight = trunk.stations[trunk.stations.length - 1];
@@ -747,15 +756,7 @@ export function buildStandingModel(entry) {
   const shoulderY = sample(trunk.stations, trunk.top, shoulderX) - 0.03;
   const wingSkeleton = addWings(wing, shoulderX, shoulderY, add, indices);
   const prey = addPrey(neck, add, indices);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('joints', new THREE.Float32BufferAttribute(joints, 2));
-  geometry.setAttribute('jointBlend', new THREE.Float32BufferAttribute(blends, 1));
-  geometry.setAttribute('part', new THREE.Float32BufferAttribute(parts, 1));
-  geometry.setAttribute('front', new THREE.Float32BufferAttribute(frontPaint(entry.front, positions, normals, indices, bodyVertices), 3));
-  geometry.setIndex(indices);
+  const geometry = makeGeometry(frontPaint(entry.front, positions, normals, indices, bodyVertices));
   const hipsHeight = -Math.min(...side.legs.map((leg) => leg.foot[1]));
   // The neck's joints, and each link's direction as photographed (the last the head's: the nape to the bill's tip).
   const neckJoints = chainAlong.map(chainPoint);
@@ -921,11 +922,11 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
   function warmUp() {
     if (!pool.length) pool.push(makeSprite());
     const sprite = pool[0];
-    const geometry = new THREE.PlaneGeometry(0.3, 0.3);
-    geometry.setAttribute('joints', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
-    geometry.setAttribute('jointBlend', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count), 1));
-    geometry.setAttribute('part', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count), 1));
-    geometry.setAttribute('front', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
+    // A square of body 0.3 m across, every attribute a model has (modelBuilder), skinned to the body's joint.
+    const square = modelBuilder();
+    for (const [x, y] of [[-0.15, 0.15], [0.15, 0.15], [-0.15, -0.15], [0.15, -0.15]]) square.add([x, y, 0], [0, 0, 1], [x / 0.3 + 0.5, y / 0.3 + 0.5], [JOINTS.body, JOINTS.body, 0]);
+    square.indices.push(0, 2, 1, 2, 3, 1);
+    const geometry = square.geometry();
     const meshes = [...sprite.meshes, sprite.under];
     const was = meshes.map((mesh) => mesh.geometry);
     for (const mesh of meshes) { mesh.geometry = geometry; mesh.visible = true; mesh.frustumCulled = false; }
