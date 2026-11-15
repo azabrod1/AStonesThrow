@@ -46,7 +46,7 @@
 // uniform: no program changes); a failed fetch leaves that kind unshown.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
-import { boundedGeometry, BIRD_HAZE } from './birdMeshes.js';
+import { boundedGeometry, loadBirdTexture, mirrorBoundsOf, BIRD_HAZE, SUN_SHARE, SKY_SHARE, MIRROR_NEARNESS_SCALE } from './birdMeshes.js';
 
 const FOLDER = new URL('../assets/birds/', import.meta.url);
 const FRAMES_URL = new URL('birds.json', FOLDER);
@@ -61,11 +61,8 @@ const STROKE_FRAMES = 0.35;
 const BLEND = { stroke: 0.2, beat: 0.1, front: 0.015 };
 // A role a kind has no frame for falls back to the first of these it has.
 const FALLBACKS = { glide: ['mid', 'down', 'up'], mid: ['glide', 'down', 'up'], down: ['mid', 'glide', 'up'], up: ['glide', 'mid', 'down'], front: [] };
-// How much of the sun's light falls on a bird's side as the eye sees it (a flat picture has no normal of its own), and
-// the sky's ambient light's share (as the fish take it, src/fishMeshes.js).
-const SUN_SHARE = 0.3;
-const SKY_SHARE = 1.0;
-const MIRROR_NEARNESS_SCALE = 4;   // src/boulders.js's: the mirror image's alpha is 1 − this / distance
+// A flat picture has no normal of its own: SUN_SHARE of the sun's light falls on its side as the eye sees it, and
+// SKY_SHARE of the sky's ambient light (src/birdMeshes.js, as the fish take it, src/fishMeshes.js).
 
 // Two frames, A and B (B's share uShare): each its place in the atlas (x, y, width, height: uv, from its top left), its
 // size (m), its anchor (the point of it at the bird's place: a share of it, x from its left, y from its bottom) and
@@ -143,11 +140,6 @@ const quad = new THREE.PlaneGeometry(1, 1).translate(0.5, 0.5, 0);   // corners 
 const forward = new THREE.Vector3();
 const toBird = new THREE.Vector3();
 
-function smoothstep(low, high, value) {
-  const along = Math.min(Math.max((value - low) / (high - low), 0), 1);
-  return along * along * (3 - 2 * along);
-}
-
 /**
  * The birds' pictures: `above` and `mirror` for the main scene (the
  * mirror's on `mirrorLayer` alone), and `below`, empty (nothing of a flying
@@ -190,15 +182,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     try {
       await loadCatalogue();
       if (!catalogue.atlases?.[kind]) return;
-      const bytes = await loadAsset(new URL(catalogue.atlases[kind].file, FOLDER), 'arrayBuffer');
-      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-      const texture = new THREE.Texture(bitmap);
-      texture.flipY = false;   // its rows as they lie: uv from its top left (tools/bird-sprites.py)
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.generateMipmaps = true;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.anisotropy = 4;
-      texture.needsUpdate = true;
+      const texture = await loadBirdTexture(new URL(catalogue.atlases[kind].file, FOLDER), { anisotropy: 4 });
       textures.set(kind, texture);
       for (const sprite of sprites) if (sprite.kind === kind) sprite.uniforms.uAtlas.value = texture;
       onLoaded();
@@ -336,11 +320,11 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     toBird.copy(centre).sub(camera.position).setY(0).normalize();
     const flip = forward.z * toBird.x - forward.x * toBird.z > 0 ? -1 : 1;   // its heading on the eye's right of its line to it (the right of a line along −z is +x)
     const along = forward.dot(toBird);
-    const headOn = roleOf(kind, 'front') ? smoothstep(HEAD_ON - BLEND.front, HEAD_ON + BLEND.front, Math.abs(along)) : 0;
+    const headOn = roleOf(kind, 'front') ? THREE.MathUtils.smoothstep(Math.abs(along), HEAD_ON - BLEND.front, HEAD_ON + BLEND.front) : 0;
     const resting = rank % 2 === 1 && roleOf(kind, 'glide') === 'glide' && roleOf(kind, 'down') === 'down' ? 'down' : 'glide';   // every other bird of a flock: its wings held lower (the header)
-    const beating = smoothstep(BEATING - BLEND.beat, BEATING + BLEND.beat, at.beat);
+    const beating = THREE.MathUtils.smoothstep(at.beat, BEATING - BLEND.beat, BEATING + BLEND.beat);
     const stroke = Math.sin(at.phase);
-    const struck = smoothstep(STROKE_FRAMES - BLEND.stroke, STROKE_FRAMES + BLEND.stroke, Math.abs(stroke));
+    const struck = THREE.MathUtils.smoothstep(Math.abs(stroke), STROKE_FRAMES - BLEND.stroke, STROKE_FRAMES + BLEND.stroke);
     weights.clear();
     const side = 1 - headOn;
     add(kind, resting, flip, side * (1 - beating));
@@ -361,24 +345,11 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     return chosen;
   }
 
-  const sphere = new THREE.Sphere();
-  const box = new THREE.Box3();
   /**
-   * The bounds of every shown bird whose picture changes (in flight, every
-   * frame it moves) and that the mirror's camera sees (`frustum`), joined
-   * into `into`: how many.
+   * The bounds of every shown bird whose picture changes (in flight, every frame it moves) and that the mirror's
+   * camera sees (`frustum`), joined into `into`: how many.
    */
-  function mirrorBounds(into, frustum) {
-    let moving = 0;
-    for (const sprite of sprites) {
-      if (!sprite.shown || sprite.still) continue;
-      sphere.set(sprite.centre, sprite.radius);
-      if (!frustum.intersectsSphere(sphere)) continue;
-      into.union(sphere.getBoundingBox(box));
-      moving++;
-    }
-    return moving;
-  }
+  const mirrorBounds = (into, frustum) => mirrorBoundsOf(sprites, into, frustum);
 
   /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so both programs are built; done() takes them away. */
   function warmUp() {
@@ -396,7 +367,6 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     above, below, mirror,
     show, update, mirrorBounds, warmUp,
     get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0), 0); },
-    get count() { return sprites.filter((sprite) => sprite.shown).length; },
   };
 }
 

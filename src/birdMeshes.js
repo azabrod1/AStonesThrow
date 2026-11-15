@@ -98,6 +98,39 @@ export function boundedGeometry(source, bounds) {
   geometry.boundingSphere = bounds;
   return geometry;
 }
+/**
+ * A bird's image (a WebP in assets/birds/, its rows as they lie: uv from its top left), fetched and made a mipmapped
+ * sRGB texture, filtered `anisotropy` times.
+ */
+export async function loadBirdTexture(url, { anisotropy = 1 } = {}) {
+  const bytes = await loadAsset(url, 'arrayBuffer');
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const texture = new THREE.Texture(bitmap);
+  texture.flipY = false;   // its rows as they lie (tools/bird-models.py, tools/bird-sprites.py)
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = anisotropy;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const boundsSphere = new THREE.Sphere(), boundsBox = new THREE.Box3();
+/**
+ * The bounds (each `centre` and `radius`) of every shown bird of `sprites` that moved this frame (not `still`) and that
+ * the mirror's camera sees (`frustum`), joined into `into`: how many (src/main.js draws the mirror image there again).
+ */
+export function mirrorBoundsOf(sprites, into, frustum) {
+  let moving = 0;
+  for (const sprite of sprites) {
+    if (!sprite.shown || sprite.still) continue;
+    boundsSphere.set(sprite.centre, sprite.radius);
+    if (!frustum.intersectsSphere(boundsSphere)) continue;
+    into.union(boundsSphere.getBoundingBox(boundsBox));
+    moving++;
+  }
+  return moving;
+}
 const MODELS_URL = new URL('models.json', FOLDER);
 const PART = { body: 0, wing: 1, tail: 2, prey: 3 };
 const RING = 16;                 // a body station's ring of vertices
@@ -105,15 +138,16 @@ const WING_COLUMNS = 24;         // a wing's stations along the span
 const WING_ROWS = 6;             // and across the chord
 const CAMBER = 0.04;             // a wing's arch, a share of its chord
 const BLEND = 0.05;              // m either side of a wing joint over which the skin blends
-const SUN_SHARE = 0.3;            // the sun's and the sky's light on the photograph, as the photo sprites took them
-const SKY_SHARE = 1.0;
+// The sun's and the sky's light on the photograph (src/birdSprites.js lights its pictures by them too).
+export const SUN_SHARE = 0.3;
+export const SKY_SHARE = 1.0;
 // How much of SUN_SHARE falls on a side by how squarely it faces the sun (`facing`, the cosine): side on (0) as the
 // photographs were lit, `toward` at most, and turned away the sun's light gone but for `away` (the body: light
 // scattered round it) or, a wing's thin vane, `through` (backlit feathers glow, a share of the light let through);
 // `rise` is how much more it gets per unit of facing (`wingRise`, up to `wingToward`, a wing's). The sky's light on
 // the body: `sky` of it side on, `skySpread` more facing the sun (the sky is brightest about it); on a wing, `side`.
 const SUN_ON = { side: 0.92, rise: 0.9, toward: 1.25, away: 0.12, through: 0.35, wingRise: 0.4, wingToward: 1.15, sky: 0.92, skySpread: 0.08 };
-const MIRROR_NEARNESS_SCALE = 4; // src/boulders.js's
+export const MIRROR_NEARNESS_SCALE = 4; // src/boulders.js's: the mirror image's alpha is 1 − this / distance
 const CREST_FIN = 0.0035;         // m: half a crest's thickness at its root (it thins to a third of that at its tip)
 // A kind's body's width against its depth along it (0 the tail's tip, 1 the bill's): flat at the tail, round at the
 // breast, narrower at the head.
@@ -774,15 +808,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
       await loadCatalogue();
       const entry = catalogue.models?.[kind];
       if (!entry) return;
-      const bytes = await loadAsset(new URL(entry.atlas, FOLDER), 'arrayBuffer');
-      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-      const texture = new THREE.Texture(bitmap);
-      texture.flipY = false;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.generateMipmaps = true;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.anisotropy = 4;
-      texture.needsUpdate = true;
+      const texture = await loadBirdTexture(new URL(entry.atlas, FOLDER), { anisotropy: 4 });
       const model = entry.standing ? buildStandingModel(entry) : buildModel(entry);
       // A standing kind's fourth picture is its legs' colours (a column a leg, buildStandingModel), where a flying kind's is its tail's.
       const rects = (entry.standing ? ['side', 'under', 'upper', 'legs', entry.front ? 'front' : 'side'] : ['body', 'under', 'upper', 'tail', 'body']).map((name) => new THREE.Vector4(...entry.uv[name]));
@@ -889,20 +915,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     sprite.bounds.set(sprite.centre, sprite.radius);
   }
 
-  const sphere = new THREE.Sphere();
-  const box = new THREE.Box3();
-  /** The bounds of every shown bird that moves and that the mirror's camera sees (`frustum`), joined into `into`: how many. */
-  function mirrorBounds(into, frustum) {
-    let moving = 0;
-    for (const sprite of sprites) {
-      if (!sprite.shown || sprite.still) continue;
-      sphere.set(sprite.centre, sprite.radius);
-      if (!frustum.intersectsSphere(sphere)) continue;
-      into.union(sphere.getBoundingBox(box));
-      moving++;
-    }
-    return moving;
-  }
+  const mirrorBounds = (into, frustum) => mirrorBoundsOf(sprites, into, frustum);
 
   /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so its programs are built. */
   function warmUp() {
@@ -924,6 +937,5 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     above, below, mirror,
     show, update, mirrorBounds, warmUp,
     get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0) + (sprite.under.visible ? 1 : 0), 0); },
-    get count() { return sprites.filter((sprite) => sprite.shown).length; },
   };
 }
