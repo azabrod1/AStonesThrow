@@ -286,6 +286,7 @@ def cut_grabcut(image, spec):
     for value, strokes in ((cv2.GC_FGD, spec['surely']), (cv2.GC_BGD, spec['notBird'])):
         for points, thickness in strokes:
             cv2.polylines(mask, [np.array(points, np.int32)], False, int(value), thickness)
+    cv2.setRNGSeed(1)   # GrabCut's k-means draws on OpenCV's one stream: seeded, no cut hangs on the cuts made before it
     models = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
     cv2.grabCut(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, None, *models, 8, cv2.GC_INIT_WITH_MASK)
     bird = (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)
