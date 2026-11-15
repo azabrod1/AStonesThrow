@@ -1161,7 +1161,6 @@ export class BirdPopulation {
     pose.look = 0.25 * Math.sin(time * 0.37 + bird.seed);   // it looks about as it goes, a little
   }
 
-  /** How hard a bird beats at `time` from its bouts alone (its kind's FLAPPING), 0 to 1. */
   /**
    * A bounding songbird `into` s into its visit (FLAPPING.bounding): beating or bounding with its wings shut (pose
    * beat and fold), and how far its path rises and dips about the visit's (pose.y, and pitch with it). Each cycle is
@@ -1192,6 +1191,7 @@ export class BirdPopulation {
     pose.pitch += Math.atan2(climb, visit.speed) * 0.6;
   }
 
+  /** How hard a bird beats at `time` from its bouts alone (its kind's FLAPPING), 0 to 1. */
   flapBout(bird, time, flapping) {
     const { window, share, least, most, ease } = flapping;
     const shifted = time + bird.flapOffset;

@@ -265,11 +265,6 @@ function sample(stations, values, at) {
 }
 
 /**
- * A kind's two wings (the header: a sheet over the flattened outline, the right one out along +z and the left
- * mirrored), from a shoulder at (shoulderX, shoulderY), added through `add` (and their triangles to `indices`): the
- * shoulder's, elbow's and wrist's places (the right wing's, model space).
- */
-/**
  * A crested body's normals (buildModel): the rings' first `stations` + 1, each RING + 1 round, are no longer
  * ellipses, so each vertex's normal is taken from its neighbours along the body and round its ring, turned to the
  * side the ellipse's normal faced.
@@ -294,6 +289,11 @@ function crestNormals(positions, normals, stations) {
   }
 }
 
+/**
+ * A kind's two wings (the header: a sheet over the flattened outline, the right one out along +z and the left
+ * mirrored), from a shoulder at (shoulderX, shoulderY), added through `add` (and their triangles to `indices`): the
+ * shoulder's, elbow's and wrist's places (the right wing's, model space).
+ */
 function addWings(wing, shoulderX, shoulderY, add, indices) {
   const root = wing.stations[0], tip = wing.tip;
   const elbowS = root + (tip - root) * SKELETON.elbow, wristS = root + (tip - root) * SKELETON.wrist;
