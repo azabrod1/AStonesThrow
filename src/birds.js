@@ -148,6 +148,8 @@ export const BIRD_KINDS = {
 //     rad toward the water: side on to the home view, so its outline reads. Standing, a bird's ways are its kind's STANDING.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
 // sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
+// The swans, the ibises, the geese and the Highlands' heron only cross: at their speed (10 to 15 m/s) a turn is too
+// wide to keep within reach (layVisit: TURN_REACH, TURN_BANK), and they would spend it 150 m out and more.
 export const BIRDS_BY_PLACE = {
   cove: [{ kind: 'kelp', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [10, 45], styles: { cross: 0.6, turn: 0.4 } }],
   loch: [{ kind: 'herring', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [10, 45], styles: { cross: 0.6, turn: 0.4 } }],
@@ -156,10 +158,10 @@ export const BIRDS_BY_PLACE = {
   swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [35, 80], height: [2, 4.5], aim: 0, spread: 14, gap: [10, 40], styles: { cross: 0.6, turn: 0.4 } }],
   desert: [{ kind: 'eagle', habit: 'visit', count: 1, distance: [55, 110], height: [3.5, 6.5], aim: 0, spread: 12, gap: [10, 40], styles: { cross: 0.35, turn: 0.2, circle: 0.45 } }],
   lakeside: [{ kind: 'fishEagle', habit: 'visit', count: 1, distance: [35, 85], height: [2.5, 5], aim: 14, spread: 12, gap: [8, 30], styles: { cross: 0.35, turn: 0.25, circle: 0.4 } }],
-  wooded: [{ kind: 'swan', habit: 'visit', count: 2, together: true, spacing: 4, distance: [35, 70], height: [1.5, 3.5], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 0.8, turn: 0.2 } }],
-  harbour: [{ kind: 'ibis', habit: 'visit', count: 5, together: true, spacing: 3.5, distance: [40, 75], height: [2.5, 4.5], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 0.75, turn: 0.25 } }],
-  mesas: [{ kind: 'goose', habit: 'visit', count: 2, together: true, spacing: 2.5, distance: [35, 65], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 0.75, turn: 0.25 } }],
-  highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 0.7, turn: 0.3 } }],
+  wooded: [{ kind: 'swan', habit: 'visit', count: 2, together: true, spacing: 4, distance: [35, 70], height: [1.5, 3.5], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 1 } }],
+  harbour: [{ kind: 'ibis', habit: 'visit', count: 5, together: true, spacing: 3.5, distance: [40, 75], height: [2.5, 4.5], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 1 } }],
+  mesas: [{ kind: 'goose', habit: 'visit', count: 2, together: true, spacing: 2.5, distance: [35, 65], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 40], styles: { cross: 1 } }],
+  highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 1 } }],
   // The Reflecting Pool (Washington, D.C.): a blue jay and a cardinal, birds of the elms either side of it, each on
   // its own comings and goings and in its own way (nothing thrown goes past the water's 6 m patch, so they may come
   // within 10 m of the eye, where a songbird shows): the jay crossing higher and farther out, at the elms' lower
@@ -184,6 +186,10 @@ const BANK_MOST = THREE.MathUtils.degToRad(35);   // no bird is drawn banked mor
 // unhurried turns, 10 to 30°): one whose path bends tighter anywhere, where its wanderings or its way into or out of a
 // turn meet, is drawn again (LAYOUT_TRIES at most, the gentlest kept).
 const LAID_BANK = THREE.MathUtils.degToRad(28);
+// A turn's far side is kept within this share of its group's far distance, banking up to TURN_BANK degrees (under
+// LAID_BANK: the spline bends a little tighter than its circle) to stay so (layVisit).
+const TURN_REACH = 1.4;
+const TURN_BANK = 24;
 const LAYOUT_TRIES = 16;
 // A bird rolls into and out of a turn over a moment, not at once: its bank is the turn's average over this long either
 // side of where it is (five samples), which also keeps the roll's rate down where the path's bend changes fast.
@@ -921,6 +927,11 @@ export class BirdPopulation {
     const side = random() < 0.5 ? 1 : -1;   // in from the right (1) or the left
     const speed = visitor.cruise * (0.85 + 0.3 * random());
     const [near, far] = group.distance;
+    // A turn is kept within TURN_REACH of the far distance; one that would go past it even banked at TURN_BANK (a
+    // swan's or a goose's: at 14 to 15 m/s a gentle half circle is 150 m across, and the bird would spend most of its
+    // visit out there a few pixels wide) is flown as a crossing instead.
+    const reach = far * TURN_REACH;
+    if (style === 'turn' && near + 2 * turnRadius(speed, TURN_BANK) > reach) style = 'cross';
     // A point by bearing (degrees right of the home view's line), distance and height; kept under the frame's top
     // (CEILING, but for a thermal's last turns: `free`) and out of reach.
     const points = [];
@@ -949,10 +960,12 @@ export class BirdPopulation {
       at(-side * (OUT + random() * 8), range(group.distance), range(group.height));
     } else if (style === 'turn') {
       // In, out over the water and round (half a circle the far way, as wide as its speed asks at a bank of 12° to
-      // 22°), and back out the side it came in, nearer or farther than it came.
+      // 22°, or tighter, up to TURN_BANK, for its far side to stay within reach), and back out the side it came in,
+      // nearer or farther than it came.
       const apex = THREE.MathUtils.degToRad(middle());
-      const radius = turnRadius(speed, 12 + random() * 10);
+      const gentle = turnRadius(speed, 12 + random() * 10);
       const inner = between([near, (near + far) / 2], random());
+      const radius = Math.min(gentle, Math.max((reach - inner) / 2, turnRadius(speed, TURN_BANK)));
       const aheadX = Math.sin(apex), aheadZ = -Math.cos(apex), rightX = Math.cos(apex), rightZ = Math.sin(apex);
       const centreX = EYE.x + aheadX * (inner + radius), centreZ = EYE.z + aheadZ * (inner + radius);
       at(side * 32 + signed(6), inner + random() * 10, range(group.height));
