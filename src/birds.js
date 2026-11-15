@@ -43,8 +43,13 @@
 //     ever beating their wings, circling. The Reflecting Pool (Washington,
 //     D.C.): a blue jay and a northern cardinal, crossing low between the
 //     elms either side of the pool, now and then.
-//   - None at night (setConditions: the true sun more than NIGHT_SUN below
-//     the horizon, though the moon may light the scene).
+//   - At night (setConditions: the true sun more than NIGHT_SUN below the
+//     horizon, though the moon may light the scene) the day's birds are gone,
+//     and where they live black-crowned night herons come over instead
+//     (BIRDS_AT_NIGHT), as they leave their roosts at dusk to fish through
+//     the night: the Sterkfontein Dam's places and the Reflecting Pool (the
+//     National Zoo keeps a colony of them a few miles up Rock Creek). Loch
+//     Ness has none: it is north of their range.
 //
 // How they fly (visit). A flying bird is not always there: it comes into
 // the view now and then from beyond one side of the frame, goes about over
@@ -132,6 +137,8 @@ export const BIRD_KINDS = {
   // Songbirds: a passerine's quick beats (a jay's about 7 a second, a cardinal's about 11, as birds of their weight beat).
   blueJay: { name: 'Blue jay', span: 0.4, length: 0.28, beat: 7, cruise: 8.5, flapping: 'jay', stand: 0 },
   cardinal: { name: 'Northern cardinal', span: 0.29, length: 0.22, beat: 11, cruise: 7.5, flapping: 'bounding', stand: 0 },
+  // A small, stocky heron: quicker beats than the grey heron's, slower than a gull's.
+  nightHeron: { name: 'Black-crowned night heron', span: 1.1, length: 0.6, beat: 3.0, cruise: 9, flapping: 'steady', stand: 0 },
 };
 
 // Each place's birds (src/places.js PLACES): how many of which kind and their habit.
@@ -181,6 +188,18 @@ export const BIRDS_BY_PLACE = {
 // picture, and its wanderings would turn it hard at this range).
 export const BIRDS_WHEN_FROZEN = {
   koi: [{ kind: 'heron', habit: 'visit', count: 1, distance: [16, 26], height: [2.2, 3.4], aim: 0, spread: 18, gap: [6, 26], wander: 3, styles: { cross: 1 } }],
+};
+
+// A place's birds after dark (setConditions: the day's are not about then), as BIRDS_BY_PLACE's: a black-crowned
+// night heron, out to fish, over now and then, straight across (the header). Night herons fly out from their roosts
+// well above the water; at 4.5 m and up, 35 m out and more, it is over the far shore's skyline (the dam's hills reach
+// about 3.4° above the eye's level), a silhouette against the moonlit or the dusk's sky, never lost against dark land.
+const NIGHT_HERON = { kind: 'nightHeron', habit: 'visit', count: 1, distance: [35, 65], height: [4.5, 7.5], aim: 0, spread: 14, gap: [15, 50], styles: { cross: 1 } };
+export const BIRDS_AT_NIGHT = {
+  lakeside: [{ ...NIGHT_HERON, aim: 14, spread: 12 }],   // as the fish eagle, over the open water right of the trees
+  harbour: [NIGHT_HERON],
+  mesas: [NIGHT_HERON],
+  mall: [{ ...NIGHT_HERON, distance: [14, 30], height: [2.4, 4.5], gap: [8, 30] }],   // over the pool, under the elms' crowns, as the jay (nearer, so across sooner, and oftener)
 };
 
 const BANK_MOST = THREE.MathUtils.degToRad(35);   // no bird is drawn banked more (a visit is laid out within LAID_BANK)
@@ -611,16 +630,23 @@ export class BirdPopulation {
     this.disturbed = -Infinity;   // when a thing was last thrown near a heron's spot (its kind's STANDING away.quiet)
   }
 
-  /** The birds of `place` (none for a place without, or 'none'), each as it starts; its frozen water's (BIRDS_WHEN_FROZEN) when `frozen`. */
+  /**
+   * The birds of `place` (none for a place without, or 'none'), each as it starts; its frozen water's
+   * (BIRDS_WHEN_FROZEN) when `frozen`; and after them its night's (BIRDS_AT_NIGHT, `night`), shown only after dark as
+   * the day's only by day (showAt), so the hour changes which are seen and nothing else.
+   */
   setPlace(place, { frozen = false } = {}) {
     this.place = place;
     this.frozen = frozen;
     const stream = seededRandom(this.seed, 977);
     this.birds = [];
-    for (const group of (frozen && BIRDS_WHEN_FROZEN[place]) || BIRDS_BY_PLACE[place] || []) {
+    const day = (frozen && BIRDS_WHEN_FROZEN[place]) || BIRDS_BY_PLACE[place] || [];
+    const night = BIRDS_AT_NIGHT[place] ?? [];
+    for (const group of [...day, ...night]) {
+      const atNight = night.includes(group);
       let groupSeed = null, visitor = null;
       for (let index = 0; index < group.count; index++) {
-        const bird = { kind: group.kind, habit: group.habit, group, index, pose: freshPose(), seed: Math.floor(stream() * 2 ** 31) };
+        const bird = { kind: group.kind, habit: group.habit, group, index, night: atNight, pose: freshPose(), seed: Math.floor(stream() * 2 ** 31) };
         groupSeed ??= bird.seed;
         bird.groupSeed = groupSeed;   // a group's shared draws (when it comes back, from which side): its first bird's seed
         if (group.habit === 'visit') {
@@ -925,7 +951,7 @@ export class BirdPopulation {
     for (const bird of this.birds) {
       if (bird.habit === 'visit') this.poseVisit(bird, time);
       else this.poseStanding(bird, time);
-      if (this.dark) bird.pose.shown = false;
+      if (this.dark !== bird.night) bird.pose.shown = false;   // the day's birds by day, the night's after dark
     }
   }
 
@@ -1579,6 +1605,6 @@ export class BirdPopulation {
 
   /** What tools and probes read: each bird's kind, mode and pose. */
   report() {
-    return this.birds.map((bird) => ({ kind: bird.kind, habit: bird.habit, mode: bird.mode ?? (bird.pose.shown ? 'visiting' : 'away'), style: bird.style ?? null, since: bird.since ?? null, returnAt: bird.returnAt ?? null, ...bird.pose, spot: bird.spot ? { ...bird.spot } : null }));
+    return this.birds.map((bird) => ({ kind: bird.kind, habit: bird.habit, night: bird.night, mode: bird.mode ?? (bird.pose.shown ? 'visiting' : 'away'), style: bird.style ?? null, since: bird.since ?? null, returnAt: bird.returnAt ?? null, ...bird.pose, spot: bird.spot ? { ...bird.spot } : null }));
   }
 }

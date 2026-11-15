@@ -23,7 +23,7 @@ The stitched backdrops' skies are Poly Haven's Qwantani pure skies (below).
 
 ## Birds
 
-The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the kelp gull's, herring gull's, grey heron's, african sacred ibis's, blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
+The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the kelp gull's, herring gull's, grey heron's, african sacred ibis's, blue jay's, northern cardinal's and black-crowned night heron's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
 
 | Shows | Photograph | Author | Licence |
 |---|---|---|---|
@@ -59,6 +59,9 @@ The birds are photographs of real ones from Wikimedia Commons, cut out of their 
 | Blue jay (Reflecting Pool) | [Blue Jay (Jim Ridley 2010.)](https://commons.wikimedia.org/wiki/File:Blue_Jay_%28Jim_Ridley_2010.%29.jpg) | Jim Ridley | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | Northern cardinal (Reflecting Pool) | [Cardinalis cardinalis (northern cardinal) 2](https://commons.wikimedia.org/wiki/File:Cardinalis_cardinalis_%28northern_cardinal%29_2.jpg) | James St. John | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Northern cardinal (Reflecting Pool) | [Cardinal landing - Texas (55088178980)](https://commons.wikimedia.org/wiki/File:Cardinal_landing_-_Texas_%2855088178980%29.jpg) | Andy Morffew | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| Black-crowned night heron (Lakeside, Harbour, Mesas, Reflecting Pool, at night) | [Nycticorax nycticorax -Cananeia, Sao Paulo, Brasil -flying-8](https://commons.wikimedia.org/wiki/File:Nycticorax_nycticorax_-Cananeia%2C_Sao_Paulo%2C_Brasil_-flying-8.jpg) | Dario Sanches | [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0/) |
+| Black-crowned night heron (Lakeside, Harbour, Mesas, Reflecting Pool, at night) | [Nycticorax nycticorax in flight](https://commons.wikimedia.org/wiki/File:Nycticorax_nycticorax_in_flight.JPG) | Alpsdake | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
+| Black-crowned night heron (Lakeside, Harbour, Mesas, Reflecting Pool, at night) | [Nycticorax nycticorax flying](https://commons.wikimedia.org/wiki/File:Nycticorax_nycticorax_flying.jpg) | Dario Sanches | [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0/) |
 
 ## Skies
 

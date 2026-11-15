@@ -1703,7 +1703,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
-    birds.setConditions({ solarElevation: lighting.solarElevation, sunDirection });   // none about at night (src/birds.js)
+    birds.setConditions({ solarElevation: lighting.solarElevation, sunDirection });   // the day's birds by day, the night's after dark (src/birds.js)
+    birdView.show(birds, camera, iceUnderBird);   // the hour's kinds' pictures fetched now, not once one is first in view
     tropics.setEnvironment(environment.envTexture);
     visitor.setEnvironment(environment.envTexture);
     garden.setLight();

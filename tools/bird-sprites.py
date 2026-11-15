@@ -11,8 +11,9 @@
 #   python3 tools/bird-sprites.py          (numpy, scipy, Pillow with WebP, opencv-python-headless)
 #
 # The photographs (PHOTOS) are Wikimedia Commons files under licences that
-# let them be used and changed with credit (CC BY) or freely (CC0, public
-# domain); each
+# let them be used and changed with credit (CC BY), with credit and the same
+# licence (CC BY-SA: a kind made from one is shared under it too) or freely
+# (CC0, public domain); each
 # frame's credit is written to birds.json (and listed in CREDITS.md). They are downloaded once into tools/.bird-photos/
 # (gitignored), at Commons' 1280-pixel rendering, slowly, as Commons asks of
 # scripts.
@@ -65,12 +66,13 @@ CACHE = ROOT / 'tools' / '.bird-photos'
 OUT = ROOT / 'assets' / 'birds'
 USER_AGENT = 'AStonesThrowBirdSprites/1.0 (https://github.com/azabrod1/AStonesThrow)'
 PADDING = 4               # px between frames, so a mip level never borrows a neighbour's edge
-PIXELS_PER_METRE = {'heron': 380, 'herring': 330, 'kelp': 300, 'frigate': 190, 'fishEagle': 200, 'eagle': 200, 'goose': 360, 'swan': 190, 'ibis': 340, 'raven': 330}
+PIXELS_PER_METRE = {'heron': 380, 'herring': 330, 'kelp': 300, 'frigate': 190, 'fishEagle': 200, 'eagle': 200, 'goose': 360, 'swan': 190, 'ibis': 340, 'raven': 330, 'nightHeron': 300}
 
 CC_BY_2 = ('CC BY 2.0', 'https://creativecommons.org/licenses/by/2.0/')
 CC_BY_3 = ('CC BY 3.0', 'https://creativecommons.org/licenses/by/3.0/')
 CC_BY_4 = ('CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/')
 CC_BY_SA_2 = ('CC BY-SA 2.0', 'https://creativecommons.org/licenses/by-sa/2.0/')
+CC_BY_SA_3 = ('CC BY-SA 3.0', 'https://creativecommons.org/licenses/by-sa/3.0/')
 CC0 = ('CC0', 'https://creativecommons.org/publicdomain/zero/1.0/')
 PUBLIC_DOMAIN = ('Public domain', 'https://creativecommons.org/publicdomain/mark/1.0/')
 
@@ -173,6 +175,15 @@ PHOTOS = [
          cut='sky', low=18, high=45, flip=True, metres=0.8, anchor=(0.5, 0.3)),
     dict(frame='herring-front', bird='herring', file='Larus argentatus Tuileries 20180324 t144644.jpg', author='Marie-Lan Taÿ Pamart', licence=CC_BY_4,
          cut='blue', low=14, high=34, metres=1.4, anchor=(0.5, 0.5)),
+    # Black-crowned night herons (out at dusk and by night): wings level (Cananeia, Brazil, in a warm light: brought
+    # down to the others' whites), down (Japan) and up (São Paulo), each side on under a pale sky. All three are
+    # CC BY-SA, so this kind's image is shared so too.
+    dict(frame='nightHeron-mid', bird='nightHeron', file='Nycticorax nycticorax -Cananeia, Sao Paulo, Brasil -flying-8.jpg', author='Dario Sanches', licence=CC_BY_SA_2,
+         cut='sky', low=20, high=48, fill=True, flip=True, gain=(0.87, 0.87, 0.87), metres=0.7, anchor=(0.57, 0.47)),
+    dict(frame='nightHeron-down', bird='nightHeron', file='Nycticorax nycticorax in flight.JPG', author='Alpsdake', licence=CC_BY_SA_3,
+         cut='sky', low=20, high=48, fill=True, flip=True, metres=1.0, anchor=(0.49, 0.83)),
+    dict(frame='nightHeron-up', bird='nightHeron', file='Nycticorax nycticorax flying.jpg', author='Dario Sanches', licence=CC_BY_SA_2,
+         cut='sky', low=20, high=48, fill=True, gain=(0.98, 0.95, 0.98), metres=1.25, anchor=(0.49, 0.31)),
 ]
 
 

@@ -42,7 +42,7 @@
 // the same two programs, built under the veil (warmUp) with a texel standing
 // in for its picture. Each kind's pictures are one image
 // (assets/birds/<kind>.webp, 25 to 125 KB), fetched the first time a place
-// with that kind is shown and set as its birds' texture when it comes (a
+// and hour with that kind is shown (a night kind not by day) and set as its birds' texture when it comes (a
 // uniform: no program changes); a failed fetch leaves that kind unshown.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
@@ -255,7 +255,9 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     for (const sprite of pool) hide(sprite);
     sprites = population.birds.map((bird, index) => Object.assign(pool[index], { kind: bird.kind, rank: bird.rank ?? 0 }));
     for (const sprite of sprites) sprite.uniforms.uAtlas.value = textures.get(sprite.kind) ?? standIn;
-    for (const kind of new Set(sprites.map((sprite) => sprite.kind))) load(kind);
+    // The kinds about at this hour (src/birds.js: the night's birds after dark, the day's by day); another's when
+    // one of its birds is first shown (place), so a day never fetches the night's pictures.
+    for (const kind of new Set(population.birds.filter((bird) => Boolean(bird.night) === Boolean(population.dark)).map((bird) => bird.kind))) load(kind);
     update(population, camera);
   }
 
@@ -265,6 +267,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
   }
 
   function place(sprite, at, camera) {
+    if (at.shown && !textures.has(sprite.kind)) load(sprite.kind);
     const ready = !modelled(sprite.kind) && Boolean(textures.get(sprite.kind)) && Boolean(catalogue.frames) && at.shown && at.flying !== false;
     sprite.shown = ready;
     sprite.still = false;

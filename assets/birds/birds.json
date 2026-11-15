@@ -48,6 +48,13 @@
     1024,
     512
    ]
+  },
+  "nightHeron": {
+   "file": "nightHeron.webp",
+   "size": [
+    1024,
+    512
+   ]
   }
  },
  "frames": {
@@ -577,6 +584,78 @@
     "licence": "CC BY 2.0",
     "licenceUrl": "https://creativecommons.org/licenses/by/2.0/",
     "source": "https://commons.wikimedia.org/wiki/File:Corvus_corax_CR5_5935_%2851036203491%29.jpg"
+   }
+  },
+  "nightHeron-mid": {
+   "atlas": "nightHeron",
+   "uv": [
+    0.6708984375,
+    0.0078125,
+    0.205078125,
+    0.20703125
+   ],
+   "metres": [
+    0.7,
+    0.3533
+   ],
+   "anchor": [
+    0.43,
+    0.47
+   ],
+   "credit": {
+    "file": "Nycticorax nycticorax -Cananeia, Sao Paulo, Brasil -flying-8.jpg",
+    "author": "Dario Sanches",
+    "licence": "CC BY-SA 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Nycticorax_nycticorax_-Cananeia%2C_Sao_Paulo%2C_Brasil_-flying-8.jpg"
+   }
+  },
+  "nightHeron-down": {
+   "atlas": "nightHeron",
+   "uv": [
+    0.3740234375,
+    0.0078125,
+    0.29296875,
+    0.416015625
+   ],
+   "metres": [
+    1.0,
+    0.71
+   ],
+   "anchor": [
+    0.51,
+    0.83
+   ],
+   "credit": {
+    "file": "Nycticorax nycticorax in flight.JPG",
+    "author": "Alpsdake",
+    "licence": "CC BY-SA 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Nycticorax_nycticorax_in_flight.JPG"
+   }
+  },
+  "nightHeron-up": {
+   "atlas": "nightHeron",
+   "uv": [
+    0.00390625,
+    0.0078125,
+    0.3662109375,
+    0.673828125
+   ],
+   "metres": [
+    1.25,
+    1.15
+   ],
+   "anchor": [
+    0.49,
+    0.31
+   ],
+   "credit": {
+    "file": "Nycticorax nycticorax flying.jpg",
+    "author": "Dario Sanches",
+    "licence": "CC BY-SA 2.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/2.0/",
+    "source": "https://commons.wikimedia.org/wiki/File:Nycticorax_nycticorax_flying.jpg"
    }
   }
  }

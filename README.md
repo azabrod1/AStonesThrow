@@ -687,8 +687,12 @@ over its shoulder if the splash is behind it; a thing thrown near puts it up, an
 the way it faces. It comes back half a minute to a minute later, gliding in
 and flaring as herons do (pitched up, legs forward, braking with deep beats)
 to land somewhere new on the far bank, holding its wings up a moment before
-folding them. None are
-about after dark. They
+folding them. The day's birds are not
+about after dark; at Lakeside, the Harbour, the Mesas and the Reflecting
+Pool a black-crowned night heron, which feeds by night and lives at all
+four, crosses the sky now and then instead (`BIRDS_AT_NIGHT`), flown high
+enough to stand against the sky as a silhouette. Loch Ness has none: it is
+north of their range. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out
 of reach and in the home view's sky. Their state changes only in the
 physics steps and they are posed at each frame's time from closed forms,
@@ -723,12 +727,12 @@ other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
 or public domain, and CC BY-SA for the herring gull's model, the heron's
-front, the jay's and cardinal's wings, the ibis's glide and the kelp gull's head-on frame, so their
+front, the jay's and cardinal's wings, the ibis's glide, the kelp gull's head-on frame and the night heron, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky by `tools/bird-sprites.py`
 (its outline matted, so no rim of sky shows against land) and packed into
 one image a kind (25 to 125 KB), fetched only when a place
-with that kind is shown, and drawn as a picture that faces the camera, as a
+and hour with that kind is shown, and drawn as a picture that faces the camera, as a
 game draws a far bird. A picture cannot turn, so the birds are flown to be
 seen side on, and pictures only fly. Each kind has a few frames (gliding;
 wings up, level and down by its wingbeat; head on, for each kind that turns,

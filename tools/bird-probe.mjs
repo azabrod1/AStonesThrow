@@ -36,7 +36,9 @@
 //   somewhere new on the far bank, its heading its own, smoothly, flaring
 //   (pitched up, its wings up as it touches down, its pitch and neck never
 //   jumping), then folding its wings within two seconds; then it stands;
-// - after dark there are none (setConditions);
+// - after dark the day's birds are gone, and where they live black-crowned
+//   night herons come over instead (BIRDS_AT_NIGHT), flown and checked as
+//   every flying bird is; none at the others (setConditions);
 // - a picture kind that turns has a head-on frame (src/birdSprites.js), so
 //   it never flips to its mirror image mid-turn;
 // - the population draws no Math.random (its own seeded stream);
@@ -47,7 +49,7 @@
 //   (tools/cost-clock.mjs).
 import * as THREE from 'three';
 import { costClock, costSince } from './cost-clock.mjs';
-import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRD_KINDS } from '../src/birds.js';
+import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRDS_AT_NIGHT, BIRD_KINDS } from '../src/birds.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt } from '../src/pondFloor.js';
 import { plantingFront } from '../src/koiGarden.js';
 import { buildStandingModel } from '../src/birdMeshes.js';
@@ -85,7 +87,7 @@ function run(place, seconds, frame, { things = () => [], splashes = [], conditio
       birds.step(stepsTime, things(stepsTime));
     }
     birds.showAt(time);
-    frames.push({ time, birds: birds.report() });
+    frames.push({ time, birds: birds.report().filter((bird) => bird.night === birds.dark) });   // the hour's birds (the day's, or after dark the night's)
   }
   return { birds, frames };
 }
@@ -95,7 +97,8 @@ for (const place of Object.keys(PLACES)) {
   const birds = new BirdPopulation();
   birds.setPlace(place);
   const expected = (BIRDS_BY_PLACE[place] ?? []).reduce((sum, group) => sum + group.count, 0);
-  check((place === 'pool' ? expected === 0 : expected > 0) && birds.birds.length === expected, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
+  const atNight = (BIRDS_AT_NIGHT[place] ?? []).reduce((sum, group) => sum + group.count, 0);
+  check((place === 'pool' ? expected === 0 : expected > 0) && birds.birds.length === expected + atNight, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
 }
 {
   const none = new BirdPopulation(); none.setPlace('none');
@@ -110,12 +113,14 @@ for (const place of Object.keys(PLACES)) {
 // Every place's flying birds over ten minutes.
 const OUT_OF_FRAME = THREE.MathUtils.degToRad(45);   // a wide screen's frame reaches 38° either side of the home view's line
 const bearingOf = (bird) => Math.atan2(bird.x - EYE.x, -(bird.z - EYE.z));
-const flyingRuns = [...Object.keys(BIRDS_BY_PLACE).map((place) => [place, place, false]), ...Object.keys(BIRDS_WHEN_FROZEN).map((place) => [`${place} (frozen)`, place, true])];
-for (const [label, where, frozen] of flyingRuns) {
+const flyingRuns = [...Object.keys(BIRDS_BY_PLACE).map((place) => [place, place, false, false]), ...Object.keys(BIRDS_WHEN_FROZEN).map((place) => [`${place} (frozen)`, place, true, false]),
+  ...Object.keys(BIRDS_AT_NIGHT).map((place) => [`${place} (night)`, place, false, true])];
+const groupsOf = (where, frozen, night) => (night ? BIRDS_AT_NIGHT : frozen ? BIRDS_WHEN_FROZEN : BIRDS_BY_PLACE)[where];
+for (const [label, where, frozen, night] of flyingRuns) {
   const place = label;
-  const groups = frozen ? BIRDS_WHEN_FROZEN[where] : BIRDS_BY_PLACE[where];
+  const groups = groupsOf(where, frozen, night);
   if (!groups.some((group) => group.habit === 'visit')) continue;
-  const { frames } = run(where, 600, 1 / 60, { frozen });
+  const { frames } = run(where, 600, 1 / 60, { frozen, conditions: night ? NIGHT : DAY });
   const cruise = BIRD_KINDS[groups[0].kind].cruise;
   let nearest = Infinity, farthest = 0, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, fastestRoll = 0, biggestJump = 0;
   let visits = 0, inside = 0, styles = new Set(), entries = [];
@@ -209,12 +214,12 @@ for (const [label, where, frozen] of flyingRuns) {
 // frame's sides, out of reach, banked no more than on a wide screen, and over ten minutes (four seeds) a bird is in
 // the frame about as much of the time as in a wide screen's.
 const PHONE_FRAME = 15.5, WIDE_FRAME = 38.4;
-const inFrameShare = (where, frozen, half, view) => {
+const inFrameShare = (where, frozen, night, half, view) => {
   let share = 0;
   for (let seed = 1; seed <= 4; seed++) {
     const birds = new BirdPopulation({ seed });
     if (view !== null) birds.setView(view);
-    birds.setPlace(where, { frozen }); birds.setConditions(DAY);
+    birds.setPlace(where, { frozen }); birds.setConditions(night ? NIGHT : DAY);
     let seen = 0, samples = 0;
     for (let time = 0; time < 600; time += 0.1, samples++) {
       birds.showAt(time);
@@ -224,10 +229,10 @@ const inFrameShare = (where, frozen, half, view) => {
   }
   return share;
 };
-for (const [label, where, frozen] of flyingRuns) {
-  const groups = frozen ? BIRDS_WHEN_FROZEN[where] : BIRDS_BY_PLACE[where];
+for (const [label, where, frozen, night] of flyingRuns) {
+  const groups = groupsOf(where, frozen, night);
   if (!groups.some((group) => group.habit === 'visit')) continue;
-  const { frames } = run(where, 600, 1 / 60, { frozen, view: PHONE_FRAME });
+  const { frames } = run(where, 600, 1 / 60, { frozen, view: PHONE_FRAME, conditions: night ? NIGHT : DAY });
   let nearest = Infinity, steepestBank = 0, inside = 0;
   frames.forEach((frame, index) => frame.birds.forEach((bird, which) => {
     const before = index ? frames[index - 1].birds[which] : bird;
@@ -236,7 +241,7 @@ for (const [label, where, frozen] of flyingRuns) {
     nearest = Math.min(nearest, Math.hypot(bird.x - EYE.x, bird.z - EYE.z));
     steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
   }));
-  const phone = inFrameShare(where, frozen, PHONE_FRAME, PHONE_FRAME), wide = inFrameShare(where, frozen, WIDE_FRAME, null);
+  const phone = inFrameShare(where, frozen, night, PHONE_FRAME, PHONE_FRAME), wide = inFrameShare(where, frozen, night, WIDE_FRAME, null);
   check(inside === 0 && nearest > THROW_REACH && steepestBank <= THREE.MathUtils.degToRad(35) + 1e-9, `${label}, upright phone: every visit begins and ends beyond the frame's sides (${inside} inside), nearest ${nearest.toFixed(1)} m, banked at most ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
   check(phone > 0.8 * wide && phone < 1.5 * wide, `${label}, upright phone: a bird in its frame ${(phone * 100).toFixed(0)}% of the time, a wide screen's ${(wide * 100).toFixed(0)}%`);
 }
@@ -660,7 +665,19 @@ const heronAt = (frame) => frame.birds[0];
 // After dark: none.
 {
   const { frames } = run('cove', 5, 1 / 60, { conditions: NIGHT });
-  check(frames.every((frame) => frame.birds.every((bird) => !bird.shown)), 'after dark, no birds are about');
+  check(frames.every((frame) => frame.birds.every((bird) => !bird.shown)), 'after dark, no birds are about at the cove');
+  // Where night herons live, after dark they come over and the day's birds are gone; by day, the other way round.
+  for (const place of Object.keys(BIRDS_AT_NIGHT)) {
+    const seen = (conditions) => {
+      const birds = new BirdPopulation({ seed: 1 });
+      birds.setPlace(place); birds.setConditions(conditions);
+      const kinds = new Set();
+      for (let time = 0; time < 600; time += 0.5) { birds.showAt(time); for (const bird of birds.birds) if (bird.pose.shown) kinds.add(bird.kind); }
+      return [...kinds];
+    };
+    const byNight = seen(NIGHT), byDay = seen(DAY);
+    check(byNight.length === 1 && byNight[0] === 'nightHeron' && byDay.length > 0 && !byDay.includes('nightHeron'), `${place}: after dark night herons come over (${byNight.join(', ')}), by day the day's birds (${byDay.join(', ')})`);
+  }
 }
 
 // At any frame rate: the same poses at the same moments.
