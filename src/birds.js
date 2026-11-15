@@ -273,7 +273,10 @@ const HERON = {
   //   past and back), holds them still `hold` s (drawn), hunched (its neck drawn in to `neck`, leaning forward `lean`
   //   rad), its head still turning now and then; in a long hold (over `shuffleAfter` s) it lets them sag a little and
   //   spreads them again once (`shuffle`: by how much, and the spring's settle); then folds them (`close` s to settle).
-  spread: { share: 0.04, afterLanding: 0.3, at: [0.5, 4], open: 0.6, hold: [3, 8], close: 0.8, neck: 0.3, lean: 0.12, shuffleAfter: 5, shuffle: [0.15, 0.3] },
+  //   With the sun more than `sunUp` degrees up (setConditions), it first turns its back to it, give or take `aside`
+  //   rad, stepping round as it turns on the spot (its walk's `turnSettle`), as sunning herons stand (if it already
+  //   faces within `least` rad of that, it stays as it is); it stays facing that way after.
+  spread: { share: 0.04, afterLanding: 0.3, at: [0.5, 4], open: 0.6, hold: [3, 8], close: 0.8, neck: 0.3, lean: 0.12, shuffleAfter: 5, shuffle: [0.15, 0.3], sunUp: 10, aside: 0.35, least: 0.3 },
 };
 const STANDING = { heron: HERON };
 const STANDING_HABITS = new Set(['wade']);
@@ -599,6 +602,7 @@ export class BirdPopulation {
   constructor({ seed = 1 } = {}) {
     this.seed = seed;
     this.fit = 1;   // setView
+    this.sunAway = null;   // setConditions
     this.place = 'none';
     this.birds = [];
     this.dark = false;
@@ -695,9 +699,14 @@ export class BirdPopulation {
     this.fit = halfWidth >= WIDE_FRAME - 1e-6 ? 1 : (halfWidth + OUT_MARGIN) / OUT;
   }
 
-  /** Whether the birds are out: none while it is dark (the true sun's elevation in degrees, src/sky.js lighting.solarElevation). */
-  setConditions({ solarElevation }) {
+  /**
+   * Whether the birds are out: none while it is dark (the true sun's elevation in degrees, src/sky.js
+   * lighting.solarElevation); and where the sun is (`sunDirection`, toward it), for a heron to turn its back to as it
+   * spreads its wings (HERON's `spread`): the heading facing away from it, while it is up.
+   */
+  setConditions({ solarElevation, sunDirection = null }) {
     this.dark = solarElevation < -NIGHT_SUN;
+    this.sunAway = sunDirection && solarElevation > HERON.spread.sunUp ? Math.atan2(sunDirection.z, -sunDirection.x) : null;
   }
 
   /**
@@ -1279,9 +1288,9 @@ export class BirdPopulation {
     const { walk, strike, spread, spells } = ways;
     const random = seededRandom(bird.seed, stay, index, 31);
     const plan = { start: before ? before.start + before.length : 0, length: 0, walks: false, from: before ? before.to : 0, to: 0, walkAt: 0,
-      facing: before ? before.faced : bird.spot.heading, faced: 0, hunt: null, spreadAt: null, spreadHold: 0 };
+      facing: before ? before.faced : bird.spot.heading, faced: 0, walkFaced: 0, hunt: null, spreadAt: null, spreadHold: 0, turnAt: null, turnTo: 0 };
     plan.to = plan.from;
-    plan.faced = plan.facing;
+    plan.faced = plan.walkFaced = plan.facing;
     // When it is next free to do something (s into the spell): just down, once its wings are folded.
     let free = index === 0 && stay > 0 ? ways.land.hold + ways.land.fold + 0.3 : 0.5;
     const [least, most] = bird.spot.reach ?? walk.reach;   // where its legs stay in view (laySpot)
@@ -1294,7 +1303,7 @@ export class BirdPopulation {
         plan.walks = true;
         plan.to = to;
         plan.walkAt = between(walk.start, random());
-        plan.faced = this.facingFor(bird.spot, plan.from, to);
+        plan.faced = plan.walkFaced = this.facingFor(bird.spot, plan.from, to);
         const duration = Math.abs(to - plan.from) / walk.speed;
         free = plan.walkAt + walk.setOff + duration - 0.5 + settledAfter(walk.turnSettle, 3) + 0.4;   // its last turn settled
       }
@@ -1306,6 +1315,16 @@ export class BirdPopulation {
     if (random() < (index === 0 && stay > 0 ? spread.afterLanding : spread.share)) {
       plan.spreadAt = free + between(spread.at, random());
       plan.spreadHold = between(spread.hold, random());
+      if (this.sunAway !== null) {
+        // Its back to the sun first (its `spread`'s note), then its wings opened once it has mostly turned.
+        const away = this.sunAway + (random() * 2 - 1) * spread.aside;
+        const turn = turnBetween(plan.faced, away);
+        if (Math.abs(turn) > spread.least) {
+          plan.turnAt = plan.spreadAt;
+          plan.turnTo = plan.faced = plan.faced + turn;
+          plan.spreadAt += walk.turnSettle;
+        }
+      }
       free = plan.spreadAt + spread.open + plan.spreadHold + settledAfter(spread.close) + 0.3;
     }
     plan.length = Math.max(between(spells.length, random()), free + between(spells.rest, random()));
@@ -1348,18 +1367,25 @@ export class BirdPopulation {
     out.into = into;
     out.walks = plan.walks;
     out.heading = out.lead = facing;
+    // Its turns: each a spring of its walk's `turnSettle` to a heading, its head leading; `turned` (rad) and `turning`
+    // (rad/s) summed over them, for its steps round.
+    const settle = walk.turnSettle, headingSteps = [], leadSteps = [];
+    let current = facing, turned = 0, turning = 0;
+    const turnTo = (at, target) => {
+      headingSteps.push([at, target, settle, 1, 3]);
+      leadSteps.push([at - 0.4, target, settle * 0.3]);
+      turned += Math.abs(target - current) * springStep(into - at, settle, 1, 3);
+      turning += Math.abs(target - current) * springRate(into - at, settle);
+      current = target;
+    };
+    let moving = 0;
     if (plan.walks) {
       const duration = distance / walk.speed;
       // It turns to go (the short way round), sets off once mostly turned, and as it stops turns to face the water.
       const walkHeading = facing + turnBetween(facing, Math.atan2(-alongZ * way, alongX * way));
-      const faced = walkHeading + turnBetween(walkHeading, plan.faced);
       const turnAt = plan.walkAt, goAt = turnAt + walk.setOff, faceAt = goAt + duration - 0.5;
-      const settle = walk.turnSettle;
-      out.heading = sprung(into, facing, [[turnAt, walkHeading, settle, 1, 3], [faceAt, faced, settle, 1, 3]]);
-      out.lead = sprung(into, facing, [[turnAt - 0.4, walkHeading, settle * 0.3], [faceAt - 0.4, faced, settle * 0.3]]);
-      const firstTurn = Math.abs(walkHeading - facing), lastTurn = Math.abs(faced - walkHeading);
-      const turned = firstTurn * springStep(into - turnAt, settle, 1, 3) + lastTurn * springStep(into - faceAt, settle, 1, 3);
-      const turning = firstTurn * springRate(into - turnAt, settle) + lastTurn * springRate(into - faceAt, settle);   // rad/s
+      turnTo(turnAt, walkHeading);
+      turnTo(faceAt, walkHeading + turnBetween(walkHeading, plan.walkFaced));
       const going = into - goAt;
       const ease = 0.6 / duration;   // a share of the walk spent getting going and stopping
       const share = THREE.MathUtils.clamp(going / duration, 0, 1);
@@ -1367,11 +1393,17 @@ export class BirdPopulation {
       const eased = share < ease ? share * share / (2 * ease * (1 - ease)) : share > 1 - ease ? 1 - (1 - share) * (1 - share) / (2 * ease * (1 - ease)) : (share - ease / 2) / (1 - ease);
       out.walked = eased * distance;
       offset = from + way * out.walked;
-      const moving = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
-      // Stepping round as it turns, as much as it is turning (its turn starts gently, so its steps do too).
-      out.walking = Math.max(moving, 0.7 * Math.min(1, turning * turning));
+      moving = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
       // Its bearing as it goes (its neck and head), eased into from as it begins to turn and out of once it stops.
       out.striding = sprung(into, 0, [[turnAt, 1, walk.carry], [goAt + duration, 0, walk.carry]]);
+    }
+    // Its back turned to the sun before it spreads its wings (HERON's `spread`), on the spot.
+    if (plan.turnAt !== null) turnTo(plan.turnAt, current + turnBetween(current, plan.turnTo));
+    if (headingSteps.length) {
+      out.heading = sprung(into, facing, headingSteps);
+      out.lead = sprung(into, facing, leadSteps);
+      // Stepping round as it turns, as much as it is turning (its turn starts gently, so its steps do too).
+      out.walking = Math.max(moving, 0.7 * Math.min(1, turning * turning));
       out.stride = (out.walked + walk.turnStep * turned) / (2 * STEP_LENGTH);
     }
     this.onBank(spot, offset, out);

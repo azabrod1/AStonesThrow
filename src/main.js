@@ -1191,7 +1191,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     birdsFrozen = ice.on;
     birds.setPlace(birdsOn ? placeName : 'none', { frozen: ice.on });
     birds.reset(time);
-    birds.setConditions({ solarElevation: lighting.solarElevation });
+    birds.setConditions({ solarElevation: lighting.solarElevation, sunDirection });
     birds.showAt(time);
     birdView.show(birds, camera, iceUnderBird);
   }
@@ -1700,7 +1700,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
-    birds.setConditions({ solarElevation: lighting.solarElevation });   // none about at night (src/birds.js)
+    birds.setConditions({ solarElevation: lighting.solarElevation, sunDirection });   // none about at night (src/birds.js)
     tropics.setEnvironment(environment.envTexture);
     visitor.setEnvironment(environment.envTexture);
     garden.setLight();

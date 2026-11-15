@@ -26,7 +26,7 @@
 //   (its bill pointed down) before it strikes, sometimes to one side; it keeps no rhythm (over twenty seeds the gaps
 //   between its walks, strikes and wing spreads spread widely), and now and
 //   then it opens its wings and holds them open, still, for seconds (never
-//   beating them), standing where it was;
+//   beating them), standing where it was, with the sun up its back to it;
 // - a splash across the pond makes it look, not go; a stone coming down
 //   near it puts it up before it lands, and it takes off the way it faces
 //   (over twenty seeds) and climbs away out of sight
@@ -58,10 +58,11 @@ const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
 
 const PHYSICS_STEP = 1 / 240;   // src/main.js's
+const HERON_SPREAD_ASIDE = 0.35;   // rad: src/birds.js HERON spread.aside
 const EYE = new THREE.Vector3(0, 1.15, 2.45);   // the home view's eye (src/main.js VIEWS.shore)
 const THROW_REACH = 9;   // m: farther than anything thrown goes from the eye (it lands in the water's 6 m patch, at most 6.2 m off, its arc a few metres up)
 const FRAME_TOP = THREE.MathUtils.degToRad(7.4);   // the home view's frame reaches this far above the horizon (48° high, looking 16.6° down)
-const DAY = { solarElevation: 37 };
+const DAY = { solarElevation: 37, sunDirection: new THREE.Vector3(0.6, 0.6, -0.5).normalize() };   // as the page gives them (src/main.js applySky)
 const NIGHT = { solarElevation: -28.3 };   // Lakeside Night: lit by a moon high up, the true sun well down
 const realRandom = Math.random;
 plantingFront(0, 0, 0, 0);   // the garden's catch table built first (its geometries' ids are three's Math.random), as the page has it by the time the heron stands
@@ -395,6 +396,41 @@ const heronAt = (frame) => frame.birds[0];
   check(beating === 0, `never beating them as it stands (${beating} frames beating)`);
   holds.sort((a, b) => a - b);
   check(holds.length > 0 && holds[0] > 2 && holds[holds.length - 1] < 12, `holding them open for seconds: ${holds[0]?.toFixed(1)} to ${holds[holds.length - 1]?.toFixed(1)} s`);
+}
+
+// With the sun up, it turns its back to the sun before it spreads its wings (src/birds.js HERON `spread`), on the spot,
+// stepping round, and holds still facing that way while they are open; the same at 60 and 144 frames a second.
+{
+  const { sunDirection } = DAY, away = Math.atan2(sunDirection.z, -sunDirection.x);
+  let held = 0, widest = 0, turnedOpen = 0, moved = 0, differs = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const poses = [60, 144].map((rate) => {
+      const birds = new BirdPopulation({ seed });
+      birds.setPlace('koi');
+      birds.setConditions({ ...DAY, sunDirection });
+      const list = [];
+      for (let frame = 0; frame <= 300 * rate; frame++) {
+        const time = frame / rate;
+        birds.showAt(time);
+        if (frame % (rate / 4) === 0 || (rate === 144 && frame % 36 === 0)) list.push({ time, ...birds.birds[0].pose });
+      }
+      return list;
+    });
+    const [at60, at144] = poses;
+    at60.forEach((heron, index) => {
+      const other = at144.find((pose) => Math.abs(pose.time - heron.time) < 1e-9);
+      if (other && (Math.abs(other.heading - heron.heading) > 1e-9 || other.spread !== heron.spread)) differs++;
+      const before = at60[index - 1];
+      if (heron.spread < 0.8) return;
+      held++;
+      widest = Math.max(widest, Math.abs(Math.atan2(Math.sin(heron.heading - away), Math.cos(heron.heading - away))));
+      if (before?.spread >= 0.8 && Math.abs(heron.heading - before.heading) > 0.02) turnedOpen++;
+      if (before?.spread >= 0.8 && (heron.x !== before.x || heron.z !== before.z)) moved++;
+    });
+  }
+  check(held > 50 && widest < HERON_SPREAD_ASIDE + 0.1, `with the sun up, it spreads its wings with its back to the sun: within ${THREE.MathUtils.radToDeg(widest).toFixed(0)}° of facing away from it (${held} quarter seconds open)`);
+  check(turnedOpen === 0 && moved === 0, `it turns before it opens them, and holds still while they are open (${turnedOpen} turning, ${moved} moving)`);
+  check(differs === 0, `turning to the sun, the same at 60 and 144 frames a second (${differs} poses differ)`);
 }
 
 // A splash across the pond: it looks. A stone coming down near it: it goes, and later comes back.

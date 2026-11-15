@@ -676,7 +676,8 @@ first), and hunts: it peers down at a fish ahead or to one side, its neck
 cocked and its bill pointed at it, holds still but for a tilt of its head
 now and then, stabs, and tosses its catch up and swallows it, or stabs
 again, or gives up, every part of it drawn afresh. Now and then it opens its wings and holds them
-open a few seconds, still, as herons do to sun or dry themselves. When the
+open a few seconds, still, as herons do to sun or dry themselves, turning
+its back to the sun first while the sun is up. When the
 pond is frozen it doesn't stand on the ice: it flies over the garden now and
 then instead (`BIRDS_WHEN_FROZEN`). Each movement is a spring's, closed form in time
 (`sprung` in `src/birds.js`): every part settles on its own time, so they
