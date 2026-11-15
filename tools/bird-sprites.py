@@ -22,7 +22,9 @@
 #     surface (a cubic in x and y, per channel) to the pixels far from the
 #     bird's colours, refitted three times; a pixel's alpha is how far it is
 #     from that sky (between `low` and `high`, 0-255 RGB distance); only the
-#     largest piece is kept; the sky is un-mixed from the edge's pixels.
+#     largest piece is kept; the sky is un-mixed from the edge's pixels, and
+#     where the bird is far from the sky's colour (a dark eagle), its outline
+#     is matted between the two (no rim of sky round it against the land).
 #   - 'blue': a grey and white bird against blue sky, where a grey wing is as
 #     bright as the sky: the same, by how much less blue (B − R) it is than
 #     the sky behind it.
@@ -229,7 +231,23 @@ def cut_from_sky(image, low, high, blue, fill=False):
         solid = ndimage.binary_fill_holes(ndimage.binary_closing(alpha > 0.5, iterations=2))
         alpha = np.maximum(alpha, ndimage.binary_erosion(solid, iterations=2))
     unmixed = np.clip(background + (image - background) / np.maximum(alpha, 0.05)[..., None], 0, 255)
-    return alpha, np.where(alpha[..., None] > 0.98, image, unmixed)
+    colour = np.where(alpha[..., None] > 0.98, image, unmixed)
+    # Where the bird is far from its sky (a dark eagle against blue), the ramp is solid while a pixel is still part sky,
+    # and that sky would show as a pale rim against anything darker. There its outline is matted between the two colours it
+    # lies between, the bird's nearest inside and the sky: its coverage is how far along from the sky to the bird it is,
+    # and its colour the bird's.
+    core = ndimage.binary_erosion(alpha > 0.98, iterations=5)   # past a lens's colour fringe, a few pixels wide
+    if core.any():
+        nearest = ndimage.distance_transform_edt(~core, return_distances=False, return_indices=True)
+        inside = image[nearest[0], nearest[1]]
+        towards = inside - background
+        contrast = (towards ** 2).sum(-1)
+        coverage = np.clip(((image - background) * towards).sum(-1) / np.maximum(contrast, 1e-6), 0, 1)
+        rim = ndimage.binary_dilation(alpha <= 0.02, iterations=7)   # the outline only: never a pale patch inside the bird
+        matted = (alpha > 0) & ~core & rim & (contrast > high ** 2)
+        alpha = np.where(matted, coverage, alpha)
+        colour = np.where(matted[..., None], inside, colour)
+    return alpha, colour
 
 
 def cut_grabcut(image, spec):
