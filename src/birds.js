@@ -570,15 +570,27 @@ function splinePath(points) {
 function splineAt(path, parameter, out, first, second) {
   const span = Math.min(Math.floor(parameter), path.spans - 1), local = parameter - span, rest = 1 - local;
   const squared = local * local, cubed = squared * local;
-  const weights = [rest * rest * rest / 6, (3 * cubed - 6 * squared + 4) / 6, (-3 * cubed + 3 * squared + 3 * local + 1) / 6, cubed / 6];
-  const slopes = [-rest * rest / 2, (3 * squared - 4 * local) / 2, (-3 * squared + 2 * local + 1) / 2, squared / 2];
-  const bends = [rest, 3 * local - 2, -3 * local + 1, local];
-  out.set(0, 0, 0); first?.set(0, 0, 0); second?.set(0, 0, 0);
-  for (let index = 0; index < 4; index++) {
-    const [x, y, z] = path.controls[span + index];
-    out.x += weights[index] * x; out.y += weights[index] * y; out.z += weights[index] * z;
-    if (first) { first.x += slopes[index] * x; first.y += slopes[index] * y; first.z += slopes[index] * z; }
-    if (second) { second.x += bends[index] * x; second.y += bends[index] * y; second.z += bends[index] * z; }
+  // The four basis weights, their slopes and their bends (unrolled: this runs thousands of times as a visit is laid out).
+  const weight0 = rest * rest * rest / 6, weight1 = (3 * cubed - 6 * squared + 4) / 6, weight2 = (-3 * cubed + 3 * squared + 3 * local + 1) / 6, weight3 = cubed / 6;
+  const { controls } = path;
+  const control0 = controls[span], control1 = controls[span + 1], control2 = controls[span + 2], control3 = controls[span + 3];
+  out.set(
+    weight0 * control0[0] + weight1 * control1[0] + weight2 * control2[0] + weight3 * control3[0],
+    weight0 * control0[1] + weight1 * control1[1] + weight2 * control2[1] + weight3 * control3[1],
+    weight0 * control0[2] + weight1 * control1[2] + weight2 * control2[2] + weight3 * control3[2]);
+  if (first) {
+    const slope0 = -rest * rest / 2, slope1 = (3 * squared - 4 * local) / 2, slope2 = (-3 * squared + 2 * local + 1) / 2, slope3 = squared / 2;
+    first.set(
+      slope0 * control0[0] + slope1 * control1[0] + slope2 * control2[0] + slope3 * control3[0],
+      slope0 * control0[1] + slope1 * control1[1] + slope2 * control2[1] + slope3 * control3[1],
+      slope0 * control0[2] + slope1 * control1[2] + slope2 * control2[2] + slope3 * control3[2]);
+  }
+  if (second) {
+    const bend0 = rest, bend1 = 3 * local - 2, bend2 = -3 * local + 1, bend3 = local;
+    second.set(
+      bend0 * control0[0] + bend1 * control1[0] + bend2 * control2[0] + bend3 * control3[0],
+      bend0 * control0[1] + bend1 * control1[1] + bend2 * control2[1] + bend3 * control3[1],
+      bend0 * control0[2] + bend1 * control1[2] + bend2 * control2[2] + bend3 * control3[2]);
   }
   return out;
 }
