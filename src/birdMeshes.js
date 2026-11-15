@@ -202,7 +202,8 @@ void main() {
   // In the main scene the outline is a cutout anti-aliased by its own rate across the screen (the renderer has no
   // MSAA, so no alpha to coverage): its edge a pixel's blend, not a hard step that crawls as the wings beat against a
   // bright sky. Its alpha is raised a little each mip level down (Golus's mip scale), as a level's average of the
-  // primaries' slots and the trailing edge's feathers falls under the cut and a far bird's wings would thin away.
+  // primaries' slots and the trailing edge's feathers falls under the cut and a far bird's wings would thin away; the
+  // mirror and under-water passes cut at the same raised alpha, hard, so the reflection keeps the wings the bird has.
   // Taken outside the branches, where derivatives are defined.
   vec2 texel = (rect.xy + vUv * rect.zw) * vec2(textureSize(uAtlas, 0));
   float mipLevel = max(0.0, 0.5 * log2(max(dot(dFdx(texel), dFdx(texel)), dot(dFdy(texel), dFdy(texel)))));
@@ -210,7 +211,7 @@ void main() {
   float coverage = clamp((cutAlpha - 0.5) / max(fwidth(cutAlpha), 1e-4) + 0.5, 0.0, 1.0);
   bool cutout = vPart > 0.5 && vPart < 2.5;
   #if defined(MIRROR) || defined(BELOW)
-    if (cutout && picture.a < 0.5) discard;
+    if (cutout && cutAlpha < 0.5) discard;
   #else
     if (!cutout) coverage = 1.0;
     if (coverage <= 0.0) discard;
