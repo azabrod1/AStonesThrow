@@ -554,8 +554,10 @@ def wing_part(spec, span, pixels=PIXELS_PER_METRE):
     # Only the wing: what lies inboard of the shoulder (the body) is cut away.
     root_px = int(round(at[0, 0] * pixels))
     flat[:, :root_px, 3] = 0
-    # Its outline a pixel inside the cut-out's (the sky un-mixed from the edge leaves a pale fringe), solid within.
-    solid = ndimage.binary_erosion(largest(flat[..., 3] > 128), iterations=2)
+    # Its outline a pixel inside the cut-out's (the sky un-mixed from the edge leaves a pale fringe), solid within; the
+    # wing alone once more after that (the erosion cuts the thin necks that held specks of the photo's edge to it,
+    # which would hang off the wing's root as loose shards).
+    solid = largest(ndimage.binary_erosion(largest(flat[..., 3] > 128), iterations=2))
     flat[..., 3] = solid.astype(np.float32) * 255
     if spec.get('cut') == 'grabcut':   # GrabCut's edge holds the background a few pixels deeper: its nearest inner colour
         interior = ndimage.binary_erosion(solid, iterations=3)
