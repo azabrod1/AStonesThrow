@@ -617,7 +617,7 @@ export class BirdPopulation {
 
   /**
    * A standing bird's spot for its stay `stay` (how many times it has come down): where its feet are (a heron's on the
-   * bed, src/birdSprites.js drawing what of it is under the water there) and which way it faces, drawn from its seed
+   * bed, src/birdMeshes.js drawing what of it is under the water there) and which way it faces, drawn from its seed
    * and the stay (its group's `angles`, `offshore`, `toPond`), so it is somewhere new each time it comes back, and
    * each visit to the page finds it somewhere of its own.
    */

@@ -1158,7 +1158,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishView.show(fishes);
   }
   applyFish();
-  // The birds (src/birds.js; drawn by src/birdSprites.js): the place's, over its water or at its edge (applyBirds);
+  // The birds (src/birds.js; drawn by src/birdMeshes.js and src/birdSprites.js): the place's, over its water or at its edge (applyBirds);
   // ?birds=off or none, or the Effects setting's Off remembered on this device, leaves every place without (setBirds).
   let birdsOn = !['none', 'off'].includes(pageParameters.get('birds') ?? storedChoice(BIRDS_STORAGE_KEY));
   // Each visit to the page sees its own comings and goings (a seed of its own); ?birdSeed= chooses one, and a page
@@ -1490,7 +1490,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (objects.length > 0) splash.mirrorBounds(mirrorBox);
     else mirrorBox.makeEmpty();
     if (visitorShown) mirrorBox.union(visitor.bounds);   // whatever is out on the loch, as it is posed now (src/lochVisitor.js)
-    if (birdsMoving) birdView.mirrorBounds(mirrorBox, mirrorFrustum);   // the birds moving where the mirror sees them (src/birdSprites.js)
+    if (birdsMoving) birdView.mirrorBounds(mirrorBox, mirrorFrustum);   // the birds moving where the mirror sees them (mirrorBounds in src/birdMeshes.js, src/birdSprites.js)
     // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
     if (!mirrorBox.isEmpty() && galeWaves.on && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
     // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place: out to
@@ -2870,7 +2870,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     advanceSplash(end);
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     visitor.showAt(end);   // whatever is out on the loch, posed at the frame's time (src/lochVisitor.js)
-    birds.showAt(end);   // the birds, posed at the frame's time (src/birds.js), their pictures chosen and placed (src/birdSprites.js)
+    birds.showAt(end);   // the birds, posed at the frame's time (src/birds.js), posed and placed (src/birdMeshes.js, src/birdSprites.js)
     birdView.update(birds, camera, iceUnderBird);
     cannon.drawAt(end);   // the stream in the air as it is now (src/waterCannon.js: its parcels' closed-form flight)
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
@@ -3496,7 +3496,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
     }
     const fishWarmUp = everything || fishOn ? fishView.warmUp() : null;   // the fish's one program, whatever lives here (none in the Pool)
-    const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' four programs (above, mirror, below the water, a standing bird's shadow), whatever flies here
+    const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' five programs (a model's above, mirror and below the water; a picture's above and mirror), whatever flies here
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
     buildPreview(everything ? 'pizza' : thingName);

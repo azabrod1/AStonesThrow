@@ -59,7 +59,7 @@ CACHE = ROOT / 'tools' / '.bird-photos'
 OUT = ROOT / 'assets' / 'birds'
 USER_AGENT = 'AStonesThrowBirdSprites/1.0 (https://github.com/azabrod1/AStonesThrow)'
 PADDING = 4               # px between frames, so a mip level never borrows a neighbour's edge
-PIXELS_PER_METRE = {'heron': 380, 'herring': 330, 'kelp': 300, 'frigate': 190, 'fishEagle': 200, 'eagle': 200, 'goose': 400, 'swan': 190, 'ibis': 340, 'raven': 330}
+PIXELS_PER_METRE = {'heron': 380, 'herring': 330, 'kelp': 300, 'frigate': 190, 'fishEagle': 200, 'eagle': 200, 'goose': 360, 'swan': 190, 'ibis': 340, 'raven': 330}
 
 CC_BY_2 = ('CC BY 2.0', 'https://creativecommons.org/licenses/by/2.0/')
 CC_BY_3 = ('CC BY 3.0', 'https://creativecommons.org/licenses/by/3.0/')
@@ -119,18 +119,6 @@ PHOTOS = [
          cut='sky', low=35, high=80, crop=(20, 240, 490, 520), flip=True, metres=1.17, anchor=(0.52, 0.72)),
     dict(frame='goose-down', bird='goose', file='Nilgans Pärchen.jpg', author='Frank N. Steiner', licence=CC_BY_4,
          cut='sky', low=35, high=80, crop=(480, 300, 980, 650), flip=True, metres=1.135, anchor=(0.55, 0.82)),
-    # Two Egyptian geese standing on a shore, both side on and facing right (the Pool's lawn): one upright, on its legs;
-    # one resting, its head tucked in, on both. Cut by GrabCut, as the heron is, at the soles of their feet.
-    dict(frame='goose-stand', bird='goose', file='Egyptian goose (1).jpg', author='The Blue Rider', licence=CC_BY_4,
-         cut='grabcut', flip=True, metres=0.52, measure='height', anchor='feet', waterline=692, box=(500, 130, 1000), feet=[(805, 690)],
-         outline=[(905, 145), (960, 160), (985, 215), (992, 235), (960, 230), (945, 260), (960, 330), (972, 380), (960, 450), (920, 530), (840, 545), (815, 560), (818, 660), (890, 670), (900, 690), (790, 692), (785, 560), (760, 540), (640, 520), (520, 535), (505, 515), (560, 460), (650, 390), (780, 310), (850, 300), (845, 220), (870, 160)],
-         surely=[([(750, 450), (900, 450)], 40), ([(880, 200), (900, 320)], 12), ([(800, 560), (805, 670)], 6)],
-         notBird=[([(560, 330), (700, 310)], 14), ([(1000, 300), (1000, 500)], 14), ([(860, 580), (940, 600)], 12), ([(550, 580), (700, 570)], 14), ([(850, 128), (950, 123)], 8)]),
-    dict(frame='goose-rest', bird='goose', file='Egyptian goose (1).jpg', author='The Blue Rider', licence=CC_BY_4,
-         cut='grabcut', flip=True, metres=0.33, measure='height', anchor='feet', waterline=752, box=(150, 395, 505), feet=[(325, 745), (385, 750)],
-         outline=[(235, 420), (330, 405), (420, 405), (470, 425), (505, 470), (505, 530), (470, 600), (400, 630), (392, 720), (458, 735), (458, 752), (300, 752), (300, 735), (320, 720), (318, 640), (290, 620), (250, 650), (165, 660), (155, 600), (160, 560), (230, 500), (230, 460)],
-         surely=[([(300, 500), (450, 500)], 40), ([(280, 450), (340, 440)], 15), ([(322, 640), (318, 720)], 5), ([(382, 640), (386, 730)], 5)],
-         notBird=[([(350, 650), (352, 720)], 10), ([(180, 690), (290, 700)], 12), ([(200, 385), (450, 388)], 10), ([(480, 640), (500, 700)], 10), ([(335, 652), (372, 652)], 10), ([(340, 700), (372, 700)], 8), ([(298, 690), (311, 690)], 6), ([(290, 630), (312, 632)], 8), ([(338, 627), (370, 627)], 6), ([(250, 727), (295, 729)], 12), ([(262, 706), (297, 708)], 8), ([(245, 745), (292, 748)], 8)]),
     # Wings at the top of the stroke.
     dict(frame='goose-up', bird='goose', file='Nilgans (54254515720).jpg', author='Ralf Hüsges', licence=CC_BY_2,
          cut='sky', low=35, high=80, flip=True, metres=1.2, anchor=(0.5, 0.3)),

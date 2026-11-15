@@ -25,7 +25,7 @@
    "file": "goose.webp",
    "size": [
     1024,
-    1024
+    512
    ]
   },
   "swan": {
@@ -223,13 +223,13 @@
    "atlas": "goose",
    "uv": [
     0.00390625,
-    0.2978515625,
-    0.45703125,
-    0.2265625
+    0.537109375,
+    0.4111328125,
+    0.408203125
    ],
    "metres": [
-    1.17,
-    0.58
+    1.1694,
+    0.5806
    ],
    "anchor": [
     0.48,
@@ -246,14 +246,14 @@
   "goose-down": {
    "atlas": "goose",
    "uv": [
-    0.4765625,
-    0.00390625,
-    0.443359375,
-    0.28125
+    0.4296875,
+    0.0078125,
+    0.3994140625,
+    0.505859375
    ],
    "metres": [
-    1.135,
-    0.72
+    1.1361,
+    0.7194
    ],
    "anchor": [
     0.45,
@@ -267,65 +267,17 @@
     "source": "https://commons.wikimedia.org/wiki/File:Nilgans_P%C3%A4rchen.jpg"
    }
   },
-  "goose-stand": {
-   "atlas": "goose",
-   "uv": [
-    0.46484375,
-    0.2978515625,
-    0.1767578125,
-    0.203125
-   ],
-   "metres": [
-    0.4525,
-    0.52
-   ],
-   "anchor": [
-    0.3753,
-    0.0
-   ],
-   "credit": {
-    "file": "Egyptian goose (1).jpg",
-    "author": "The Blue Rider",
-    "licence": "CC BY 4.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose_%281%29.jpg"
-   }
-  },
-  "goose-rest": {
-   "atlas": "goose",
-   "uv": [
-    0.6455078125,
-    0.2978515625,
-    0.1318359375,
-    0.12890625
-   ],
-   "metres": [
-    0.3375,
-    0.33
-   ],
-   "anchor": [
-    0.427,
-    0.0
-   ],
-   "credit": {
-    "file": "Egyptian goose (1).jpg",
-    "author": "The Blue Rider",
-    "licence": "CC BY 4.0",
-    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-    "source": "https://commons.wikimedia.org/wiki/File:Egyptian_goose_%281%29.jpg"
-   }
-  },
   "goose-up": {
    "atlas": "goose",
    "uv": [
     0.00390625,
-    0.00390625,
-    0.46875,
-    0.2900390625
+    0.0078125,
+    0.421875,
+    0.521484375
    ],
    "metres": [
     1.2,
-    0.7425
+    0.7417
    ],
    "anchor": [
     0.5,
