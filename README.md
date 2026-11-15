@@ -718,14 +718,17 @@ other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
 or public domain, and CC BY-SA for the herring gull's model, the jay's
-and cardinal's wings and the ibis's glide, so their
+and cardinal's wings, the ibis's glide and the kelp gull's head-on frame, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky by `tools/bird-sprites.py`
-and packed into one image a kind (40 to 160 KB), fetched only when a place
+(its outline matted, so no rim of sky shows against land) and packed into
+one image a kind (25 to 125 KB), fetched only when a place
 with that kind is shown, and drawn as a picture that faces the camera, as a
 game draws a far bird. A picture cannot turn, so the birds are flown to be
 seen side on, and pictures only fly. Each kind has a few frames (gliding;
-wings up, level and down by its wingbeat; head on); in a flock every other
+wings up, level and down by its wingbeat; head on, for each kind that turns,
+so none flips to its mirror image mid-turn), and a bird fades from one into
+the next over a few frames rather than stepping; in a flock every other
 bird glides with its wings held lower, so they are not copies. The water
 mirrors them; the mirror image is drawn again only around a bird that moves
 in its view. What of the standing heron is under the water (its legs) is

@@ -35,6 +35,8 @@
 //   (pitched up, its wings up as it touches down, its pitch and neck never
 //   jumping), then folding its wings within two seconds; then it stands;
 // - after dark there are none (setConditions);
+// - a picture kind that turns has a head-on frame (src/birdSprites.js), so
+//   it never flips to its mirror image mid-turn;
 // - the population draws no Math.random (its own seeded stream);
 // - at any frame rate: stepped at the physics step, as src/main.js steps
 //   it, and posed at 60 or 144 frames a second, every pose at the same
@@ -585,6 +587,19 @@ const heronAt = (frame) => frame.birds[0];
     check(milliseconds < 0.05, `${place}: a frame's posing under 0.05 ms (${milliseconds.toFixed(4)})`);
     const visitors = new Set(birds.birds.map((bird) => bird.visitor).filter(Boolean)).size;
     if (visitors) check(made <= visitors * 6, `${place}: each visit is laid out once: ${made} made in ${frames / 60} s by ${visitors} visiting`);
+  }
+}
+
+// A picture faces one way, mirrored for the other, so a picture kind that turns or circles needs a head-on frame
+// (src/birdSprites.js weigh) to change sides behind, or it flips to its mirror image mid-turn.
+{
+  const modelled = JSON.parse(readFileSync(new URL('../assets/birds/models.json', import.meta.url)));
+  const { frames } = JSON.parse(readFileSync(new URL('../assets/birds/birds.json', import.meta.url)));
+  for (const [place, groups] of Object.entries(BIRDS_BY_PLACE)) {
+    for (const group of groups) {
+      if (modelled[group.kind] || !(group.styles?.turn || group.styles?.circle)) continue;
+      check(Boolean(frames[`${group.kind}-front`]), `${place}: the ${group.kind} turns, and has a head-on picture to turn behind`);
+    }
   }
 }
 
