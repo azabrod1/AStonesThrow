@@ -42,7 +42,11 @@
 # a white sky), matched by the mean colour of its body's mid-tones (a photo
 # whose whites are clipped cannot be: take another); `darks` (a knee,
 # 0-255, and a power) deepens only what is darker than the knee, a photo
-# whose black head and wingtips the haze has washed grey. Each frame faces left
+# whose black head and wingtips the haze has washed grey. `turn` (degrees,
+# anticlockwise) levels a bird photographed banking; `squash` (a share)
+# shortens a bird seen from straight below to how it looks coming on from a
+# little below (a flat bird's depth foreshortened: its head-on frame, where
+# no head-on photo is to be had). Each frame faces left
 # (`flip` turns one that faces right) and is scaled so its box is `metres`
 # wide (or tall, `measure: 'height'`), at its kind's PIXELS_PER_METRE: about
 # 400 pixels across a flying bird's wings, more for the heron, seen nearest.
@@ -105,6 +109,9 @@ PHOTOS = [
          cut='sky', low=20, high=48, fill=True, flip=True, metres=0.95, anchor=(0.6, 0.2)),
     dict(frame='kelp-down', bird='kelp', file='Kelp gull deesembocadura rio olivia DSC 3294-topaz-rawdenoise.jpg', author='lwolfartist', licence=CC_BY_2,
          cut='sky', low=20, high=48, fill=True, metres=1.05, anchor=(0.55, 0.6)),
+    # Head on, coming at the eye from a little below (Antarctic Peninsula, under a blue-grey sky: brought to the others' white light).
+    dict(frame='kelp-front', bird='kelp', file='Larus dominicanus DT -AQ Greenwich- (13) (20237605973).jpg', author='Diego Tirira', licence=CC_BY_SA_2,
+         cut='sky', low=20, high=48, fill=True, gain=(1.25, 1.12, 1.03), metres=1.3, anchor=(0.5, 0.6)),
     # A great frigatebird (immature) soaring over Midway Atoll, from below: banking, and coming on.
     dict(frame='frigate-glide', bird='frigate', file='Great Frigatebird ( immature) Eastern Island Midway Atoll 2019-01-07 16-16-20 (46379948975).jpg', author='Bettina Arrigoni', licence=CC_BY_2,
          cut='sky', low=35, high=80, fill=True, metres=1.9, anchor=(0.5, 0.6)),
@@ -124,6 +131,9 @@ PHOTOS = [
     # Wings at the top of the stroke.
     dict(frame='goose-up', bird='goose', file='Nilgans (54254515720).jpg', author='Ralf Hüsges', licence=CC_BY_2,
          cut='sky', low=35, high=80, flip=True, metres=1.2, anchor=(0.5, 0.3)),
+    # From below (the same garden), levelled and shortened to how it looks coming on: its head-on frame.
+    dict(frame='eagle-front', bird='eagle', file="Verreaux's Eagle. Black Eagle, Aquila verreauxii, at Walter Sisulu National Botanical Garden, Gauteng, South Africa (19609395245).jpg", author='Derek Keats', licence=CC_BY_2,
+         cut='sky', low=35, high=80, turn=-60, squash=0.55, metres=2.0, anchor=(0.5, 0.55)),
     # African fish eagles: gliding by (a post beside it cropped away), its wings raised, and coming on.
     dict(frame='fishEagle-glide', bird='fishEagle', file='2021 sep kenia-62 (51676976311).jpg', author='leopoldo de castro', licence=CC_BY_2,
          cut='sky', low=35, high=80, crop=(420, 0, 1280, 997), flip=True, metres=2.0, anchor=(0.45, 0.45)),
@@ -154,6 +164,9 @@ PHOTOS = [
          cut='sky', low=35, high=80, metres=0.9, anchor=(0.4, 0.5)),
     dict(frame='raven-up', bird='raven', file='Common Raven on Seedskadee NWR (23181911180).jpg', author='USFWS Mountain-Prairie', licence=PUBLIC_DOMAIN,
          cut='sky', low=35, high=80, metres=0.85, anchor=(0.4, 0.4)),
+    # From below, coming on (Bogesund, Sweden, under a white sky).
+    dict(frame='raven-front', bird='raven', file='Corvus corax CR5 5935 (51036203491).jpg', author='Bengt Nyman', licence=CC_BY_2,
+         cut='sky', low=35, high=80, squash=0.7, metres=1.25, anchor=(0.5, 0.55)),
     dict(frame='herring-glide', bird='herring', file='Herring Gull (44562549102).jpg', author='Mike Prince', licence=CC_BY_2,
          cut='blue', low=14, high=34, metres=0.8, anchor=(0.45, 0.6)),
     dict(frame='herring-up', bird='herring', file='Gråtrut European Herring Gull (13896263568).jpg', author='Åsa Berndtsson', licence=CC_BY_2,
@@ -289,6 +302,10 @@ def frame_image(spec):
     if 'darks' in spec:
         knee, power = spec['darks']
         colour = np.where(colour < knee, knee * (colour / knee) ** power, colour)
+    if 'turn' in spec:   # premultiplied, so the clear pixels round it never darken its edge
+        turned = ndimage.rotate(np.dstack([colour * alpha[..., None], alpha]), spec['turn'], axes=(1, 0), reshape=True, order=1, mode='constant')
+        alpha = np.clip(turned[..., 3], 0, 1)
+        colour = np.clip(turned[..., :3] / np.maximum(alpha, 1e-3)[..., None], 0, 255)
     ys, xs = np.nonzero(alpha > 0.02)
     left, top, right, bottom = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
     picture = Image.fromarray(np.dstack([colour, alpha * 255]).astype(np.uint8)).crop((left, top, right, bottom))
@@ -302,7 +319,7 @@ def frame_image(spec):
     width, height = picture.size
     box = height if spec.get('measure') == 'height' else width
     scale = spec['metres'] * PIXELS_PER_METRE[spec['bird']] / box
-    picture = picture.resize((max(round(width * scale), 1), max(round(height * scale), 1)), Image.LANCZOS)
+    picture = picture.resize((max(round(width * scale), 1), max(round(height * scale * spec.get('squash', 1)), 1)), Image.LANCZOS)
     metres = (picture.size[0] / PIXELS_PER_METRE[spec['bird']], picture.size[1] / PIXELS_PER_METRE[spec['bird']])
     return picture, metres, anchor
 
