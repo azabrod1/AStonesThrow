@@ -262,9 +262,11 @@ const HERON = {
   //     its throat) in `gulps` (drawn: jerks of its neck); missed, it often stabs again (a share `again`, `againAfter`
   //     s later, drawn; that one may catch);
   //   - and, a share `shake` of the times, shakes the water off its bill (`shakes` quick turns of its head either way).
-  //   A share `giveUp` of its peers come to nothing: it straightens up again without striking. Adult grey herons fishing
-  //   strike about once in two to four minutes; it hunts more often than that (about one a minute), so it is seen to.
-  strike: { share: 0.4, afterWalk: 0.3, at: [0.6, 6], stalk: [1.0, 2.2], aim: 0.5, neck: [0.12, 0.5], bill: [-0.55, -0.85], crouch: [0.2, 0.4], lean: 0.12,
+  //   A share `giveUp` of its peers come to nothing: it straightens up again without striking. How often it hunts
+  //   (`share` of its spells, `afterWalk` of those it walks in) is set so it strikes about 0.6 times a minute and
+  //   catches about 0.35 fish, as adult grey herons fishing a reservoir in July did (Gwiazda et al., Avian Biology
+  //   Research 10, 2017: 0.61 ± 0.66 attacks and 0.37 ± 0.51 captures a minute; bird-probe checks it).
+  strike: { share: 0.22, afterWalk: 0.15, at: [0.6, 6], stalk: [1.0, 2.2], aim: 0.5, neck: [0.12, 0.5], bill: [-0.55, -0.85], crouch: [0.2, 0.4], lean: 0.12,
     freeze: [0.6, 3], tilts: [0, 3], tilt: 0.14, tiltSettle: 0.3, stab: [0.09, 0.15], reach: [0.82, 1.04], depth: 0.12, clear: 0.02, hold: [0.18, 0.45], back: 0.55,
     miss: 0.5, again: 0.5, againAfter: [0.45, 1.1], catchNeck: 0.85, catchBill: 0.45, tosses: [0, 2], toss: 0.35, gulps: [2, 4], swallow: 0.35, wriggle: [0.4, 1.8], shake: 0.5, shakes: 4, giveUp: 0.25 },
   // spread: in a `share` of its spells (a share `afterLanding` of the first after it comes down: drying off), `at` s

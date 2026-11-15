@@ -23,7 +23,8 @@
 //   garden's planting (src/koiGarden.js) never in front of them;
 // - its ways are smooth: it turns about unhurried, stepping round as it
 //   turns, holds still between its moves, and peers into the water a while
-//   (its bill pointed down) before it strikes, sometimes to one side; it keeps no rhythm (over twenty seeds the gaps
+//   (its bill pointed down) before it strikes, sometimes to one side, about as
+//   often as a real one; it keeps no rhythm (over twenty seeds the gaps
 //   between its walks, strikes and wing spreads spread widely), and now and
 //   then it opens its wings and holds them open, still, for seconds (never
 //   beating them), standing where it was, with the sun up its back to it;
@@ -338,7 +339,7 @@ const heronAt = (frame) => frame.birds[0];
 // The heron's ways, smooth (src/birds.js sprung): it turns about unhurried, stepping round as it turns (never spinning
 // on its feet), holds still between its moves, and peers into the water a while before it strikes.
 {
-  const { frames } = run('koi', 300, 1 / 60);
+  const { frames } = run('koi', 600, 1 / 60);   // long enough for several hunts, to one side as well as ahead
   let fastestTurn = 0, spun = 0, still = 0, longestPeer = 0, peering = 0, struck = 0, widestAim = 0;
   for (let index = 1; index < frames.length; index++) {
     const heron = heronAt(frames[index]), before = heronAt(frames[index - 1]);
@@ -396,6 +397,27 @@ const heronAt = (frame) => frame.birds[0];
   check(beating === 0, `never beating them as it stands (${beating} frames beating)`);
   holds.sort((a, b) => a - b);
   check(holds.length > 0 && holds[0] > 2 && holds[holds.length - 1] < 12, `holding them open for seconds: ${holds[0]?.toFixed(1)} to ${holds[holds.length - 1]?.toFixed(1)} s`);
+}
+
+// How often it hunts (src/birds.js HERON `strike`): about as often as adult grey herons fishing in July (0.61 attacks
+// and 0.37 captures a minute, Gwiazda et al. 2017), over ten seeds of ten minutes.
+{
+  let stabs = 0, catches = 0;
+  for (let seed = 1; seed <= 10; seed++) {
+    const birds = new BirdPopulation({ seed });
+    birds.setPlace('koi');
+    birds.setConditions(DAY);
+    let before = null;
+    for (let time = 0; time <= 600; time += 1 / 20) {
+      birds.showAt(time);
+      const heron = { ...birds.birds[0].pose };
+      if (before && heron.strike > 0.8 && before.strike <= 0.8) stabs++;
+      if (before && heron.prey > 0.5 && before.prey <= 0.5) catches++;
+      before = heron;
+    }
+  }
+  const perMinute = (count) => count / 100;
+  check(perMinute(stabs) > 0.45 && perMinute(stabs) < 0.8 && perMinute(catches) > 0.25 && perMinute(catches) < 0.5, `it strikes ${perMinute(stabs).toFixed(2)} times a minute and catches ${perMinute(catches).toFixed(2)} fish, as adult grey herons do`);
 }
 
 // With the sun up, it turns its back to the sun before it spreads its wings (src/birds.js HERON `spread`), on the spot,
