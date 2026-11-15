@@ -419,14 +419,17 @@ export function poseStanding(out, model, flight, pose) {
         footY += walking * STEP_LIFT * Math.sin(Math.PI * swing);
       }
     }
-    const solved = solveLeg(leg.hip, { x: footX * levelCos - footY * levelSin, y: footX * levelSin + footY * levelCos }, leg.upper, leg.lower);
+    // Slimmed in flight, its hips drawn up with its belly (FLIGHT_TRUNK), so its thighs stay inside it: the leg's chain
+    // lifted as much, and solved from there.
+    const lift = (skeleton.wing.shoulder.y - leg.hip.y) * FLIGHT_TRUNK.depth * slim;
+    const solved = solveLeg({ x: leg.hip.x, y: leg.hip.y + lift }, { x: footX * levelCos - footY * levelSin, y: footX * levelSin + footY * levelCos }, leg.upper, leg.lower);
     // Trailing: the whole leg swung back from its rest, straight.
     const trailTibia = leg.restTibia + TRAIL + TRAIL_SLIM * slim, trailTarsus = trailTibia;
     const tibia = trailTibia + (solved.tibia - trailTibia) * legsDown;
     const tarsus = trailTarsus + (solved.tarsus - trailTarsus) * legsDown;
     const hipTurn = tibia - leg.restTibia, heelTurn = tarsus - leg.restTarsus - hipTurn;
     about(local, jointPoint.set(leg.hip.x, leg.hip.y, leg.z), AXIS_Z, hipTurn);
-    shoulderWorld.multiplyMatrices(bodyWorld, local).toArray(out, hipJoint * 16);
+    shoulderWorld.multiplyMatrices(bodyWorld, step.makeTranslation(0, lift, 0)).multiply(local).toArray(out, hipJoint * 16);
     about(local, jointPoint.set(leg.heel.x, leg.heel.y, leg.z), AXIS_Z, heelTurn);
     elbowWorld.multiplyMatrices(shoulderWorld, local).toArray(out, heelJoint * 16);
     // The toes level with the body standing; curled back along the tarsus trailing.
