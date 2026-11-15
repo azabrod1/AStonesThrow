@@ -41,6 +41,15 @@
 #     the shade the body casts on the wing's root is lifted (`unshade`).
 #   - the tail, a fan: its colour the body photo's at the tail, or its own
 #     feathers drawn from it (`tailFan`).
+#   - a standing bird's front (`front`): a photograph of it from in front, cut
+#     out from the chin down to its belly, its rows matched to the side photo's
+#     (`rows`: front photo row, side photo row, at the crown, chin, shoulders,
+#     the breast's plumes and the belly), so models.json carries, at heights
+#     up the body (m from the hips), the front picture's row there and the
+#     middle and half-width of the bird across it; src/birdMeshes.js paints
+#     what faces forward from it (the breast and the neck's front), the rest
+#     from the side photo. What lies across the bird (a fish in its bill) is
+#     painted out (`mend`).
 # Each is cut out of its sky as tools/bird-sprites.py cuts a bird (a smooth
 # fit of the sky, refitted; the alpha its distance from it), brought to a
 # common light (`gamma`, then `gain` per channel) and packed with the others into the
@@ -93,7 +102,8 @@ KINDS = {
         tailColour='body',
     ),
     # Grey heron: standing side on on a rock (cut out by GrabCut, whole down to its toes), its trunk, neck and head and
-    # legs traced on it; a wing from a heron overhead (its far wing raised, spread flat to the camera).
+    # legs traced on it; a wing from a heron overhead (its far wing raised, spread flat to the camera); its breast and
+    # neck's front from a heron facing the camera. That photograph is CC BY-SA, so this kind's image is shared so too.
     'heron': dict(
         length=0.92, span=1.75, standing=True,
         side=dict(file='Grey heron 2025 10 26 02.jpg', author='Alexis Lours', licence=CC_BY_4,
@@ -126,6 +136,17 @@ KINDS = {
                   points=[(643, 523), (760, 577), (723, 337), (868, 347)],
                   at=[(0.08, 0.06), (0.08, -0.27), (0.49, 0.06), (0.56, -0.24)],
                   low=20, high=48, gamma=1.0, gain=(1.08, 1.0, 0.9), neutral=True, upper=dict(tint=(1.0, 1.0, 1.0)), under=dict(tint=(0.9, 0.9, 0.9))),
+        # From in front, eating an eel by a pond in Busan (its head turned and the eel across its neck: painted from
+        # the chin down, the eel painted out), brought into the side photo's warmer light by its white neck.
+        front=dict(file='Front view of a grey heron eating fish near a pond of Busan Citizens Park in South Korea.jpg', author='Basile Morin', licence=CC_BY_SA_4,
+                   box=(380, 380, 820), waterline=1200, gain=(0.889, 0.832, 0.772),
+                   outline=[(620, 395), (700, 400), (715, 470), (690, 530), (700, 610), (770, 650), (790, 720), (795, 900), (780, 1080), (740, 1200), (560, 1200), (480, 1150),
+                            (425, 1040), (410, 850), (425, 700), (500, 650), (600, 610), (605, 520), (600, 450)],
+                   surely=[([(650, 430), (645, 540), (640, 690)], 16), ([(600, 760), (600, 1080)], 50), ([(470, 760), (470, 1000)], 20), ([(735, 760), (735, 1000)], 20)],
+                   notBird=[([(350, 500), (370, 1190)], 20), ([(860, 700), (850, 1190)], 20), ([(520, 420), (545, 600)], 14), ([(760, 620), (860, 640)], 10)],
+                   mend=[([(850, 580), (780, 600), (710, 650), (670, 690)], 18)],
+                   # Front photo row, side photo row: the crown, the chin, the shoulders, the breast's plumes' ends, the belly.
+                   rows=[(406, 100), (520, 168), (690, 290), (1000, 430), (1140, 484)]),
     ),
     # Blue jay (the Reflecting Pool): its body side on, foraging on the ground (its head raised, so levelled along its
     # body: `level`; its folded wing painted out, `repaint`, the back's blue down to where the spread wing's root is and
@@ -763,6 +784,51 @@ def side_part(spec, length):
     }
 
 
+def front_part(spec, side, length):
+    """A standing bird from in front (the header's `front`): its picture from the chin to the belly (RGBA), and at
+    heights up its body (m from the hips, by the side photo's scale) the picture's row (v, from its top) and the bird's
+    middle and half-width across it (u), each 0 to 1 over the picture."""
+    image = mended(photo(spec['file']), spec)
+    alpha = cut_grabcut(image, spec)
+    image = np.clip(image * np.array(spec.get('gain', (1, 1, 1))), 0, 255)   # into the side photo's light (its white neck's colour)
+    scale = length / abs(side['bill'][0] - side['tail'][0])   # the side photo's m a px
+    front_rows = np.array([row for row, _ in spec['rows']], np.float64)
+    heights = np.array([-(side_row - side['hips'][1]) * scale for _, side_row in spec['rows']])
+    chin, belly = spec['rows'][1][0], spec['rows'][-1][0]   # the front photo's rows painted from: the chin's to the belly's
+    top, bottom = chin - 8, belly + 8
+    ys, xs = np.nonzero(alpha[top:bottom] > 0.02)
+    left, right = xs.min() - 2, xs.max() + 3
+    rgba = np.dstack([image, alpha * 255]).astype(np.uint8)[top:bottom, left:right]
+    # As sharp as the side picture: the front photo's px a metre over the chin to the belly, by the side's heights.
+    metres = heights[1] - heights[-1]
+    pixels = SIDE_PIXELS_PER_METRE * metres / (belly - chin)   # picture px a photo px
+    size = (int(round((right - left) * pixels)), int(round((bottom - top) * pixels)))
+    picture = Image.fromarray(rgba).resize(size, Image.LANCZOS)
+    array = np.asarray(picture).astype(np.float64)
+    solid = array[..., 3] > 200
+    _, (near_rows, near_columns) = ndimage.distance_transform_edt(~solid, return_indices=True)
+    array[..., :3] = np.where(solid[..., None], array[..., :3], array[near_rows, near_columns, :3])
+    picture = Image.fromarray(array.clip(0, 255).astype(np.uint8))
+    # At heights from the belly to the chin: the row there (the rows' heights matched piecewise), and across it the
+    # widest run of the cut-out's solid pixels (its middle and half-width), smoothed up and down a little.
+    stations = np.linspace(heights[-1], heights[1], STATIONS)
+    rows = np.interp(stations, heights[::-1], front_rows[::-1])
+    middles, halves = [], []
+    for row in rows:
+        solid_row = np.nonzero(alpha[int(round(row)), left:right] > 0.5)[0]
+        runs = np.split(solid_row, np.nonzero(np.diff(solid_row) > 1)[0] + 1) if solid_row.size else []
+        run = max(runs, key=len) if runs else np.array([0, right - left - 1])
+        middles.append((run[0] + run[-1] + 1) / 2); halves.append((run[-1] - run[0] + 1) / 2)
+    smooth = lambda values: [float(np.mean(values[max(0, index - 2): index + 3])) for index in range(len(values))]
+    width = right - left
+    return picture, {
+        'heights': [round(float(height), 4) for height in stations],
+        'v': [round(float((row - top) / (bottom - top)), 4) for row in rows],
+        'middle': [round(value / width, 4) for value in smooth(middles)],
+        'half': [round(value / width, 4) for value in smooth(halves)],
+    }
+
+
 def mantled(picture, upper):
     """A gull's upper side from its underside (`upper` with a `mantle` colour): the same feathers, their light kept as
     detail on the mantle's grey (a white underwing's feathers lie as the grey upper side's do), its dark wing tips kept
@@ -895,12 +961,17 @@ def main():
             side_picture, legs_picture, side = side_part(spec['side'], spec['length'])
             wing_picture, wing = wing_part(spec['wing'], spec['span'])
             parts = {'side': side_picture, 'under': tinted(wing_picture, spec['wing']['under']['tint']), 'upper': tinted(wing_picture, spec['wing']['upper']['tint']), 'legs': legs_picture}
+            front = None
+            if 'front' in spec:
+                parts['front'], front = front_part(spec['front'], spec['side'], spec['length'])
             atlas, uv = pack(parts)
             atlas = bleed(atlas)
             file = f'{kind}-model.webp'
             atlas.save(OUT / file, 'WEBP', quality=88, method=6)
             models[kind] = {'atlas': file, 'size': list(atlas.size), 'length': spec['length'], 'span': spec['span'], 'standing': True,
-                            'side': side, 'wing': wing, 'uv': uv, 'credits': [credit(spec['side']), credit(spec['wing'])]}
+                            'side': side, 'wing': wing, 'uv': uv, 'credits': [credit(spec['side']), credit(spec['wing'])] + ([credit(spec['front'])] if front else [])}
+            if front:
+                models[kind]['front'] = front
             print(f'{kind}: {atlas.size[0]}×{atlas.size[1]}, {(OUT / file).stat().st_size // 1024} KB; wing tip {wing["tip"]} m; hips {-min(leg["foot"][1] for leg in side["legs"]):.3f} m up')
             continue
         # A small bird, seen near, sharper (`pixelsPerMetre`).

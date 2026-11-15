@@ -711,18 +711,19 @@ back and flank (the mantle grey, the flank white), its wings from an
 underwing photographed as the gull banked overhead (the shade of its body
 on the wing's root lifted) and its grey upper side made from those same
 feathers, black tips and white trailing edge kept. The grey heron is one too: its trunk, twelve-jointed
-neck (its poses read off a smooth curve, so its S bends without corners) and legs shaped from a side-on photograph, so it stands, looks about,
+neck (its poses read off a smooth curve, so its S bends without corners) and legs shaped from a side-on photograph (its breast and the
+front of its neck painted from one taken from in front), so it stands, looks about,
 draws its neck in or stretches it, walks the bank, strikes at fish, holds
 its wings open in a drooped spread (`SPREAD`), crouches
 and takes off trailing its legs, its legs seen through the water
 (`poseStanding` in `src/birdRig.js`). `tools/bird-look.mjs` shoots a model
-alone through its wingbeat (`--poses=standing`: a standing kind's ways; `--focus` and
+alone through its wingbeat (`--poses=standing`: a standing kind's ways; `--poses=landing`: the heron's flare; `--focus` and
 `--distance` for a close-up, `--look` to turn its head). The
 other kinds are still pictures, as follows, until each has its model.
 
 Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
-or public domain, and CC BY-SA for the herring gull's model, the jay's
-and cardinal's wings, the ibis's glide and the kelp gull's head-on frame, so their
+or public domain, and CC BY-SA for the herring gull's model, the heron's
+front, the jay's and cardinal's wings, the ibis's glide and the kelp gull's head-on frame, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
 `assets/birds/birds.json`), cut out of its sky by `tools/bird-sprites.py`
 (its outline matted, so no rim of sky shows against land) and packed into

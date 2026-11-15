@@ -23,7 +23,7 @@ The stitched backdrops' skies are Poly Haven's Qwantani pure skies (below).
 
 ## Birds
 
-The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the kelp gull's, herring gull's, african sacred ibis's, blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
+The birds are photographs of real ones from Wikimedia Commons, cut out of their backgrounds and resized, or for the 3D birds painted onto their models (`tools/bird-sprites.py`, `tools/bird-models.py`; this section is written by `tools/bird-credits.mjs` from the credits they record). Because the kelp gull's, herring gull's, grey heron's, african sacred ibis's, blue jay's and northern cardinal's images are made from CC BY-SA photographs, they are shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
 
 | Shows | Photograph | Author | Licence |
 |---|---|---|---|
@@ -35,6 +35,7 @@ The birds are photographs of real ones from Wikimedia Commons, cut out of their 
 | Herring gull (Loch Ness) | [Herring gull in flight (00905)](https://commons.wikimedia.org/wiki/File:Herring_gull_in_flight_%2800905%29.jpg) | Rhododendrites | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | Grey heron (Koi pond, Highlands) | [Grey heron 2025 10 26 02](https://commons.wikimedia.org/wiki/File:Grey_heron_2025_10_26_02.jpg) | Alexis Lours | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Grey heron (Koi pond, Highlands) | [Ardea cinerea EM1B6250 (33380183305)](https://commons.wikimedia.org/wiki/File:Ardea_cinerea_EM1B6250_%2833380183305%29.jpg) | Bengt Nyman | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| Grey heron (Koi pond, Highlands) | [Front view of a grey heron eating fish near a pond of Busan Citizens Park in South Korea](https://commons.wikimedia.org/wiki/File:Front_view_of_a_grey_heron_eating_fish_near_a_pond_of_Busan_Citizens_Park_in_South_Korea.jpg) | Basile Morin | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | Great frigatebird (Polynesian lagoon) | [Great Frigatebird ( immature) Eastern Island Midway Atoll 2019-01-07 16-16-20 (46379948975)](https://commons.wikimedia.org/wiki/File:Great_Frigatebird_%28_immature%29_Eastern_Island_Midway_Atoll_2019-01-07_16-16-20_%2846379948975%29.jpg) | Bettina Arrigoni | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Great frigatebird (Polynesian lagoon) | [Great Frigatebird ( immature) Eastern Island Midway Atoll 2019-01-07 16-22-01 (46571488854)](https://commons.wikimedia.org/wiki/File:Great_Frigatebird_%28_immature%29_Eastern_Island_Midway_Atoll_2019-01-07_16-22-01_%2846571488854%29.jpg) | Bettina Arrigoni | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
 | Common raven (Swiss Alps) | [Common Raven on Seedskadee NWR (22849558584)](https://commons.wikimedia.org/wiki/File:Common_Raven_on_Seedskadee_NWR_%2822849558584%29.jpg) | USFWS Mountain-Prairie | [Public domain](https://creativecommons.org/publicdomain/mark/1.0/) |

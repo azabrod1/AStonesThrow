@@ -20,6 +20,9 @@
 //     kind's head (`crown`: the skull's top under the crest) is that ring
 //     from its throat to its crown, and its crest above it a fin CREST_FIN
 //     thick, so from in front it is a crest, not a cone as wide as the head;
+//     a standing kind seen near (the heron) has its breast and the front of
+//     its neck painted from a photograph taken from in front (models.json
+//     `front`, frontPaint), as much as they face forward;
 //   - the wings: each a sheet over the flattened wing's outline (`wing`: its
 //     leading and trailing edges along the span), painted from below with the
 //     photograph's underwing and from above with its upper side (gl_FrontFacing
@@ -130,8 +133,10 @@ ${SEEN_THROUGH_WATER}
 attribute vec2 joints;        // the two joints it is skinned to
 attribute float jointBlend;   // the second's share
 attribute float part;
+attribute vec3 front;         // a standing kind's front picture's uv, and how much it is painted from it (frontPaint)
 varying vec2 vUv;
 varying float vPart;
+varying vec3 vFront;
 varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec3 vViewPosition;
@@ -150,13 +155,14 @@ void main() {
   vViewPosition = -mvPosition.xyz;
   vUv = uv;
   vPart = part;
+  vFront = front;
   gl_Position = projectionMatrix * mvPosition;
 }
 `;
 
 const FRAGMENT = /* glsl */ `
 uniform sampler2D uAtlas;
-uniform vec4 uRects[4];       // body, underwing, upper wing, tail: x, y, width, height (uv, from its top left)
+uniform vec4 uRects[5];       // body, underwing, upper wing, tail, a standing kind's front: x, y, width, height (uv, from its top left)
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec3 uSunDirection;
@@ -165,6 +171,7 @@ uniform vec3 uWaterColor;   // the water's own radiance, for an eye under it
 ${BIRD_HAZE}
 varying vec2 vUv;
 varying float vPart;
+varying vec3 vFront;
 varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec3 vViewPosition;
@@ -181,6 +188,9 @@ void main() {
     if (!gl_FrontFacing) normal = -normal;
   }
   vec4 picture = texture2D(uAtlas, rect.xy + vUv * rect.zw);
+  // What faces forward on a standing kind's breast and neck, from its front photograph (frontPaint).
+  vec4 frontPicture = texture2D(uAtlas, uRects[4].xy + vFront.xy * uRects[4].zw);
+  if (vPart < 0.5) picture.rgb = mix(picture.rgb, frontPicture.rgb, vFront.z);
   if (vPart > 2.5) {
     // A fish in its bill (PART.prey): no picture, a small pond fish's colours (a dark olive back over silver flanks
     // and a pale belly, vUv.y up its side from the belly), its flank catching the light as a fish's scales do.
@@ -431,6 +441,7 @@ export function buildModel(entry) {
   geometry.setAttribute('joints', new THREE.Float32BufferAttribute(joints, 2));
   geometry.setAttribute('jointBlend', new THREE.Float32BufferAttribute(blends, 1));
   geometry.setAttribute('part', new THREE.Float32BufferAttribute(parts, 1));
+  geometry.setAttribute('front', new THREE.Float32BufferAttribute(new Float32Array(parts.length * 3), 3));   // painted from the side alone (a flier is seen side on, or far off)
   geometry.setIndex(indices);
   return { geometry, joints: modelJoints, span: entry.span, length, radius: Math.max(entry.span, length) * 0.6 };
 }
@@ -494,12 +505,66 @@ function addPrey(neck, add, indices) {
   return { grip, along, across };
 }
 
+const FRONT_FACING = [0.25, 0.65];   // a vertex's normal forward (x) from which it starts to be painted from the front photo, and is all
+const FRONT_FADE = [0.03, 0.04];     // m over which the front photo fades in above the belly and out below the chin
+
+/**
+ * A standing kind's front (models.json `front`, tools/bird-models.py front_part), for its first `count` vertices (the
+ * trunk's, the neck's and the head's): each vertex's place on the front picture and how much it is painted from it,
+ * three numbers a vertex (none for the rest). Seen from in front, the bird at a height is as wide as its widest vertex
+ * there (the trunk's, or the neck's above it): a vertex `z` across from the middle is that share of the photo's
+ * half-width across the photo's middle there (its right side, +z, on the photo's left), the photo's row the height's.
+ * What faces forward (FRONT_FACING) takes the front photo's colour, between the belly and the chin (FRONT_FADE); the
+ * rest keeps the side photo's.
+ */
+function frontPaint(front, positions, normals, indices, count) {
+  const paint = new Float32Array((positions.length / 3) * 3);
+  if (!front) return paint;
+  // Which way each vertex faces, from its triangles (the trunk's rings carry normals straight out from its axis, so
+  // its rounded front, where it narrows to the breast, would never face forward), turned outward as its own normal is
+  // (the trunk's and the neck's rings wind opposite ways).
+  const facing = new Float32Array(count * 3), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let index = 0; index < indices.length; index += 3) {
+    const [i, j, k] = [indices[index], indices[index + 1], indices[index + 2]];
+    if (i >= count || j >= count || k >= count) continue;
+    a.fromArray(positions, i * 3); b.fromArray(positions, j * 3).sub(a); c.fromArray(positions, k * 3).sub(a);
+    b.cross(c);   // its area's normal
+    for (const vertex of [i, j, k]) for (let axis = 0; axis < 3; axis++) facing[vertex * 3 + axis] += b.getComponent(axis);
+  }
+  const { heights } = front, stations = heights.length;
+  const lowest = heights[0], highest = heights[stations - 1];
+  const stationOf = (y) => THREE.MathUtils.clamp((y - lowest) / (highest - lowest) * (stations - 1), 0, stations - 1);
+  const widest = new Float32Array(stations).fill(1e-3);
+  for (let vertex = 0; vertex < count; vertex++) {
+    const y = positions[vertex * 3 + 1];
+    if (y < lowest || y > highest) continue;
+    const station = Math.round(stationOf(y));
+    widest[station] = Math.max(widest[station], Math.abs(positions[vertex * 3 + 2]));
+  }
+  const at = (values, y) => {
+    const station = stationOf(y), below = Math.floor(station), above = Math.min(below + 1, stations - 1);
+    return values[below] + (values[above] - values[below]) * (station - below);
+  };
+  for (let vertex = 0; vertex < count; vertex++) {
+    const y = positions[vertex * 3 + 1], z = positions[vertex * 3 + 2];
+    const length = Math.hypot(facing[vertex * 3], facing[vertex * 3 + 1], facing[vertex * 3 + 2]);
+    const outward = facing[vertex * 3] * normals[vertex * 3] + facing[vertex * 3 + 1] * normals[vertex * 3 + 1] + facing[vertex * 3 + 2] * normals[vertex * 3 + 2] < 0 ? -1 : 1;
+    const forward = outward * facing[vertex * 3] / Math.max(length, 1e-12);
+    const within = THREE.MathUtils.smoothstep(y, lowest, lowest + FRONT_FADE[0]) * (1 - THREE.MathUtils.smoothstep(y, highest - FRONT_FADE[1], highest));
+    paint[vertex * 3] = at(front.middle, y) - (z / at(widest, y)) * at(front.half, y);
+    paint[vertex * 3 + 1] = at(front.v, y);
+    paint[vertex * 3 + 2] = THREE.MathUtils.smoothstep(forward, FRONT_FACING[0], FRONT_FACING[1]) * within;
+  }
+  return paint;
+}
+
 /**
  * A standing kind's model from its models.json entry (tools/bird-models.py side_part): metres from its hips, its bill
  * along +x, up +y, its right side +z. Every part of it but the wings is painted from its side picture, projected across
  * it (side on, the photograph): the trunk lofted from its outline; the neck and head a tube along the neck's middle
  * line, as thick as the photo's neck there; each leg a thin tube along the photo's leg, hip to heel to foot, and its toes
- * spread on the ground; the wings as a flying kind's (buildModel), folded away by the rig when it stands.
+ * spread on the ground; the wings as a flying kind's (buildModel), folded away by the rig when it stands. What faces
+ * forward on its breast and neck is painted from its front picture instead, where it has one (frontPaint).
  */
 export function buildStandingModel(entry) {
   const positions = [], normals = [], uvs = [], joints = [], blends = [], parts = [], indices = [];
@@ -593,6 +658,7 @@ export function buildStandingModel(entry) {
       }
     }
   }
+  const bodyVertices = positions.length / 3;   // the trunk's, the neck's and the head's (frontPaint)
   // A thin tube along points ([x, y, z], radius each, joint each), painted from the picture under its middle line.
   const limb = (points, part = PART.body) => {
     const first = positions.length / 3;
@@ -653,6 +719,7 @@ export function buildStandingModel(entry) {
   geometry.setAttribute('joints', new THREE.Float32BufferAttribute(joints, 2));
   geometry.setAttribute('jointBlend', new THREE.Float32BufferAttribute(blends, 1));
   geometry.setAttribute('part', new THREE.Float32BufferAttribute(parts, 1));
+  geometry.setAttribute('front', new THREE.Float32BufferAttribute(frontPaint(entry.front, positions, normals, indices, bodyVertices), 3));
   geometry.setIndex(indices);
   const hipsHeight = -Math.min(...side.legs.map((leg) => leg.foot[1]));
   // The neck's joints, and each link's direction as photographed (the last the head's: the nape to the bill's tip).
@@ -717,7 +784,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
       texture.needsUpdate = true;
       const model = entry.standing ? buildStandingModel(entry) : buildModel(entry);
       // A standing kind's fourth picture is its legs' colours (a column a leg, buildStandingModel), where a flying kind's is its tail's.
-      const rects = (entry.standing ? ['side', 'under', 'upper', 'legs'] : ['body', 'under', 'upper', 'tail']).map((name) => new THREE.Vector4(...entry.uv[name]));
+      const rects = (entry.standing ? ['side', 'under', 'upper', 'legs', entry.front ? 'front' : 'side'] : ['body', 'under', 'upper', 'tail', 'body']).map((name) => new THREE.Vector4(...entry.uv[name]));
       kinds.set(kind, { model, texture, rects });
       for (const sprite of sprites) if (sprite.kind === kind) dress(sprite);
       onLoaded();
@@ -742,7 +809,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     const uniforms = {
       ...shared,
       uAtlas: { value: standIn },
-      uRects: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 1, 1)) },
+      uRects: { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4(0, 0, 1, 1)) },
       uJoints: { value: Array.from({ length: JOINT_COUNT }, () => new THREE.Matrix4()) },
     };
     const placeholder = new THREE.BufferGeometry();
@@ -844,6 +911,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     geometry.setAttribute('joints', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
     geometry.setAttribute('jointBlend', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count), 1));
     geometry.setAttribute('part', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count), 1));
+    geometry.setAttribute('front', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
     const meshes = [...sprite.meshes, sprite.under];
     const was = meshes.map((mesh) => mesh.geometry);
     for (const mesh of meshes) { mesh.geometry = geometry; mesh.visible = true; mesh.frustumCulled = false; }
