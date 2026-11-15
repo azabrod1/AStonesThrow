@@ -200,6 +200,9 @@ void main() {
   vec3 light = uSkyAmbient * ${SKY_SHARE.toFixed(2)} * skyOn + uSunIrradiance * ${SUN_SHARE.toFixed(2)} * sunUp * onSide;
   vec3 radiance = picture.rgb * light;
   #ifdef MIRROR
+    // Only what is over the water is mirrored (a ShaderMaterial takes no clipping planes, so the mirror pass's clip
+    // never reaches it): a wading heron's legs and feet, its bill as it strikes, would be drawn into the mirror image.
+    if (vWorld.y < 0.0) discard;
     gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
   #elif defined(BELOW)
     if (vWorld.y > 0.0) discard;
