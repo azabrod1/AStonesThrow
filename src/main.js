@@ -340,7 +340,7 @@ import { createBirdView as createBirdModels, MODELLED_KINDS } from './birdMeshes
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
 import { compileOnly } from './precompile.js';
-import { frustumOfRegion, keepMeshesToRegion, showRegionAgain } from './mirrorRegion.js';
+import { frustumOfRegion, keepMeshesToRegion, showRegionAgain, refreshMipsInRegion } from './mirrorRegion.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -1459,21 +1459,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       tropics.keepToRegion(frustum);
       keepMeshesToRegion(frustum, [boulders.mirror, birdView.mirror], regionHidden);
     }
-    // three.js makes a target's mip levels after each render() into it: only after the last of them here.
-    reflectionTarget.texture.generateMipmaps = objects.length === 0;
+    // three.js makes a target's whole mip chain after each render() into it: drawn whole, only after the last of them
+    // here; a region's, none, its levels then remade over the region alone (refreshMipsInRegion).
+    reflectionTarget.texture.generateMipmaps = !region && objects.length === 0;
     renderer.render(sceneMain, mirrorCamera);
     tropics.endRegion();
     showRegionAgain(regionHidden);
     if (objects.length > 0) {
       renderer.render(splash.particleScene, mirrorCamera);
       for (const object of objects) object.material = object.userData.mirrorDistanceMaterial;
-      reflectionTarget.texture.generateMipmaps = true;
+      reflectionTarget.texture.generateMipmaps = !region;
       renderer.render(splash.particleScene, mirrorCamera);
     }
     renderer.clippingPlanes = [];
     for (const object of objects) object.material = object.userData.passMaterial;
     reflectionTarget.scissorTest = false;
+    reflectionTarget.texture.generateMipmaps = true;
     renderer.setRenderTarget(null);
+    if (region) refreshMipsInRegion(renderer, reflectionTarget, region);
   }
 
   /**
