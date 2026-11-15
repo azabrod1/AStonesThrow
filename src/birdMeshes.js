@@ -2,8 +2,8 @@
 // their skeletons): each kind a 3D model shaped and painted from photographs
 // of the real bird (tools/bird-models.py writes its pictures and shape,
 // assets/birds/<kind>-model.webp and models.json; the photographs are credited
-// there and under the Birds setting), so its wings beat and it turns, banks
-// and glides as a bird does, seen from any side. The kinds with a model are
+// there and in CREDITS.md and credits.html), so its wings beat and it turns,
+// banks and glides as a bird does, seen from any side. The kinds with a model are
 // MODELLED_KINDS (each with its flight, src/birdRig.js FLIGHT); src/main.js
 // draws the rest as pictures (src/birdSprites.js) until each has one. A
 // standing kind (the heron: buildStandingModel) has legs and a jointed neck
@@ -120,7 +120,7 @@ const WIDTH = [[0, 0.25], [0.22, 0.35], [0.35, 0.85], [0.6, 0.95], [0.75, 0.8], 
 // tail's root, along the body.
 const SKELETON = { shoulder: 0.6, shoulderHeight: 0.3, elbow: 0.3, wrist: 0.55, neck: 0.78, tail: 0.3 };
 
-const BELOW_PULL = 0.25;   // m under the water a point is drawn nearer the eye, so the bed's depth there never hides it (src/birdSprites.js's)
+const BELOW_PULL = 0.25;   // m under the water a point is drawn nearer the eye, so the bed's depth there never hides it (on a steep bank the bed's coarse triangles cut through the heron's legs)
 
 const VERTEX = /* glsl */ `
 uniform mat4 uJoints[${JOINT_COUNT}];

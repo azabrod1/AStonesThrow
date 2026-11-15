@@ -630,7 +630,7 @@ bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
 
-**Birds** (`src/birds.js`, drawn by `src/birdSprites.js`). Every place but
+**Birds** (`src/birds.js`, drawn by `src/birdMeshes.js` and `src/birdSprites.js`). Every place but
 the Pool (whose view looks down into the water) has its own, the ones that
 live where its photograph was taken (Poly Haven's coordinates put most of
 the skies in South Africa):
@@ -720,22 +720,22 @@ Each bird is a photograph of a real one, from Wikimedia Commons (CC BY, CC0
 or public domain, and CC BY-SA for the herring gull's model, the jay's
 and cardinal's wings and the ibis's glide, so their
 images are shared under CC BY-SA too; the credits are in `CREDITS.md` and in
-`assets/birds/birds.json`), cut out of its sky (or, for the standing geese,
-its shore, by GrabCut) by `tools/bird-sprites.py` and packed into one image
-a kind (40 to 200 KB), fetched only when a place with that kind is shown,
-and drawn as a picture that faces the camera, as a game draws a far bird. A
-picture cannot turn, so the birds are flown to be seen side on. Each kind
-has a few frames (gliding; wings up, level and down by its wingbeat; head
-on; legs down; standing or resting); in a flock every other bird glides
-with its wings held lower, so they are not copies. The water mirrors them; the mirror
-image is drawn again only around a bird that moves in its view. What of a
-standing bird is under the water (the heron's legs) is drawn in the
-under-water pass, bent at the surface as a reed is, so its legs go on down
-to its feet on the bed. A bird on the ground or the ice has a soft shadow
-under it. A bird out of a pass's view (the screen's, the mirror's, the
-water's) is not drawn in it: each bird's mesh is bounded by a sphere moved
-with it. Each bird in view costs 2 draw calls (it and its mirror image),
-the heron 3 (and its legs under the water);
+`assets/birds/birds.json`), cut out of its sky by `tools/bird-sprites.py`
+and packed into one image a kind (40 to 160 KB), fetched only when a place
+with that kind is shown, and drawn as a picture that faces the camera, as a
+game draws a far bird. A picture cannot turn, so the birds are flown to be
+seen side on, and pictures only fly. Each kind has a few frames (gliding;
+wings up, level and down by its wingbeat; head on); in a flock every other
+bird glides with its wings held lower, so they are not copies. The water
+mirrors them; the mirror image is drawn again only around a bird that moves
+in its view. What of the standing heron is under the water (its legs) is
+drawn in the under-water pass, bent at the surface as a reed is, so its legs
+go on down to its feet on the bed. A model's wings and tail are cut out of
+their pictures with an edge a pixel wide (the renderer has no MSAA), so they
+do not crawl as they beat. A bird out of a pass's view (the screen's, the
+mirror's, the water's) is not drawn in it: each bird's mesh is bounded by a
+sphere moved with it. Each bird in view costs 2 draw calls (it and its
+mirror image), the heron 3 (and its legs under the water);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the
 standing birds' flush and return, the frame rate and the cost.
 
