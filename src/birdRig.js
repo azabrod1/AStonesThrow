@@ -72,36 +72,33 @@ export const FLIGHT = {
 
 const scratch = { matrix: new THREE.Matrix4(), rotation: new THREE.Matrix4(), quaternion: new THREE.Quaternion(), euler: new THREE.Euler(), vector: new THREE.Vector3() };
 
+// What flapAngles returns: one object, filled afresh each call (the rig poses a bird or two every frame; its callers
+// use it at once, and poseStanding changes it in place).
+const flapped = { shoulder: 0, hand: 0, elbowSweep: 0, handSweep: 0, twist: 0, rise: 0 };
+
+/** Where a wing is in its stroke at `at` (a share of the cycle): 0 to 1 down, 1 to 2 up (the header's `down`). */
+function strokeAlong(flight, at) {
+  const wrapped = (at % 1 + 1) % 1;
+  return wrapped < flight.down ? wrapped / flight.down : 1 + (wrapped - flight.down) / (1 - flight.down);
+}
+
 /** The shoulder's, elbow's and wrist's angles at a phase (0 to 2π) and beat (0 to 1): see the header. */
 export function flapAngles(flight, phase, beat) {
   const cycle = ((phase / (2 * Math.PI)) % 1 + 1) % 1;
-  const stroke = (at) => {
-    const wrapped = (at % 1 + 1) % 1;
-    const along = wrapped < flight.down ? wrapped / flight.down : 1 + (wrapped - flight.down) / (1 - flight.down);   // 0 to 1 down, 1 to 2 up
-    return { height: Math.cos(Math.PI * along), along };
-  };
-  const now = stroke(cycle), late = stroke(cycle - flight.lag);
-  const upstroke = now.along > 1 ? Math.sin(Math.PI * (now.along - 1)) ** 2 : 0;
-  const downstroke = now.along <= 1 ? Math.sin(Math.PI * now.along) : 0;
+  const nowAlong = strokeAlong(flight, cycle), nowHeight = Math.cos(Math.PI * nowAlong);
+  const lateHeight = Math.cos(Math.PI * strokeAlong(flight, cycle - flight.lag));
+  const upstroke = nowAlong > 1 ? Math.sin(Math.PI * (nowAlong - 1)) ** 2 : 0;
+  const downstroke = nowAlong <= 1 ? Math.sin(Math.PI * nowAlong) : 0;
   const { glide } = flight;
-  const flapping = {
-    shoulder: flight.centre + flight.amplitude * now.height,
-    hand: flight.amplitude * flight.handSwing * (late.height - now.height) + degrees(8) * upstroke * flight.flex,
-    elbowSweep: degrees(25) * flight.flex * upstroke,
-    handSweep: degrees(12) + degrees(55) * flight.flex * upstroke,
-    twist: -flight.pronation * downstroke,
-    rise: now.height,
-  };
   const share = THREE.MathUtils.clamp(beat, 0, 1);
-  const mix = (gliding, flapped) => gliding + (flapped - gliding) * share;
-  return {
-    shoulder: mix(glide.dihedral, flapping.shoulder),
-    hand: mix(glide.hand, flapping.hand),
-    elbowSweep: mix(0, flapping.elbowSweep),
-    handSweep: mix(glide.sweep, flapping.handSweep),
-    twist: mix(0, flapping.twist),
-    rise: share * flapping.rise,
-  };
+  const mix = (gliding, flapping) => gliding + (flapping - gliding) * share;
+  flapped.shoulder = mix(glide.dihedral, flight.centre + flight.amplitude * nowHeight);
+  flapped.hand = mix(glide.hand, flight.amplitude * flight.handSwing * (lateHeight - nowHeight) + degrees(8) * upstroke * flight.flex);
+  flapped.elbowSweep = mix(0, degrees(25) * flight.flex * upstroke);
+  flapped.handSweep = mix(glide.sweep, degrees(12) + degrees(55) * flight.flex * upstroke);
+  flapped.twist = mix(0, -flight.pronation * downstroke);
+  flapped.rise = share * nowHeight;
+  return flapped;
 }
 
 /** A rotation about an axis through a point (model space), into `out`. */
@@ -115,7 +112,7 @@ function about(out, point, axis, angle) {
 const AXIS_X = new THREE.Vector3(1, 0, 0), AXIS_Y = new THREE.Vector3(0, 1, 0), AXIS_Z = new THREE.Vector3(0, 0, 1);
 const local = new THREE.Matrix4(), step = new THREE.Matrix4(), world = new THREE.Matrix4();
 const shoulderMatrix = new THREE.Matrix4(), shoulderWorld = new THREE.Matrix4(), elbowMatrix = new THREE.Matrix4(), elbowWorld = new THREE.Matrix4(), wristMatrix = new THREE.Matrix4();
-const jointPoint = new THREE.Vector3();
+const jointPoint = new THREE.Vector3(), wingRoot = new THREE.Vector3();
 
 /**
  * The joints' matrices (a Float32Array of JOINT_COUNT × 16, into `out`) for a model (its `joints`: the shoulder,
@@ -341,6 +338,9 @@ function posePrey(out, skeleton, pose) {
   world.fromArray(out, JOINTS.head * 16).multiply(step).toArray(out, JOINTS.prey * 16);
 }
 
+const LEG_JOINTS = [[JOINTS.rightHip, JOINTS.rightHeel, JOINTS.rightFoot], [JOINTS.leftHip, JOINTS.leftHeel, JOINTS.leftFoot]];   // each leg's hip, heel and foot
+const SPREAD_ANGLES = ['shoulder', 'elbowSweep', 'hand', 'handSweep'];   // the wingbeat's angles a spread eases to SPREAD's
+
 /**
  * The joints' matrices (into `out`) for a standing kind's model (src/birdMeshes.js buildStandingModel: its `skeleton`)
  * posed as `pose` (src/birds.js), with its kind's `flight` for its wingbeat.
@@ -403,7 +403,7 @@ export function poseStanding(out, model, flight, pose) {
   const planted = THREE.MathUtils.clamp(pose.plant ?? (flying ? 0 : 1), 0, 1) * legsDown;
   const levelPitch = -(pose.pitch ?? 0) * planted, levelCos = Math.cos(levelPitch), levelSin = Math.sin(levelPitch);
   skeleton.legs.forEach((leg, index) => {
-    const [hipJoint, heelJoint, footJoint] = index === 0 ? [JOINTS.rightHip, JOINTS.rightHeel, JOINTS.rightFoot] : [JOINTS.leftHip, JOINTS.leftHeel, JOINTS.leftFoot];
+    const [hipJoint, heelJoint, footJoint] = LEG_JOINTS[index];
     // Where its foot should be (model space): planted where it stood, the hips sunk over it; walking, a step forward or
     // back of it (the stance foot sliding back under the body as it goes on, the other swung forward and lifted).
     const walking = pose.walking ?? 0;
@@ -441,7 +441,7 @@ export function poseStanding(out, model, flight, pose) {
   // (`spread`: its wingbeat's angles eased to SPREAD's, a little past them as they spring open).
   const fold = THREE.MathUtils.clamp(pose.fold ?? 0, 0, 1);
   const spread = THREE.MathUtils.clamp(pose.spread ?? 0, 0, 1.2);
-  if (spread > 0) for (const name of ['shoulder', 'elbowSweep', 'hand', 'handSweep']) angles[name] += (SPREAD[name] - angles[name]) * spread;
+  if (spread > 0) for (const name of SPREAD_ANGLES) angles[name] += (SPREAD[name] - angles[name]) * spread;
   // Braking as it lands (pose.brake, 0 to 1: BRAKE): its strokes shallower and held high, never below its back.
   const brake = THREE.MathUtils.clamp(pose.brake ?? 0, 0, 1);
   if (brake > 0) {
@@ -451,7 +451,7 @@ export function poseStanding(out, model, flight, pose) {
   const { shoulder, elbow, wrist } = skeleton.wing;
   for (const side of [1, -1]) {
     const raise = side > 0 ? -1 : 1;
-    const shoulderPoint = new THREE.Vector3(shoulder.x, shoulder.y, shoulder.z * side);
+    const shoulderPoint = wingRoot.set(shoulder.x, shoulder.y, shoulder.z * side);
     about(shoulderMatrix, shoulderPoint, AXIS_X, raise * angles.shoulder * (1 - fold));
     // Braking, its wings held against its body's pitch (BRAKE.level of it): raised up, as the world's up, not its back's.
     if (brake > 0) shoulderMatrix.premultiply(about(local, shoulderPoint, AXIS_Z, -(pose.pitch ?? 0) * BRAKE.level * brake));
