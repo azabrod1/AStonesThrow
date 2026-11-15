@@ -688,9 +688,9 @@ the way it faces. It comes back half a minute to a minute later, gliding in
 and flaring as herons do (pitched up, legs forward, braking with deep beats)
 to land somewhere new on the far bank, holding its wings up a moment before
 folding them. The day's birds are not
-about after dark; at Lakeside, the Harbour, the Mesas and the Reflecting
-Pool a black-crowned night heron, which feeds by night and lives at all
-four, crosses the sky now and then instead (`BIRDS_AT_NIGHT`), flown high
+about after dark; at Lakeside, the Harbour, the Mesas, the Desert oasis
+and the Reflecting Pool a black-crowned night heron, which feeds by night
+and lives at all five, crosses the sky now and then instead (`BIRDS_AT_NIGHT`), flown high
 enough to stand against the sky as a silhouette. Loch Ness has none: it is
 north of their range. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out

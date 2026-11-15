@@ -47,7 +47,8 @@
 //     horizon, though the moon may light the scene) the day's birds are gone,
 //     and where they live black-crowned night herons come over instead
 //     (BIRDS_AT_NIGHT), as they leave their roosts at dusk to fish through
-//     the night: the Sterkfontein Dam's places and the Reflecting Pool (the
+//     the night: the Sterkfontein Dam's places, the Desert oasis (they fish
+//     the Orange River along the Richtersveld) and the Reflecting Pool (the
 //     National Zoo keeps a colony of them a few miles up Rock Creek). Loch
 //     Ness has none: it is north of their range.
 //
@@ -199,6 +200,10 @@ export const BIRDS_AT_NIGHT = {
   lakeside: [{ ...NIGHT_HERON, aim: 14, spread: 12 }],   // as the fish eagle, over the open water right of the trees
   harbour: [NIGHT_HERON],
   mesas: [NIGHT_HERON],
+  // The Desert's koppies stand up out of the frame but for the gap between them (14° left of ahead to 9° right), its
+  // sky down to 4.5° above the eye: across it, high, near the frame's top (CEILING), and a little oftener, as it is seen
+  // only there (on a moonless night black on the black rock either side, as an eye would see it).
+  desert: [{ ...NIGHT_HERON, aim: -3, spread: 8, distance: [28, 45], height: [4.5, 6.5], gap: [10, 35] }],
   mall: [{ ...NIGHT_HERON, distance: [14, 30], height: [2.4, 4.5], gap: [8, 30] }],   // over the pool, under the elms' crowns, as the jay (nearer, so across sooner, and oftener)
 };
 
