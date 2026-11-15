@@ -604,6 +604,15 @@ def wing_part(spec, span, pixels=PIXELS_PER_METRE):
     }
 
 
+def grab_cut(image, mask, iterations):
+    """OpenCV's GrabCut on `mask` in place, from a fixed seed: its colour models start from k-means on OpenCV's one
+    random stream, so unseeded each cut would hang on every cut made before it, and building some kinds, or adding a
+    cut to one, would change the others."""
+    cv2.setRNGSeed(1)
+    models = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
+    cv2.grabCut(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, None, *models, iterations, cv2.GC_INIT_WITH_MASK)
+
+
 def cut_traced(image, polygon):
     """OpenCV's GrabCut started from a traced outline: surely the bird well inside it, surely not well outside, and
     either way across its edge."""
@@ -614,8 +623,7 @@ def cut_traced(image, polygon):
     mask[cv2.dilate(inside, np.ones((13, 13), np.uint8)) > 0] = cv2.GC_PR_BGD
     mask[inside > 0] = cv2.GC_PR_FGD
     mask[cv2.erode(inside, np.ones((13, 13), np.uint8)) > 0] = cv2.GC_FGD
-    models = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
-    cv2.grabCut(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, None, *models, 6, cv2.GC_INIT_WITH_MASK)
+    grab_cut(image, mask, 6)
     bird = ndimage.binary_fill_holes(largest((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)))
     return np.clip((ndimage.gaussian_filter(bird.astype(np.float64), 0.7) - 0.2) / 0.6, 0, 1)
 
@@ -640,8 +648,7 @@ def cut_grabcut(image, spec):
     for value, strokes in ((cv2.GC_FGD, spec['surely']), (cv2.GC_BGD, spec['notBird'])):
         for points, thickness in strokes:
             cv2.polylines(mask, [np.array(points, np.int32)], False, int(value), thickness)
-    models = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
-    cv2.grabCut(cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR), mask, None, *models, 8, cv2.GC_INIT_WITH_MASK)
+    grab_cut(image, mask, 8)
     bird = (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)
     bird[waterline:] = False
     if 'darkBelow' in spec:   # dark toes on a pale rock: below that row only what is darker than the rock is bird
