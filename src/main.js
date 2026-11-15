@@ -1957,6 +1957,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const zoomed = isZoomed(view, home);
     camera.aspect = width / height;
     home.fov = frameFov();
+    // The birds' visits are laid out for the shore's frame as wide as this screen's (src/birds.js setView).
+    birds.setView(THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(frameFov({ pivotY: 0 }) / 2)) * camera.aspect)));
     // A view set through the API stays as it is; the user's zoom stays inside the new home frame.
     if (!zoomed) Object.assign(view, home);
     else if (!viewFromApi) Object.assign(view, clampToFrame({ ...view, fov: Math.min(view.fov, home.fov) }, home, camera.aspect));

@@ -55,7 +55,9 @@
 // bird's seed and the visit's number: over from one side to the other,
 // wandering nearer and farther, higher and lower; or in, round in a wide
 // turn and back out; or, for a soaring kind, round and round in a thermal,
-// rising, and off. The path is a cubic B-spline (splinePath: smooth to its
+// rising, and off. On a frame narrower than a 16:9 screen's (an upright
+// phone's) visits are drawn in toward the home view's line and come more
+// often (setView). The path is a cubic B-spline (splinePath: smooth to its
 // curvature) flown at the visit's speed by its length, so the bird's
 // heading, climb and bank (into its turn as a glider banks,
 // tan(bank) = v²κ/g, eased over a second: ROLL_EASE) all change smoothly,
@@ -494,6 +496,15 @@ const EYE_HEIGHT = 1.15;   // the shore's eye's height (src/main.js VIEWS.shore)
 // after.
 const FIRST_VISIT = [-0.3, 1];
 const OUT = 64;   // degrees either side of the home view's line: out of a wide screen's frame (38° either side at 16:9), where visits begin and end
+// A narrower frame (setView: an upright phone's is 15.5° either side) would see a visit laid out for a wide one about
+// half as long, the bird spending the rest out beyond its sides: there every bearing a visit is laid out by (OUT, a
+// turn's way in and out, a group's `aim` and `spread`) is drawn in toward the home view's line by `fit`, so its
+// ends are OUT_MARGIN beyond the frame's side, as a wide screen's are, and the gaps between visits are shortened by
+// as much again (GAP_FIT, a power of `fit`): over ten minutes the birds are in an upright phone's frame about as much
+// as in a wide screen's (bird-probe). A frame as wide as WIDE_FRAME's, or wider, is laid out as it always was.
+const WIDE_FRAME = THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(24)) * 16 / 9));   // degrees either side at 16:9 (src/main.js frameFov: 48° high), 38.4°
+const OUT_MARGIN = OUT - WIDE_FRAME;
+const GAP_FIT = 3;
 const CEILING = THREE.MathUtils.degToRad(6);   // a visit's points are kept this far above the eye's level, under the frame's top (7.4°)
 const SPAN_SAMPLES = 16;   // a spline's span sampled this many times for its length table
 
@@ -587,6 +598,7 @@ function tightestTurn(path) {
 export class BirdPopulation {
   constructor({ seed = 1 } = {}) {
     this.seed = seed;
+    this.fit = 1;   // setView
     this.place = 'none';
     this.birds = [];
     this.dark = false;
@@ -673,6 +685,14 @@ export class BirdPopulation {
       bird.returnAt = Infinity;
       bird.flight = null;
     }
+  }
+
+  /**
+   * How wide the home view's frame is (degrees either side of its line: src/main.js, as the screen is turned or
+   * resized). Visits laid out from now on are drawn in to it (OUT's note); those under way fly on as laid out.
+   */
+  setView(halfWidth) {
+    this.fit = halfWidth >= WIDE_FRAME - 1e-6 ? 1 : (halfWidth + OUT_MARGIN) / OUT;
   }
 
   /** Whether the birds are out: none while it is dark (the true sun's elevation in degrees, src/sky.js lighting.solarElevation). */
@@ -944,8 +964,10 @@ export class BirdPopulation {
       const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING) - rise;
       points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
     };
-    const middle = () => group.aim + signed(group.spread);
-    at(side * (OUT + random() * 8), range(group.distance), range(group.height));
+    const { fit } = this;   // drawn in to a narrow frame (OUT's note)
+    const out = () => (OUT + random() * 8) * fit;
+    const middle = () => (group.aim + signed(group.spread)) * fit;
+    at(side * out(), range(group.distance), range(group.height));
     if (style === 'cross') {
       // Over, by two to three places strung across the view, each nearer or farther, higher or lower.
       // Each a step nearer or farther than the one before, smaller the faster it flies (a turn's radius goes as the
@@ -955,9 +977,9 @@ export class BirdPopulation {
       for (let stop = 1; stop <= stops; stop++) {
         const share = stop / (stops + 1);
         distance = THREE.MathUtils.clamp(distance + signed(wander), near, far);
-        at(side * (OUT - 2 * OUT * share) * 0.75 + group.aim * (1 - Math.abs(2 * share - 1)) + signed(6), distance, range(group.height));
+        at((side * (OUT - 2 * OUT * share) * 0.75 + group.aim * (1 - Math.abs(2 * share - 1)) + signed(6)) * fit, distance, range(group.height));
       }
-      at(-side * (OUT + random() * 8), range(group.distance), range(group.height));
+      at(-side * out(), range(group.distance), range(group.height));
     } else if (style === 'turn') {
       // In, out over the water and round (half a circle the far way, as wide as its speed asks at a bank of 12° to
       // 22°, or tighter, up to TURN_BANK, for its far side to stay within reach), and back out the side it came in,
@@ -968,7 +990,7 @@ export class BirdPopulation {
       const radius = Math.min(gentle, Math.max((reach - inner) / 2, turnRadius(speed, TURN_BANK)));
       const aheadX = Math.sin(apex), aheadZ = -Math.cos(apex), rightX = Math.cos(apex), rightZ = Math.sin(apex);
       const centreX = EYE.x + aheadX * (inner + radius), centreZ = EYE.z + aheadZ * (inner + radius);
-      at(side * 32 + signed(6), inner + random() * 10, range(group.height));
+      at((side * 32 + signed(6)) * fit, inner + random() * 10, range(group.height));
       const low = range(group.height), high = range(group.height);
       for (let step = 0; step <= 4; step++) {
         // From the circle's near point, round by its far side (away from where it came in), to its far point.
@@ -978,8 +1000,8 @@ export class BirdPopulation {
       }
       // Out along the circle's far side's line (no nearer than its middle, so it never doubles back).
       const outward = inner + radius * (1 + random());
-      at(side * 34 + signed(4), outward, range(group.height));
-      at(side * (OUT + random() * 8), outward + signed(10), range(group.height));
+      at((side * 34 + signed(4)) * fit, outward, range(group.height));
+      at(side * out(), outward + signed(10), range(group.height));
     } else {
       // Circling: in to a thermal, round it one and a half to three times (eight points a turn), drifting with the
       // wind and rising a few metres a turn, then off to either side, high.
@@ -1004,8 +1026,8 @@ export class BirdPopulation {
         points.push([centre[0] + drift[0] * share + Math.cos(angle) * radius, height, centre[1] + drift[1] * share + Math.sin(angle) * radius]);
       }
       const last = points[points.length - 1];
-      at(exit * 35, Math.hypot(last[0] - EYE.x, last[2] - EYE.z), last[1] + 1, true);
-      at(exit * (OUT + random() * 8), range(group.distance), last[1] + 2, true);
+      at(exit * 35 * fit, Math.hypot(last[0] - EYE.x, last[2] - EYE.z), last[1] + 1, true);
+      at(exit * out(), range(group.distance), last[1] + 2, true);
     }
     const path = splinePath(points);
     const flown = style === 'circle' ? speed * 0.85 : speed;   // slower round a thermal
@@ -1028,7 +1050,7 @@ export class BirdPopulation {
       visits.push(this.makeVisit(visitor, 0, between(FIRST_VISIT, hashed(visitor.seed, 0, 32)) * group.gap[1]));
     }
     for (let last = visits[visits.length - 1]; last.start + last.duration + visitor.lagMost / last.speed <= local; last = visits[visits.length - 1]) {
-      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32));
+      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32)) * this.fit ** GAP_FIT;
       visits.push(this.makeVisit(visitor, last.index + 1, last.start + last.duration + visitor.lagMost / last.speed + gap));
       if (visits.length > 4) visits.shift();
     }

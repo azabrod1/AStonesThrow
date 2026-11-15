@@ -11,7 +11,8 @@
 //   1.2 m and the frame's top, but in a thermal's turns), at their kind's
 //   speed, banked no more than 50°, never jumping between frames; they come
 //   and go, every visit beginning and ending out beyond the frame's sides,
-//   each on a path of its own; the gulls and the fish eagle glide and flap
+//   each on a path of its own; on an upright phone, laid out for its
+//   narrower frame (setView), as much in it as a wide screen's; the gulls and the fish eagle glide and flap
 //   by turns; the Reflecting Pool's cardinal bounds (its wings shut a
 //   moment each cycle) and its jay beats steadily, each coming and going
 //   on its own; a flock flies together;
@@ -67,8 +68,9 @@ plantingFront(0, 0, 0, 0);   // the garden's catch table built first (its geomet
 Math.random = () => { throw new Error('the birds drew Math.random'); };
 
 /** A population of `place` run from 0 to `seconds`, stepped at the physics step and posed every `frame`: each frame's poses. */
-function run(place, seconds, frame, { things = () => [], splashes = [], conditions = DAY, frozen = false } = {}) {
-  const birds = new BirdPopulation({ seed: 1 });
+function run(place, seconds, frame, { things = () => [], splashes = [], conditions = DAY, frozen = false, view = null, seed = 1 } = {}) {
+  const birds = new BirdPopulation({ seed });
+  if (view !== null) birds.setView(view);
   birds.setPlace(place, { frozen });
   birds.setConditions(conditions);
   const frames = [];
@@ -198,6 +200,55 @@ for (const [label, where, frozen] of flyingRuns) {
     const widest = frames.reduce((most, frame) => (frame.birds[0].shown && frame.birds[last].shown ? Math.max(most, Math.hypot(frame.birds[0].x - frame.birds[last].x, frame.birds[0].z - frame.birds[last].z)) : most), 0);
     check(widest < 25, `${place}: its flock flies together: the last at most ${widest.toFixed(1)} m from the first`);
   }
+}
+
+// On an upright phone (390×844: the home view's frame 15.5° either side of its line, src/main.js frameFov's 62° high),
+// visits are laid out for its narrower frame (BirdPopulation.setView): each still begins and ends out beyond the
+// frame's sides, out of reach, banked no more than on a wide screen, and over ten minutes (four seeds) a bird is in
+// the frame about as much of the time as in a wide screen's.
+const PHONE_FRAME = 15.5, WIDE_FRAME = 38.4;
+const inFrameShare = (where, frozen, half, view) => {
+  let share = 0;
+  for (let seed = 1; seed <= 4; seed++) {
+    const birds = new BirdPopulation({ seed });
+    if (view !== null) birds.setView(view);
+    birds.setPlace(where, { frozen }); birds.setConditions(DAY);
+    let seen = 0, samples = 0;
+    for (let time = 0; time < 600; time += 0.1, samples++) {
+      birds.showAt(time);
+      if (birds.birds.some((bird) => bird.pose.shown && Math.abs(bearingOf(bird.pose)) < THREE.MathUtils.degToRad(half))) seen++;
+    }
+    share += seen / samples / 4;
+  }
+  return share;
+};
+for (const [label, where, frozen] of flyingRuns) {
+  const groups = frozen ? BIRDS_WHEN_FROZEN[where] : BIRDS_BY_PLACE[where];
+  if (!groups.some((group) => group.habit === 'visit')) continue;
+  const { frames } = run(where, 600, 1 / 60, { frozen, view: PHONE_FRAME });
+  let nearest = Infinity, steepestBank = 0, inside = 0;
+  frames.forEach((frame, index) => frame.birds.forEach((bird, which) => {
+    const before = index ? frames[index - 1].birds[which] : bird;
+    if (bird.shown !== before.shown && Math.abs(bearingOf(bird.shown ? bird : before)) < THREE.MathUtils.degToRad(PHONE_FRAME + 15)) inside++;
+    if (!bird.shown) return;
+    nearest = Math.min(nearest, Math.hypot(bird.x - EYE.x, bird.z - EYE.z));
+    steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
+  }));
+  const phone = inFrameShare(where, frozen, PHONE_FRAME, PHONE_FRAME), wide = inFrameShare(where, frozen, WIDE_FRAME, null);
+  check(inside === 0 && nearest > THROW_REACH && steepestBank <= THREE.MathUtils.degToRad(35) + 1e-9, `${label}, upright phone: every visit begins and ends beyond the frame's sides (${inside} inside), nearest ${nearest.toFixed(1)} m, banked at most ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
+  check(phone > 0.8 * wide && phone < 1.5 * wide, `${label}, upright phone: a bird in its frame ${(phone * 100).toFixed(0)}% of the time, a wide screen's ${(wide * 100).toFixed(0)}%`);
+}
+{
+  // Laid out as it always was for a frame as wide as a 16:9 screen's or wider.
+  const wide = new BirdPopulation({ seed: 3 }), wider = new BirdPopulation({ seed: 3 });
+  wider.setView(50);
+  for (const birds of [wide, wider]) { birds.setPlace('cove'); birds.setConditions(DAY); }
+  let same = true;
+  for (let time = 0; time < 300; time += 0.5) {
+    wide.showAt(time); wider.showAt(time);
+    same &&= wide.birds.every((bird, which) => bird.pose.shown === wider.birds[which].pose.shown && bird.pose.x === wider.birds[which].pose.x);
+  }
+  check(same, 'a frame wider than 16:9 lays visits out as a 16:9 one does');
 }
 
 // The heron at rest.
