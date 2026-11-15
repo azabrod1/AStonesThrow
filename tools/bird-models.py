@@ -741,13 +741,17 @@ def side_part(spec, length):
         legs.append({name: [round(float(value), 4) for value in to_metres(leg[name])] for name in ('hip', 'heel', 'foot')}
                     | {'toes': [[round(float(value), 4) for value in point] for point in to_metres(leg['toes'])],
                        'line': [[round(float(value), 4) for value in point] for point in line]})
-    # The legs' colours, a column a leg, a band of rows a point along it (its line's), smoothed along it a little.
+    # The legs' colours, a column a leg, `rows_each` rows a point along it (its line's), smoothed along it a little.
+    # src/birdMeshes.js samples point k at the middle of its rows (v = (k + 0.5) / points), so the column is the
+    # points' colours interpolated through those middles: between two points the colour ramps, never steps.
     rows_each = 4
     strip = np.zeros((len(strips[0]) * rows_each, 4 * len(strips), 4), np.uint8)
     for index, colours in enumerate(strips):
         colours = np.array(colours)
         colours = np.array([colours[max(0, k - 1): k + 2].mean(axis=0) for k in range(len(colours))])
-        strip[:, index * 4: index * 4 + 4, :3] = np.repeat(colours, rows_each, axis=0)[:, None, :].clip(0, 255).astype(np.uint8)
+        along = np.clip((np.arange(len(colours) * rows_each) + 0.5) / rows_each - 0.5, 0, len(colours) - 1)
+        ramp = np.stack([np.interp(along, np.arange(len(colours)), colours[:, channel]) for channel in range(3)], axis=1)
+        strip[:, index * 4: index * 4 + 4, :3] = np.round(ramp)[:, None, :].clip(0, 255).astype(np.uint8)
     strip[..., 3] = 255
     return picture, Image.fromarray(strip), {
         'rect': [round(float(corner_low[0]), 4), round(float(corner_low[1]), 4), round(float(corner_high[0]), 4), round(float(corner_high[1]), 4)],
