@@ -64,6 +64,7 @@ const place = (text, section, heading, next) => {
   const start = text.indexOf(heading);
   if (start >= 0) {
     const end = text.indexOf(next, start + heading.length);
+    if (end < 0) throw new Error(`no ${next} after ${heading}: where the birds' section ends is not known`);
     return text.slice(0, start) + section + text.slice(end);
   }
   const before = text.indexOf(next);

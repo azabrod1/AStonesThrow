@@ -9,7 +9,9 @@
 // - ten minutes of every place's flying birds (visit): always low over the
 //   water in the home view's sky (out past THROW_REACH from the eye, between
 //   1.2 m and the frame's top, but in a thermal's turns), at their kind's
-//   speed, banked no more than 50°, never jumping between frames; they come
+//   speed, banked no more than 50°, never jumping between frames; over
+//   thirty seeds (each visit to the page draws its own) none comes much
+//   nearer than its group is laid out from, a thermal's circles too; they come
 //   and go, every visit beginning and ending out beyond the frame's sides,
 //   each on a path of its own; on an upright phone, laid out for its
 //   narrower frame (setView), as much in it as a wide screen's; the gulls and the fish eagle glide and flap
@@ -36,6 +38,10 @@
 //   somewhere new on the far bank, its heading its own, smoothly, flaring
 //   (pitched up, its wings up as it touches down, its pitch and neck never
 //   jumping), then folding its wings within two seconds; then it stands;
+//   with something thrown at its spot as it comes in it goes round again,
+//   drawn nowhere but along its way on a display whose frames are not whole
+//   physics steps; put back to its start (reset), it sees a throw coming
+//   as soon as a heron just shown;
 // - after dark the day's birds are gone, and where they live black-crowned
 //   night herons come over instead (BIRDS_AT_NIGHT), flown and checked as
 //   every flying bird is; none at the others (setConditions);
@@ -46,23 +52,32 @@
 //   it, and posed at 60 or 144 frames a second, every pose at the same
 //   moment is the same;
 // - the cost: a frame's posing under 0.05 ms of the main thread's time
-//   (tools/cost-clock.mjs).
+//   (tools/cost-clock.mjs); the one number a seed gives (src/spray.js
+//   seededOnce) is its sequence's first;
+// - the views (src/birdViews.js), off the GPU, their files read from disk:
+//   each keeps meshes only for its own birds and fetches only what the
+//   place's hour shows (no models' catalogue where no kind has a model, no
+//   night's pictures by day); and the mirror is asked to draw a bird again
+//   when it is not as it was last drawn, however often it was posed since.
 import * as THREE from 'three';
 import { costClock, costSince } from './cost-clock.mjs';
-import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRDS_AT_NIGHT, BIRD_KINDS } from '../src/birds.js';
+import { BirdPopulation, BIRDS_BY_PLACE, BIRDS_WHEN_FROZEN, BIRDS_AT_NIGHT, BIRD_KINDS, HERON, EYE as LAYOUT_EYE, EYE_HEIGHT } from '../src/birds.js';
+import { createBirdViews } from '../src/birdViews.js';
+import { seededRandom, seededOnce } from '../src/spray.js';
+import { PHYSICS_STEP } from '../src/rock.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt } from '../src/pondFloor.js';
 import { plantingFront } from '../src/koiGarden.js';
 import { buildStandingModel } from '../src/birdMeshes.js';
 import { poseStanding, FLIGHT, JOINT_COUNT } from '../src/birdRig.js';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PLACES } from '../src/places.js';
 
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
 
-const PHYSICS_STEP = 1 / 240;   // src/main.js's
-const HERON_SPREAD_ASIDE = 0.35;   // rad: src/birds.js HERON spread.aside
-const EYE = new THREE.Vector3(0, 1.15, 2.45);   // the home view's eye (src/main.js VIEWS.shore)
+const EYE = new THREE.Vector3(LAYOUT_EYE.x, EYE_HEIGHT, LAYOUT_EYE.z);   // the home view's eye, as the birds are laid out from it (src/main.js VIEWS.shore)
 const THROW_REACH = 9;   // m: farther than anything thrown goes from the eye (it lands in the water's 6 m patch, at most 6.2 m off, its arc a few metres up)
 const FRAME_TOP = THREE.MathUtils.degToRad(7.4);   // the home view's frame reaches this far above the horizon (48° high, looking 16.6° down)
 const DAY = { solarElevation: 37, sunDirection: new THREE.Vector3(0.6, 0.6, -0.5).normalize() };   // as the page gives them (src/main.js applySky)
@@ -455,7 +470,7 @@ const heronAt = (frame) => frame.birds[0];
       if (before?.spread >= 0.8 && (heron.x !== before.x || heron.z !== before.z)) moved++;
     });
   }
-  check(held > 50 && widest < HERON_SPREAD_ASIDE + 0.1, `with the sun up, it spreads its wings with its back to the sun: within ${THREE.MathUtils.radToDeg(widest).toFixed(0)}° of facing away from it (${held} quarter seconds open)`);
+  check(held > 50 && widest < HERON.spread.aside + 0.1, `with the sun up, it spreads its wings with its back to the sun: within ${THREE.MathUtils.radToDeg(widest).toFixed(0)}° of facing away from it (${held} quarter seconds open)`);
   check(turnedOpen === 0 && moved === 0, `it turns before it opens them, and holds still while they are open (${turnedOpen} turning, ${moved} moving)`);
   check(differs === 0, `turning to the sun, the same at 60 and 144 frames a second (${differs} poses differ)`);
 }
@@ -698,6 +713,102 @@ const heronAt = (frame) => frame.birds[0];
   check(worst < 1e-6, `posed at 60 and 144 frames a second, every bird is where it was at each whole second (${worst.toExponential(1)})`);
 }
 
+// On any visit to the page (each draws a seed of its own, src/main.js): thirty seeds of every place's flying birds, by
+// day and after dark, and none comes much nearer the eye than its group is laid out from. A path cuts a little inside
+// the points it is laid through; a thermal, its circles and its way in and out, is kept out as the rest is (src/birds.js
+// layVisit: Lakeside's fish eagle once wheeled 12 m from the eye, its group laid out from 35).
+{
+  for (const [table, conditions, when] of [[BIRDS_BY_PLACE, DAY, ''], [BIRDS_AT_NIGHT, NIGHT, ' (night)']]) {
+    for (const [place, groups] of Object.entries(table)) {
+      if (!groups.some((group) => group.habit === 'visit')) continue;
+      const near = Math.min(...groups.map((group) => group.distance[0]));
+      let nearest = Infinity, nearestSeed = 0;
+      for (let seed = 1; seed <= 30; seed++) {
+        const birds = new BirdPopulation({ seed }); birds.setPlace(place); birds.setConditions(conditions);
+        for (let time = 0; time < 600; time += 0.2) {
+          birds.showAt(time);
+          for (const { pose } of birds.birds) {
+            if (!pose.shown) continue;
+            const distance = Math.hypot(pose.x - EYE.x, pose.z - EYE.z);
+            if (distance < nearest) { nearest = distance; nearestSeed = seed; }
+          }
+        }
+      }
+      check(nearest > 0.75 * near, `${place}${when}: over thirty seeds its birds keep their distance: nearest ${nearest.toFixed(1)} m from the eye (seed ${nearestSeed}; laid out from ${near} m)`);
+    }
+  }
+}
+
+// Coming in to land with something thrown down at its spot, the heron goes round again (src/birds.js goAround), and is
+// drawn nowhere but along its way. A frame is posed at its own time, up to a physics step before the step in which it
+// turned away: on a display whose frames are not whole steps it was once drawn for a frame as standing at its spot,
+// then flying again 17 m off.
+{
+  let wentRound = 0, longestStep = 0;
+  for (let trial = 0; trial < 12; trial++) {
+    const birds = new BirdPopulation({ seed: 1 + (trial % 3) }); birds.setPlace('koi'); birds.setConditions(DAY);
+    const heron = birds.birds[0], frame = 1 / 60 + trial * 1e-4;
+    let stepsTime = 0, time = 0, landingSince = null, thing = null, went = null, before = null;
+    while (time < 180 && (went === null || time < went + 1)) {
+      time += frame;
+      while (stepsTime < time) {
+        const stepBefore = stepsTime;
+        stepsTime += PHYSICS_STEP;
+        if (stepBefore < 0.5 && stepsTime >= 0.5) birds.startle(stepsTime, heron.spot.x + 0.3, heron.spot.z);   // put up, to come back
+        if (heron.mode === 'land') landingSince ??= stepsTime;
+        // Two seconds or more into its glide, a stone let fall from over its spot.
+        if (landingSince !== null && !thing && stepsTime - landingSince >= 2 + trial * 0.2) thing = { state: 'air', radius: 0.03, position: { x: heron.spot.x, y: heron.spot.y + 2.5, z: heron.spot.z }, velocity: { x: 0, y: -2, z: 0 } };
+        if (thing) { thing.velocity.y -= 9.81 * PHYSICS_STEP; thing.position.y += thing.velocity.y * PHYSICS_STEP; }
+        birds.step(stepsTime, thing && thing.position.y > heron.spot.y ? [thing] : []);
+        if (thing && went === null && heron.mode === 'flee') went = stepsTime;
+      }
+      birds.showAt(time);
+      const { x, y, z } = heron.pose;
+      if (thing && before && heron.pose.shown) longestStep = Math.max(longestStep, Math.hypot(x - before.x, y - before.y, z - before.z));
+      before = { x, y, z };
+    }
+    if (went !== null) wentRound++;
+  }
+  check(wentRound === 12 && longestStep < 0.5, `coming in to land with a stone falling at its spot, it goes round again (${wentRound} of 12), no frame of it more than ${longestStep.toFixed(2)} m from the last`);
+}
+
+// Put back to its start (reset: src/main.js clearPond, the clock back at 0), it keeps nothing of the earlier clock: a
+// stone thrown flat at it is seen coming as soon as by a heron just shown (its look-ahead was once put off until the
+// clock passed where it had been).
+{
+  const flatThrow = (birds) => {
+    const heron = birds.birds[0];
+    const toX = heron.spot.x - EYE.x, toZ = heron.spot.z - EYE.z, range = Math.hypot(toX, toZ);
+    const thing = { state: 'air', radius: 0.03, position: { x: EYE.x, y: 1, z: EYE.z }, velocity: { x: toX / range * 14, y: 1.2, z: toZ / range * 14 } };
+    for (let stepsTime = PHYSICS_STEP; stepsTime < 2; stepsTime += PHYSICS_STEP) {
+      thing.velocity.y -= 9.81 * PHYSICS_STEP;
+      thing.position.x += thing.velocity.x * PHYSICS_STEP; thing.position.y += thing.velocity.y * PHYSICS_STEP; thing.position.z += thing.velocity.z * PHYSICS_STEP;
+      birds.step(stepsTime, [thing]);
+      if (heron.mode === 'flee') return stepsTime;
+    }
+    return Infinity;
+  };
+  const fresh = new BirdPopulation(); fresh.setPlace('koi'); fresh.setConditions(DAY);
+  const played = new BirdPopulation(); played.setPlace('koi'); played.setConditions(DAY);
+  const lying = { state: 'rest', radius: 0.03, position: { x: 0, y: -0.5, z: 1.5 }, velocity: { x: 0, y: 0, z: 0 } };
+  for (let time = PHYSICS_STEP; time < 30; time += PHYSICS_STEP) played.step(time, [lying]);
+  played.reset(0);
+  const freshWent = flatThrow(fresh), playedWent = flatThrow(played);
+  check(Number.isFinite(freshWent) && playedWent === freshWent, `put back to its start after half a minute of play, the heron sees a flat throw coming as a fresh one does (it goes after ${playedWent.toFixed(3)} s; fresh, ${freshWent.toFixed(3)})`);
+}
+
+// The one number a seed gives without a sequence made for it (src/spray.js seededOnce, asked for every frame) is the
+// first of the sequence that seed makes.
+{
+  const random = seededRandom(7);
+  let differ = 0;
+  for (let index = 0; index < 2000; index++) {
+    const seed = Math.floor(random() * 2 ** 31), at = Math.floor(random() * 1e6) - 5e5, salt = Math.floor(random() * 40);
+    if (seededOnce(seed, at, salt) !== seededRandom(seed, at, salt)()) differ++;
+  }
+  check(differ === 0, `seededOnce is seededRandom's first number (${differ} of 2000 differ)`);
+}
+
 // The cost of a frame's posing.
 {
   for (const place of Object.keys(BIRDS_BY_PLACE)) {
@@ -730,5 +841,75 @@ const heronAt = (frame) => frame.birds[0];
 }
 
 Math.random = realRandom;
+
+// The views (src/birdViews.js), off the GPU: what they fetch read from disk and counted, an image a stand-in. Each view
+// keeps meshes only for its own birds and fetches only what the place's hour shows; and the mirror is asked to draw a
+// bird again when it is not as it was last drawn, however often it was posed since (src/birdDrawing.js mirrorChanges).
+{
+  const fetched = [];
+  const realFetch = globalThis.fetch, realBitmap = globalThis.createImageBitmap;
+  globalThis.fetch = async (url) => { const file = fileURLToPath(String(url)); fetched.push(path.basename(file)); return new Response(readFileSync(file)); };
+  globalThis.createImageBitmap = async () => ({ width: 1, height: 1 });
+  /** Until nothing more has been fetched for a while (the views fetch as their catalogues come). */
+  const settled = async () => {
+    for (let quiet = 0, count = fetched.length; quiet < 5; quiet = fetched.length === count ? quiet + 1 : 0, count = fetched.length) await new Promise((resolve) => setTimeout(resolve, 10));
+  };
+  const lighting = { sunIrradiance: new THREE.Vector3(3, 2.9, 2.7), skyAmbient: new THREE.Vector3(0.7, 0.8, 0.9), sunDirection: DAY.sunDirection, extinction: new THREE.Vector3(0.4, 0.2, 0.15), waterColor: new THREE.Vector3(0.02, 0.05, 0.06) };
+  const camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.1, 600);
+  camera.position.copy(EYE); camera.lookAt(0, 0, -3); camera.updateMatrixWorld();
+  const shownAt = async (place, conditions) => {
+    fetched.length = 0;
+    const birds = new BirdPopulation(); birds.setPlace(place); birds.setConditions(conditions); birds.showAt(0);
+    const views = createBirdViews({ lighting, haze: {}, mirrorLayer: 2, onLoaded: () => {} });
+    views.show(birds, camera);
+    await settled();
+    views.update(camera);
+    return { birds, views, files: [...fetched].sort() };
+  };
+  const [modelMeshes, pictureMeshes] = [0, 1].map((view) => (views) => views.above.children[view].children.length);
+
+  const cove = await shownAt('cove', DAY);
+  check(cove.files.join() === 'birds.json,kelp.webp' && modelMeshes(cove.views) === 0 && pictureMeshes(cove.views) === 3, `the cove's gulls are pictures: ${pictureMeshes(cove.views)} of them and ${modelMeshes(cove.views)} models kept, no models' catalogue fetched (${cove.files.join(', ')})`);
+  const harbour = await shownAt('harbour', DAY);
+  check(harbour.files.join() === 'birds.json,ibis.webp' && pictureMeshes(harbour.views) === 6, `the harbour by day fetches its ibises' pictures, not the night heron's (${harbour.files.join(', ')})`);
+  const lakeside = await shownAt('lakeside', DAY);
+  check(lakeside.files.join() === 'fishEagle-model.webp,models.json' && modelMeshes(lakeside.views) === 1 && pictureMeshes(lakeside.views) === 1, `Lakeside by day fetches its fish eagle's model alone (${lakeside.files.join(', ')}): a model's meshes for it, a picture's for the night heron`);
+  const lakesideNight = await shownAt('lakeside', NIGHT);
+  check(lakesideNight.files.join() === 'birds.json,nightHeron.webp', `Lakeside after dark fetches its night heron's pictures, not the fish eagle's model (${lakesideNight.files.join(', ')})`);
+  // The hour turned (src/main.js applySky): the day's kinds fetched then.
+  fetched.length = 0;
+  lakesideNight.birds.setConditions(DAY); lakesideNight.birds.showAt(0); lakesideNight.views.show(lakesideNight.birds, camera);
+  await settled();
+  check([...fetched].sort().join() === 'fishEagle-model.webp,models.json', `and its fish eagle's model once the day comes (${[...fetched].sort().join(', ')})`);
+
+  // The Koi pond's heron: drawn in the main scene, the mirror and the water (three draws), and in the mirror again
+  // only when it is not as it was last drawn there.
+  const koi = await shownAt('koi', DAY);
+  const everything = { intersectsSphere: () => true }, nothing = { intersectsSphere: () => false }, box = new THREE.Box3();
+  const heron = koi.birds.birds[0];
+  const first = koi.views.mirrorChanges(box.makeEmpty(), everything), drawnAt = box.clone(), again = koi.views.mirrorChanges(box.makeEmpty(), everything);
+  check(koi.views.drawCalls === 3 && first === 1 && again === 0 && drawnAt.containsPoint(new THREE.Vector3(heron.pose.x, 0.5, heron.pose.z)) && box.isEmpty(),
+    `the heron, shown, is drawn in the mirror once (${first}), about where it stands, and standing still not again (${again}); ${koi.views.drawCalls} draws`);
+  // It turns its head or sets its neck and holds still again, posed many times between two frames drawn (the harness
+  // steps so: a frame was once compared with the last pose, and its reflection kept the old one).
+  const posed = () => { const { pose } = heron; return [pose.x, pose.z, pose.heading, pose.pitch, pose.look, pose.neck, pose.fold, pose.strike, pose.spread, pose.walking, pose.stride, pose.bill, pose.aim, pose.crouch].join(); };
+  const start = posed();
+  let time = 0, last = start, still = 0;
+  while (time < 120 && !(last !== start && still >= 3)) {
+    time += 1 / 60;
+    koi.birds.step(time, []); koi.birds.showAt(time); koi.views.update(camera);
+    const now = posed();
+    still = now === last ? still + 1 : 0;
+    last = now;
+  }
+  const moved = koi.views.mirrorChanges(box.makeEmpty(), everything), after = koi.views.mirrorChanges(box.makeEmpty(), everything);
+  check(last !== start && moved === 1 && after === 0, `moved and still again by ${time.toFixed(1)} s, posed ${Math.round(time * 60)} times since the mirror drew it: drawn again once (${moved}), then not (${after})`);
+  // Out of the mirror's view it is not drawn there, and is taken as drawn as it is.
+  while (posed() === last) { time += 1 / 60; koi.birds.step(time, []); koi.birds.showAt(time); koi.views.update(camera); }
+  const unseen = koi.views.mirrorChanges(box.makeEmpty(), nothing);
+  check(unseen === 0 && box.isEmpty(), `moving where the mirror's camera does not see it, it is not drawn there (${unseen})`);
+  globalThis.fetch = realFetch; globalThis.createImageBitmap = realBitmap;
+}
+
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall ok');
 process.exit(failures.length ? 1 : 0);

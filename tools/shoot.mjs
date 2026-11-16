@@ -235,12 +235,13 @@ if (look.startsWith('fish:')) {
 if (look.startsWith('bird:')) {
   const where = await page.evaluate((index) => {
     const one = window.__pond.birds.birds[index];
-    if (one) window.__pond.lookAt(one.x, one.y + (one.flying === false ? 0.45 : 0), one.z);
+    if (one?.shown) window.__pond.lookAt(one.x, one.y + (one.flying === false ? 0.45 : 0), one.z);
     return one;
   }, Number(look.split(':')[1]));
   if (fov) await page.evaluate((degrees) => window.__pond.setFov(Number(degrees)), fov);
   await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] bird', JSON.stringify(where));
+  if (!where?.shown) console.log('[shoot] bird: none there now (between visits, or no such bird): the view is left as it stands');
 }
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: patience(180000) });
 console.log('[shoot] idle.png');

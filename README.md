@@ -630,7 +630,8 @@ bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
 behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
 
-**Birds** (`src/birds.js`, drawn by `src/birdMeshes.js` and `src/birdSprites.js`). Every place but
+**Birds** (`src/birds.js`; `src/birdViews.js` has a kind with a model drawn by `src/birdMeshes.js` and
+the rest as pictures by `src/birdSprites.js`). Every place but
 the Pool (whose view looks down into the water) has its own, the ones that
 live where its photograph was taken (Poly Haven's coordinates put most of
 the skies in South Africa):
@@ -656,7 +657,8 @@ leaves, and is away a while before it comes again. Each visit is a path of
 its own, drawn from the bird's seed and the visit's number: across from one
 side to the other, wandering nearer and farther; in, round in a wide turn
 and back out; or, for the eagles and frigatebirds, round and round in a
-thermal, rising, and off. The path is a smooth spline flown at the bird's
+thermal, rising, and off (all of it, its circles and its way in and out,
+kept as far from the eye as the rest of a visit is laid). The path is a smooth spline flown at the bird's
 speed, laid out so that no turn on it needs more than 28° of bank, so it
 banks into its turns gently, as a glider does, and never jerks. On a
 narrower screen than 16:9 (an upright phone's frame is 31° wide against
@@ -739,8 +741,8 @@ wings up, level and down by its wingbeat; head on, for each kind that turns,
 so none flips to its mirror image mid-turn), and a bird fades from one into
 the next over a few frames rather than stepping; in a flock every other
 bird glides with its wings held lower, so they are not copies. The water
-mirrors them; the mirror image is drawn again only around a bird that moves
-in its view. What of the standing heron is under the water (its legs) is
+mirrors them; the mirror image is drawn again only around a bird that is
+not as it was last drawn there. What of the standing heron is under the water (its legs) is
 drawn in the under-water pass, bent at the surface as a reed is, so its legs
 go on down to its feet on the bed. A model's wings and tail are cut out of
 their pictures with an edge a pixel wide (the renderer has no MSAA), so they
@@ -2264,6 +2266,12 @@ farther out, so it rises into the view rather than filling its corner.
   that it is taken clean of every other state (src/rock.js setState), stays
   held and never fades while carried, and once let go is kept and lies no
   deeper in the bed than a stone settles into the sand.
+- `node tools/mirror-mips-probe.mjs` draws a target made as the mirror's is
+  and checks the mip levels `src/mirrorRegion.js` remakes over a region alone:
+  each texel that took in the change the mean of its four above, no other
+  touched, and on a power-of-two target the driver's whole chain; three's
+  state left as it was (it reaches into the renderer: run it when the
+  Three.js version changes).
 - `node tools/uniform-probe.mjs [--all]` starts the page on High and takes it
   through what builds programs of its own (a throw, the storm, the blizzard,
   thick ice, the Pool, the Koi pond, Low), packs each program's uniforms as
