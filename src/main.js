@@ -1370,8 +1370,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // from the mirror camera into the target's alpha (MIRROR_COMMON in
   // src/shaders/fluid.js); the dome and the clear leave alpha at 1, which
   // says "as far as the sky". The water shader looks near objects up by that
-  // distance inside the rectangle the splash's image covers (splashRect,
-  // handed to the surface each frame). With nothing alive the cached mirror
+  // distance wherever the image holds one (nearReflection in
+  // src/shaders/scene.js). With nothing alive the cached mirror
   // stays untouched: no pass at all. The mirror image has underScale of the
   // canvas's resolution; the rectangle is in its own pixels. Each draw ends
   // by making its mip levels, which spread the image where the ripples are
@@ -3044,7 +3044,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const quiet = !grab.rock && !finger.inWater && !cannon.active && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0), quiet);
     surface.chooseLean(renderer);
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = !skip.surface;
