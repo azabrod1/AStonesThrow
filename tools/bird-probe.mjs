@@ -178,7 +178,7 @@ for (const [label, where, frozen, night] of flyingRuns) {
   check(visits >= 8 && seen > 0.2 && seen < 0.9, `${place}: they come and go: ${visits} visits in ten minutes, one in view ${(seen * 100).toFixed(0)}% of the time`);
   check(inside === 0, `${place}: every visit begins and ends out of the frame, beyond its sides (${inside} inside)`);
   // Each visit its own path: no two come in at the same place, and more than one way of going about where its birds
-  // have more than one (the songbirds only cross, tree row to tree row).
+  // have more than one (the songbirds cross, tree row to tree row, or hop in over one side and back).
   const sameEntry = entries.some((entry, index) => entries.slice(index + 1).some((other) => Math.hypot(entry.x - other.x, entry.y - other.y, entry.z - other.z) < 0.5 && Math.abs(Math.sin(entry.heading - other.heading)) < 0.05));
   const ways = new Set(groups.flatMap((group) => Object.keys(group.styles ?? {}))).size;
   check(!sameEntry && styles.size >= Math.min(2, ways), `${place}: every visit a path of its own (${[...styles].join(', ')})`);
