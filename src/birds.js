@@ -87,16 +87,17 @@
 // (beat, 0 to 1), how far its wings are folded (fold, 1 folded on its back),
 // its neck (neck: 0 drawn in onto its shoulders, 1 stretched up), its head's
 // turn (look, rad), its legs (legs: 0 trailing behind, 1 standing), how far
-// it is crouched (crouch, 0 to 1) and whether it is seen at all (shown).
+// it is crouched (crouch, 0 to 1) and whether it is seen at all (shown); a
+// standing kind's has more (freshPose; src/birdRig.js poseStanding's note).
 import * as THREE from 'three';
-import { seededRandom } from './spray.js';
+import { seededRandom, seededOnce } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiFloorDepthAt } from './pondFloor.js';
 import { plantingFront } from './koiGarden.js';
 import { STEP_LENGTH } from './birdRig.js';
 
 const GRAVITY = 9.81;
 const NIGHT_SUN = 4;   // degrees: the true sun this far below the horizon (not the moon that lights a night), no bird is about
-const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where visits are laid out from
+export const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where visits are laid out from
 // Where a wading bird may stand (clearOffshore): far enough out that its legs are seen, the Koi pond's drawn planting
 // (src/koiGarden.js plantingFront: where it begins behind the waterline at a ball's `height` and `span` m about it,
 // low mounds hanging up to 18 cm out over the water) at least `gap` m behind its feet. Fitted to rays from the eye to
@@ -122,24 +123,24 @@ const FLAPPING = {
 };
 
 // The kinds: their size (m: wingspan, bill to tail), their wingbeat (Hz; Pennycuick's: a gull about 3, a heron about
-// 2), their speed (m/s), how they flap (FLAPPING) and, for one that stands, how high its body's middle is over its feet
-// (m; where it takes off from and lands at).
+// 2), their speed (m/s), how they flap (FLAPPING) and, for the one that stands (the heron), how high its body's middle is
+// over its feet (`stand`, m; where it takes off from and lands at).
 export const BIRD_KINDS = {
-  herring: { name: 'Herring gull', span: 1.4, length: 0.6, beat: 2.9, cruise: 8.5, flapping: 'gull', stand: 0 },
-  kelp: { name: 'Kelp gull', span: 1.4, length: 0.6, beat: 2.8, cruise: 8.5, flapping: 'gull', stand: 0 },
+  herring: { name: 'Herring gull', span: 1.4, length: 0.6, beat: 2.9, cruise: 8.5, flapping: 'gull' },
+  kelp: { name: 'Kelp gull', span: 1.4, length: 0.6, beat: 2.8, cruise: 8.5, flapping: 'gull' },
   heron: { name: 'Grey heron', span: 1.75, length: 0.95, beat: 2.2, cruise: 10.5, flapping: 'steady', stand: 0.421 },   // stand: its model's hips (src/birdMeshes.js)
-  goose: { name: 'Egyptian goose', span: 1.45, length: 0.7, beat: 3.8, cruise: 14, flapping: 'steady', stand: 0.32 },
-  ibis: { name: 'African sacred ibis', span: 1.15, length: 0.7, beat: 3.6, cruise: 12, flapping: 'corvid', stand: 0 },
-  fishEagle: { name: 'African fish eagle', span: 2.1, length: 0.72, beat: 2.2, cruise: 10, flapping: 'fishing', stand: 0 },
-  eagle: { name: "Verreaux's eagle", span: 2.1, length: 0.85, beat: 2.0, cruise: 11, flapping: 'soaring', stand: 0 },
-  raven: { name: 'Common raven', span: 1.2, length: 0.62, beat: 3.4, cruise: 10, flapping: 'corvid', stand: 0 },
-  swan: { name: 'Mute swan', span: 2.2, length: 1.45, beat: 2.9, cruise: 15, flapping: 'steady', stand: 0 },
-  frigate: { name: 'Great frigatebird', span: 2.2, length: 0.95, beat: 1.6, cruise: 9, flapping: 'frigate', stand: 0 },
+  goose: { name: 'Egyptian goose', span: 1.45, length: 0.7, beat: 3.8, cruise: 14, flapping: 'steady' },
+  ibis: { name: 'African sacred ibis', span: 1.15, length: 0.7, beat: 3.6, cruise: 12, flapping: 'corvid' },
+  fishEagle: { name: 'African fish eagle', span: 2.1, length: 0.72, beat: 2.2, cruise: 10, flapping: 'fishing' },
+  eagle: { name: "Verreaux's eagle", span: 2.1, length: 0.85, beat: 2.0, cruise: 11, flapping: 'soaring' },
+  raven: { name: 'Common raven', span: 1.2, length: 0.62, beat: 3.4, cruise: 10, flapping: 'corvid' },
+  swan: { name: 'Mute swan', span: 2.2, length: 1.45, beat: 2.9, cruise: 15, flapping: 'steady' },
+  frigate: { name: 'Great frigatebird', span: 2.2, length: 0.95, beat: 1.6, cruise: 9, flapping: 'frigate' },
   // Songbirds: a passerine's quick beats (a jay's about 7 a second, a cardinal's about 11, as birds of their weight beat).
-  blueJay: { name: 'Blue jay', span: 0.4, length: 0.28, beat: 7, cruise: 8.5, flapping: 'jay', stand: 0 },
-  cardinal: { name: 'Northern cardinal', span: 0.29, length: 0.22, beat: 11, cruise: 7.5, flapping: 'bounding', stand: 0 },
+  blueJay: { name: 'Blue jay', span: 0.4, length: 0.28, beat: 7, cruise: 8.5, flapping: 'jay' },
+  cardinal: { name: 'Northern cardinal', span: 0.29, length: 0.22, beat: 11, cruise: 7.5, flapping: 'bounding' },
   // A small, stocky heron: quicker beats than the grey heron's, slower than a gull's.
-  nightHeron: { name: 'Black-crowned night heron', span: 1.1, length: 0.6, beat: 3.0, cruise: 9, flapping: 'steady', stand: 0 },
+  nightHeron: { name: 'Black-crowned night heron', span: 1.1, length: 0.6, beat: 3.0, cruise: 9, flapping: 'steady' },
 };
 
 // Each place's birds (src/places.js PLACES): how many of which kind and their habit.
@@ -155,7 +156,7 @@ export const BIRD_KINDS = {
 //   wade: where it stands, drawn afresh each time it comes down (and as the place is shown: laySpot): `angles` (rad
 //     about the pond's centre, KOI_SHORE: the far bank, in the home view's frame even on an upright phone) and
 //     `offshore` (m out from the waterline); it faces either way across the eye's line of sight, turned up to `toPond`
-//     rad toward the water: side on to the home view, so its outline reads. Standing, a bird's ways are its kind's STANDING.
+//     rad toward the water: side on to the home view, so its outline reads. Standing, its ways are HERON's.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
 // sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
 // The swans, the ibises, the geese and the Highlands' heron only cross: at their speed (10 to 15 m/s) a turn is too
@@ -217,6 +218,7 @@ const LAID_BANK = THREE.MathUtils.degToRad(28);
 const TURN_REACH = 1.4;
 const TURN_BANK = 24;
 const LAYOUT_TRIES = 16;
+const THERMAL_TRIES = 6;   // a thermal that comes too near the eye is laid farther out this many times at most (layVisit)
 // A bird rolls into and out of a turn over a moment, not at once: its bank is the turn's average over this long either
 // side of where it is (five samples), which also keeps the roll's rate down where the path's bend changes fast.
 const ROLL_EASE = 0.5;
@@ -247,7 +249,7 @@ const ROLL_EASE = 0.5;
 //     they touch. Down, its body is carried on over its feet (`carry` s), its legs give (`absorb`, a crouch, springing
 //     back), its body settles forward (`settle` s, a little past level and back), its neck eases into its standing
 //     ways (`neckSettle`), and it holds its wings up a moment (`hold` s) before folding them over `fold` s.
-const HERON = {
+export const HERON = {
   idle: { lookEvery: 4.6, jitter: 3.4, lookSettle: 0.45, looks: 0.9, neckEvery: 11, neckSettle: 1.8, necks: [0.12, 0.3, 0.55, 0.85], still: 0.4 },
   alert: { alert: 9, hold: 4.5, settle: 0.6, most: 2.3, refocus: 0.5 },
   flush: { radius: 2.6, height: 3, splash: 3.2, crouch: 0.28, flight: 5.5, far: 38, climb: 13, hard: 1.8, legsUp: 1.0, neckIn: 1.1, quicker: 0.35, quickFor: 1.4, cruise: 0.9 },
@@ -304,13 +306,10 @@ const HERON = {
   //   faces within `least` rad of that, it stays as it is); it stays facing that way after.
   spread: { share: 0.04, afterLanding: 0.3, at: [0.5, 4], open: 0.6, hold: [3, 8], close: 0.8, neck: 0.3, lean: 0.12, shuffleAfter: 5, shuffle: [0.15, 0.3], sunUp: 10, aside: 0.35, least: 0.3 },
 };
-const STANDING = { heron: HERON };
-const STANDING_HABITS = new Set(['wade']);
 
-/** Perlin's smootherstep from edge0 to edge1 (edge0 below edge1). */
-const smoother = (edge0, edge1, value) => { const share = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1); return share * share * share * (share * (share * 6 - 15) + 10); };
+const { smootherstep } = THREE.MathUtils;   // Perlin's, of a value from one edge to the other
 /** A number in [0, 1) from a seed and an integer: the same every time it is asked. */
-const hashed = (seed, index, salt = 0) => seededRandom(seed, index, salt)();
+const hashed = (seed, index, salt = 0) => seededOnce(seed, index, salt);
 const between = ([least, most], share) => least + (most - least) * share;
 /** How far out from the Koi pond's waterline (m) a wading bird at `angle` about its centre stands clear of the planting (CLEAR). */
 function clearOffshore(angle) {
@@ -360,9 +359,18 @@ function sprung(time, from, steps) {
   return value;
 }
 
-/** A pose, at rest. */
+/**
+ * A pose, at rest: every field the population writes and the rig reads (the header lists a flying bird's;
+ * src/birdRig.js poseStanding's note, a standing kind's), so a bird's pose is one shape from the start.
+ */
 function freshPose() {
-  return { x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, aim: 0, bill: 0, legs: 0, plant: 0, feetAhead: 0, brake: 0, crouch: 0, prey: 0, shown: false };
+  return {
+    x: 0, y: 0, z: 0, heading: 0, pitch: 0, bank: 0, phase: 0, beat: 0, fold: 0, neck: 0, look: 0, legs: 0, crouch: 0, flying: true, shown: false,
+    // A standing kind's: its neck and trunk as it flies (tuck, slim), its strike (strike, aim, bill, no deeper than
+    // floor) and its catch (prey...), its feet (plant, feetAhead, walking, stride), its wings held open or braking.
+    tuck: 0, slim: 0, strike: 0, aim: 0, bill: 0, floor: -Infinity, prey: 0, preyTurn: 0, preyIn: 0, preyWriggle: 0,
+    plant: 0, feetAhead: 0, walking: 0, stride: 0, spread: 0, brake: 0,
+  };
 }
 
 /**
@@ -506,6 +514,19 @@ function arrivalOf(points, samples, x, z, bottom, top, reach) {
   return Infinity;
 }
 
+/** The way off for a heron at (x, z) going along (alongX, alongZ): that way and a little away from the eye, a unit [x, z]. */
+function wayOff(alongX, alongZ, x, z) {
+  const fromEyeX = x - EYE.x, fromEyeZ = z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
+  const awayX = alongX + 0.45 * fromEyeX / fromEye, awayZ = alongZ + 0.45 * fromEyeZ / fromEye, length = Math.hypot(awayX, awayZ);
+  return [awayX / length, awayZ / length];
+}
+
+/** A getaway's last two points from (x, z): out along (awayX, awayZ) and up over the garden from `ground` (HERON's flush: `far`, `climb`). */
+function climbingAway(x, z, ground, awayX, awayZ) {
+  const { far, climb } = HERON.flush;
+  return [[x + awayX * far * 0.6, ground + climb * 0.55, z + awayZ * far * 0.6], [x + awayX * far, ground + climb, z + awayZ * far]];
+}
+
 /** A point on the cubic Bézier through four [x, y, z] points at u (into `out`). */
 function bezier(points, along, out) {
   const left = 1 - along;
@@ -519,7 +540,7 @@ function bezier(points, along, out) {
   return out;
 }
 
-const EYE_HEIGHT = 1.15;   // the shore's eye's height (src/main.js VIEWS.shore)
+export const EYE_HEIGHT = 1.15;   // the shore's eye's height (src/main.js VIEWS.shore)
 // When a place is shown, its birds are somewhere in their comings and goings, not all arriving: the first visit
 // starts between this share of its gap's most before the place was shown (so under way already) and the gap's most
 // after.
@@ -631,6 +652,17 @@ function tightestTurn(path) {
   return most;
 }
 
+/** How near the eye (m, level) a path comes anywhere along it. */
+function nearestToEye(path) {
+  const { position } = scratchRoll;
+  let nearest = Infinity;
+  for (let parameter = 0; parameter <= path.spans; parameter += 1 / SPAN_SAMPLES) {
+    splineAt(path, parameter, position);
+    nearest = Math.min(nearest, Math.hypot(position.x - EYE.x, position.z - EYE.z));
+  }
+  return nearest;
+}
+
 /**
  * The birds of the place shown (setPlace), stepped with the world
  * (step, startle) and posed at a frame's time (showAt). `birds` lists them:
@@ -644,7 +676,7 @@ export class BirdPopulation {
     this.place = 'none';
     this.birds = [];
     this.dark = false;
-    this.disturbed = -Infinity;   // when a thing was last thrown near a heron's spot (its kind's STANDING away.quiet)
+    this.disturbed = -Infinity;   // when a thing was last thrown near a heron's spot (HERON's away.quiet)
   }
 
   /**
@@ -654,7 +686,6 @@ export class BirdPopulation {
    */
   setPlace(place, { frozen = false } = {}) {
     this.place = place;
-    this.frozen = frozen;
     const stream = seededRandom(this.seed, 977);
     this.birds = [];
     const day = (frozen && BIRDS_WHEN_FROZEN[place]) || BIRDS_BY_PLACE[place] || [];
@@ -709,7 +740,7 @@ export class BirdPopulation {
     // `angle`, `radius` and `offshore` lay its walks along the waterline (onBank), as far out from it as it came down.
     bird.spot = { x, y: -koiFloorDepthAt(x, z), z, heading: across + Math.sign(turnBetween(across, inward)) * random() * group.toPond, angle, radius, offshore };
     // How far it may walk either way (its kind's `reach`): as far as its feet stay clear of the planting at its depth.
-    const [least, most] = STANDING[bird.kind].walk?.reach ?? [0, 0];
+    const [least, most] = HERON.walk.reach;
     const clearAt = (offset) => offshore >= clearOffshore(angle + offset / radius);
     let back = 0, on = 0;
     while (back - CLEAR.step >= least && clearAt(back - CLEAR.step)) back -= CLEAR.step;
@@ -722,18 +753,31 @@ export class BirdPopulation {
     this.disturbed = -Infinity;
     for (const bird of this.birds) {
       if (bird.visitor) { bird.visitor.since = time; bird.visitor.visits.length = 0; }
-      if (!STANDING_HABITS.has(bird.habit)) continue;
-      bird.mode = 'stand';
-      bird.since = time;
-      bird.standSince = time;   // its walks' spells from now (src/birds.js standingPlace)
+      if (bird.habit !== 'wade') continue;
       bird.stay = 0;
       this.laySpot(bird, 0);
-      bird.foldSince = -Infinity;   // standing a while already: down long since, its wings folded
-      bird.alerts = [];   // its alert's springs (src/birds.js standing): up and looking, then back to its ways
-      bird.gazes = [];    // where it looks while alerted: [time, the splash's direction from it (rad, unwrapped), settle]
+      this.beginStanding(bird, time, false);
+      // Nothing of an earlier clock is kept (it may have gone back): it looks ahead from now, its spells laid afresh.
+      bird.waryNext = -Infinity;
+      bird.plans = null;
       bird.returnAt = Infinity;
       bird.flight = null;
+      bird.crouchFor = bird.aloft = bird.fleeHeading = null;
     }
+  }
+
+  /**
+   * A standing bird as it begins a stay at `time`: just down (`landed`: its wings still up, folded from now), or
+   * standing a while already, its wings folded long since.
+   */
+  beginStanding(bird, time, landed) {
+    bird.mode = 'stand';
+    bird.since = time;
+    bird.standSince = time;   // its walks' spells from now (standingPlace)
+    bird.foldSince = landed ? time : -Infinity;
+    bird.alerts = [];   // its alert's springs (standing): up and looking, then back to its ways
+    bird.gazes = [];    // where it looks while alerted: [time, the splash's direction from it (rad, unwrapped), settle]
+    bird.here = null;   // its place on this stay, looked up afresh (step)
   }
 
   /**
@@ -763,8 +807,8 @@ export class BirdPopulation {
    */
   step(time, things) {
     for (const bird of this.birds) {
-      if (!STANDING_HABITS.has(bird.habit)) continue;
-      const ways = STANDING[bird.kind];
+      if (bird.habit !== 'wade') continue;
+      const ways = HERON;
       // Where it stands now (it may have walked), or where it is coming down: looked up only with something thrown, and
       // standing, afresh every WARY.every s (its walk is slow: 2 mm between), when it also follows what is coming.
       const wary = things.length > 0 && !(time < bird.waryNext);
@@ -799,14 +843,8 @@ export class BirdPopulation {
         else this.land(bird, time);
       }
       if (bird.mode === 'land' && time >= bird.since + ways.land.glide) {
-        bird.mode = 'stand';
-        bird.stay = (bird.stay ?? 0) + 1;   // its spells drawn afresh (spellPlan)
-        bird.since = time;
-        bird.standSince = time;
-        bird.foldSince = time;
-        bird.alerts = [];
-        bird.gazes = [];
-        bird.here = null;   // its place on this stay, looked up afresh
+        bird.stay += 1;   // its spells drawn afresh (spellPlan)
+        this.beginStanding(bird, time, true);
       }
     }
   }
@@ -814,8 +852,8 @@ export class BirdPopulation {
   /** A splash at (x, z) (src/main.js, at its step): a standing bird near enough goes; one in sight of it stretches up and looks. */
   startle(time, x, z) {
     for (const bird of this.birds) {
-      if (!STANDING_HABITS.has(bird.habit)) continue;
-      const ways = STANDING[bird.kind];
+      if (bird.habit !== 'wade') continue;
+      const ways = HERON;
       const here = bird.mode === 'stand' ? this.standingPlace(bird, time, scratchStep) : bird.spot;
       const near = Math.hypot(x - here.x, z - here.z);
       if (near < ways.flush.radius * 1.6) this.disturbed = time;
@@ -831,7 +869,7 @@ export class BirdPopulation {
    * neither its neck nor its head jumps.
    */
   alert(bird, time, x, z) {
-    const { hold, settle, refocus } = STANDING[bird.kind].alert;
+    const { hold, settle, refocus } = HERON.alert;
     const place = this.standingPlace(bird, time, scratchPlace);
     const toward = Math.atan2(-(z - place.z), x - place.x);   // as headings go (src/birdRig.js)
     const looking = bird.alerts.length > 0 && sprung(time, 0, bird.alerts) > 0;
@@ -860,7 +898,7 @@ export class BirdPopulation {
    */
   flush(bird, time, x, z, threat = null) {
     const spot = { ...this.standingPlace(bird, time, scratchPlace) };   // where it stands now (it may have walked)
-    const ways = STANDING[bird.kind];
+    const ways = HERON;
     const fromEyeX = spot.x - EYE.x, fromEyeZ = spot.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
     const fromThingX = spot.x - x, fromThingZ = spot.z - z;
     let acrossX = -fromEyeZ / fromEye, acrossZ = fromEyeX / fromEye;
@@ -869,23 +907,15 @@ export class BirdPopulation {
     const flip = Math.abs(facing) > 0.3 ? facing < 0 : thingSide < 0 || (thingSide === 0 && hashed(bird.seed, Math.floor(time * 10), 4) < 0.5);
     if (flip) { acrossX = -acrossX; acrossZ = -acrossZ; }
     const crouch = threat ? THREE.MathUtils.clamp(threat.arrival - WARY.clear, WARY.quickest, ways.flush.crouch) : ways.flush.crouch;
-    const away = (sign) => {
-      let awayX = sign * acrossX + 0.45 * fromEyeX / fromEye, awayZ = sign * acrossZ + 0.45 * fromEyeZ / fromEye;
-      const length = Math.hypot(awayX, awayZ);
-      return [awayX / length, awayZ / length];
-    };
-    let [awayX, awayZ] = away(1);
+    let [awayX, awayZ] = wayOff(acrossX, acrossZ, spot.x, spot.z);
     if (threat) {
       // The way that keeps it farther from the thing's course (its nearest pass, where the thing is low enough to meet it).
-      const [otherX, otherZ] = away(-1);
+      const [otherX, otherZ] = wayOff(-acrossX, -acrossZ, spot.x, spot.z);
       if (this.passing(bird, spot, threat, crouch, otherX, otherZ) > this.passing(bird, spot, threat, crouch, awayX, awayZ)) { awayX = otherX; awayZ = otherZ; }
     }
-    const { far, climb } = ways.flush;
     // From its feet, a short hop up and forward, then out and up along `away`.
     const start = [spot.x, spot.y + BIRD_KINDS[bird.kind].stand, spot.z];
-    bird.flight = {
-      points: [start, [spot.x + awayX * 2.2, spot.y + 2.2, spot.z + awayZ * 2.2], [spot.x + awayX * far * 0.6, spot.y + climb * 0.55, spot.z + awayZ * far * 0.6], [spot.x + awayX * far, spot.y + climb, spot.z + awayZ * far]],
-    };
+    bird.flight = { points: [start, [spot.x + awayX * 2.2, spot.y + 2.2, spot.z + awayZ * 2.2], ...climbingAway(spot.x, spot.z, spot.y, awayX, awayZ)] };
     bird.mode = 'flee';
     bird.since = time;
     bird.crouchFor = crouch;
@@ -917,23 +947,18 @@ export class BirdPopulation {
    * over the garden; it eases from its landing's pose into its flight's (poseStanding's `aloft`), and stays away.
    */
   goAround(bird, time) {
-    const ways = STANDING[bird.kind];
+    const ways = HERON;
     this.poseStanding(bird, time);
     const from = { ...bird.pose };
     const next = time + 0.02;
     this.poseStanding(bird, next);
     const velocityX = (bird.pose.x - from.x) / 0.02, velocityY = (bird.pose.y - from.y) / 0.02, velocityZ = (bird.pose.z - from.z) / 0.02;
-    const { flight, far, climb } = ways.flush;
-    const headingX = Math.cos(from.heading), headingZ = -Math.sin(from.heading);
-    const fromEyeX = from.x - EYE.x, fromEyeZ = from.z - EYE.z, fromEye = Math.hypot(fromEyeX, fromEyeZ);
-    let awayX = headingX + 0.45 * fromEyeX / fromEye, awayZ = headingZ + 0.45 * fromEyeZ / fromEye;
-    const length = Math.hypot(awayX, awayZ);
-    awayX /= length; awayZ /= length;
+    const { flight } = ways.flush;
+    const [awayX, awayZ] = wayOff(Math.cos(from.heading), -Math.sin(from.heading), from.x, from.z);
     // Its curve's first leg its velocity now (a Bézier's start is three times its first leg over its time), then away and up.
-    const start = [from.x, from.y, from.z];
     bird.flight = {
-      points: [start, [from.x + velocityX * flight / 3, Math.max(from.y + velocityY * flight / 3, from.y + 1), from.z + velocityZ * flight / 3],
-        [from.x + awayX * far * 0.6, bird.spot.y + climb * 0.55, from.z + awayZ * far * 0.6], [from.x + awayX * far, bird.spot.y + climb, from.z + awayZ * far]],
+      points: [[from.x, from.y, from.z], [from.x + velocityX * flight / 3, Math.max(from.y + velocityY * flight / 3, from.y + 1), from.z + velocityZ * flight / 3],
+        ...climbingAway(from.x, from.z, bird.spot.y, awayX, awayZ)],
     };
     bird.mode = 'flee';
     bird.since = time;
@@ -947,7 +972,7 @@ export class BirdPopulation {
   land(bird, time) {
     const { spot } = bird;
     const side = hashed(bird.groupSeed, Math.floor(time * 10), 5) < 0.5 ? 1 : -1;
-    const { from, high, ahead } = STANDING[bird.kind].land;
+    const { from, high, ahead } = HERON.land;
     // Out behind it along the bank, a little off to one side (so it crosses the eye's view, side on); in along its
     // heading for the last few metres, coming down.
     const headingX = Math.cos(spot.heading), headingZ = -Math.sin(spot.heading);
@@ -1009,12 +1034,14 @@ export class BirdPopulation {
     // A point by bearing (degrees right of the home view's line), distance and height; kept under the frame's top
     // (CEILING, but for a thermal's last turns: `free`) and out of reach.
     const points = [];
+    let path = null;   // a thermal's is made as it is laid
     // A bounding bird's arcs rise over its path (src/birds.js bound): its path kept that much lower.
     const flapping = FLAPPING[BIRD_KINDS[group.kind].flapping];
     const rise = flapping.bounding ? GRAVITY * flapping.bound[1] ** 2 / 8 + 0.1 : 0;
+    const closest = near * 0.9;   // no point of a visit is laid nearer the eye
     const at = (bearing, distance, height, free = false) => {
       const radians = THREE.MathUtils.degToRad(bearing);
-      const clampedDistance = Math.max(distance, near * 0.9);
+      const clampedDistance = Math.max(distance, closest);
       const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING) - rise;
       points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
     };
@@ -1059,31 +1086,44 @@ export class BirdPopulation {
     } else {
       // Circling: in to a thermal, round it one and a half to three times (eight points a turn), drifting with the
       // wind and rising a few metres a turn, then off to either side, high.
-      const centreBearing = middle(), centreDistance = between([near + 15, far - 5], random());
+      const centreBearing = middle(), drawnDistance = between([near + 15, far - 5], random());
       const radius = turnRadius(speed * 0.85, 15 + random() * 10), turns = 1.5 + random() * 1.5, way = random() < 0.5 ? 1 : -1;
       const radians = THREE.MathUtils.degToRad(centreBearing);
-      const centre = [EYE.x + Math.sin(radians) * centreDistance, EYE.z - Math.cos(radians) * centreDistance];
       const drift = [signed(6), signed(4)];
       const base = range(group.height), climb = 1.5 + random() * 2;
-      // Into the circle along the way it came (its first point where the circle's tangent runs from where it came
-      // in toward the middle), round, and out where the tangent runs toward the side it leaves by.
-      const approach = Math.atan2(centre[1] - points[0][2], centre[0] - points[0][0]);
-      const from = approach - way * Math.PI / 2;
       const exit = random() < 0.5 ? side : -side;
-      let count = Math.round(turns * 8);
-      // The tangent at a step's angle is (−sin, cos)·way; across the view is about ±x.
-      while (-Math.sin(from + way * count * Math.PI / 4) * way * exit < 0.7) count++;
-      for (let step = 0; step <= count; step++) {
-        const share = step / 8;
-        const angle = from + way * share * Math.PI * 2;
-        const height = base + climb * share;
-        points.push([centre[0] + drift[0] * share + Math.cos(angle) * radius, height, centre[1] + drift[1] * share + Math.sin(angle) * radius]);
+      const exitBearing = exit * out(), exitDistance = range(group.distance);
+      // A thermal is kept as far from the eye as every other point of a visit is laid (`closest`), all of it: its
+      // circle, as it drifts, and its way in and out. A wide one (40 m in radius at an eagle's speed, more than its
+      // centre's distance leaves room for) is laid again with its centre farther out along its bearing, by what its
+      // path came inside, THERMAL_TRIES times at most.
+      let centreDistance = drawnDistance;
+      for (let attempt = 0; ; attempt++) {
+        points.length = 1;   // its way in, kept
+        const centre = [EYE.x + Math.sin(radians) * centreDistance, EYE.z - Math.cos(radians) * centreDistance];
+        // Into the circle along the way it came (its first point where the circle's tangent runs from where it came
+        // in toward the middle), round, and out where the tangent runs toward the side it leaves by.
+        const approach = Math.atan2(centre[1] - points[0][2], centre[0] - points[0][0]);
+        const from = approach - way * Math.PI / 2;
+        let count = Math.round(turns * 8);
+        // The tangent at a step's angle is (−sin, cos)·way; across the view is about ±x.
+        while (-Math.sin(from + way * count * Math.PI / 4) * way * exit < 0.7) count++;
+        for (let step = 0; step <= count; step++) {
+          const share = step / 8;
+          const angle = from + way * share * Math.PI * 2;
+          const height = base + climb * share;
+          points.push([centre[0] + drift[0] * share + Math.cos(angle) * radius, height, centre[1] + drift[1] * share + Math.sin(angle) * radius]);
+        }
+        const last = points[points.length - 1];
+        at(exit * 35 * fit, Math.hypot(last[0] - EYE.x, last[2] - EYE.z), last[1] + 1, true);
+        at(exitBearing, exitDistance, last[1] + 2, true);
+        path = splinePath(points);
+        const nearest = nearestToEye(path);
+        if (nearest >= closest || attempt === THERMAL_TRIES) break;
+        centreDistance += closest - nearest + 0.5;
       }
-      const last = points[points.length - 1];
-      at(exit * 35 * fit, Math.hypot(last[0] - EYE.x, last[2] - EYE.z), last[1] + 1, true);
-      at(exit * out(), range(group.distance), last[1] + 2, true);
     }
-    const path = splinePath(points);
+    path ??= splinePath(points);
     const flown = style === 'circle' ? speed * 0.85 : speed;   // slower round a thermal
     const bankMost = Math.atan(flown * flown * tightestTurn(path) / GRAVITY);
     return { index, style, start, speed: flown, path, length: path.length, duration: path.length / flown, thermal: style === 'circle', bankMost };
@@ -1126,6 +1166,7 @@ export class BirdPopulation {
     pose.legs = 0;
     pose.crouch = 0;
     pose.flying = true;
+    pose.tuck = pose.slim = 1;   // a heron flying over: its neck drawn in, its trunk slimmed (src/birdRig.js)
     pose.shown = Boolean(found);
     bird.style = found?.visit.style ?? null;
     if (!found) {
@@ -1179,7 +1220,7 @@ export class BirdPopulation {
     if (at < bounding) {
       height = upward * at - GRAVITY * at * at / 2;
       climb = upward - GRAVITY * at;
-      pose.fold = smoother(0, shut, at) * (1 - smoother(bounding - shut, bounding, at));
+      pose.fold = smootherstep(at, 0, shut) * (1 - smootherstep(at, bounding - shut, bounding));
     } else {
       const since = at - bounding;
       height = -upward * since + lift * since * since / 2;
@@ -1199,14 +1240,17 @@ export class BirdPopulation {
     if (hashed(bird.seed, spell, 1) >= share) return 0;
     const length = between([least, most], hashed(bird.seed, spell, 2));
     const into = shifted - spell * window;
-    return smoother(0, ease, into) * (1 - smoother(length - ease, length, into));
+    return smootherstep(into, 0, ease) * (1 - smootherstep(into, length - ease, length));
   }
 
   poseStanding(bird, time) {
     const { pose, spot } = bird;
     const kind = BIRD_KINDS[bird.kind];
-    const ways = STANDING[bird.kind];
-    const since = time - bird.since;
+    const ways = HERON;
+    // A frame is posed at its own time, up to a physics step before the step that last changed this bird's state
+    // (src/main.js simulate): never before that state began, or a go-around, which has no crouch, was drawn for a
+    // frame as the crouch it never makes, standing at its spot.
+    const since = Math.max(0, time - bird.since);
     pose.shown = bird.mode !== 'away';
     pose.phase = 2 * Math.PI * kind.beat * time;
     pose.crouch = 0;
@@ -1221,7 +1265,7 @@ export class BirdPopulation {
       if (since < crouch) {
         // It crouches, its neck drawn in, its wings starting to open.
         this.standing(bird, bird.since);
-        const share = smoother(0, crouch, since);
+        const share = smootherstep(since, 0, crouch);
         pose.crouch = share;
         pose.neck *= 1 - 0.7 * share;
         pose.fold = Math.min(pose.fold, 1 - 0.5 * share);   // from folded, or from held open
@@ -1233,24 +1277,24 @@ export class BirdPopulation {
       // Off from a standstill, faster and faster; going round again, on as fast as it was going (goAround).
       const along = bird.aloft ? share : share ** 1.25;
       this.flyAlong(bird, along, Math.min(along + 0.01, 1), along > 0.99);
-      pose.heading = bird.fleeHeading + turnBetween(bird.fleeHeading, pose.heading) * smoother(0, 0.45, flying);
+      pose.heading = bird.fleeHeading + turnBetween(bird.fleeHeading, pose.heading) * smootherstep(flying, 0, 0.45);
       // Off the bed: its feet leave the water as it springs, so its middle starts where its standing middle was.
-      pose.beat = 1 - (1 - ways.flush.cruise) * smoother(hard, hard + 2, flying);
+      pose.beat = 1 - (1 - ways.flush.cruise) * smootherstep(flying, hard, hard + 2);
       // Its wingbeat's phase: quicker at first, easing to its kind's (the integral of that rate, so it never jumps).
       const { quicker, quickFor } = ways.flush;
       pose.phase = 2 * Math.PI * kind.beat * (flying + quicker * quickFor * (1 - Math.exp(-flying / quickFor)));
-      pose.crouch = 1 - smoother(0, 0.2, flying);   // springing up out of its crouch
+      pose.crouch = 1 - smootherstep(flying, 0, 0.2);   // springing up out of its crouch
       pose.walking = 0;
       pose.strike = pose.aim = pose.bill = pose.prey = pose.brake = pose.feetAhead = 0;
-      pose.fold = 0.5 * (1 - smoother(0, 0.25, flying));
-      pose.legs = 1 - smoother(0.15, legsUp, flying);
-      pose.plant = 1 - smoother(0, 0.2, flying);   // its feet leaving the bed as it springs
-      pose.neck = 0.3 * (1 - smoother(0, neckIn, flying));
-      pose.tuck = pose.slim = smoother(0, neckIn, flying);
+      pose.fold = 0.5 * (1 - smootherstep(flying, 0, 0.25));
+      pose.legs = 1 - smootherstep(flying, 0.15, legsUp);
+      pose.plant = 1 - smootherstep(flying, 0, 0.2);   // its feet leaving the bed as it springs
+      pose.neck = 0.3 * (1 - smootherstep(flying, 0, neckIn));
+      pose.tuck = pose.slim = smootherstep(flying, 0, neckIn);
       pose.look = 0;
       if (bird.aloft) {
         // Going round again: from its landing's pose into its flight's, its wingbeat going on from where it was.
-        const from = bird.aloft, easing = smoother(0, 0.8, flying);
+        const from = bird.aloft, easing = smootherstep(flying, 0, 0.8);
         pose.fold = 0;
         pose.crouch = 0;
         for (const key of ['pitch', 'legs', 'plant', 'neck', 'tuck', 'slim', 'bill', 'strike', 'brake', 'feetAhead']) pose[key] = from[key] + (pose[key] - from[key]) * easing;
@@ -1268,24 +1312,24 @@ export class BirdPopulation {
       const along = 1 - (1 - share) ** 1.5;
       this.flyAlong(bird, along, Math.min(along + 0.01, 1), false);
       const toLand = glide - since;
-      const flaring = 1 - smoother(0, flare, toLand);
+      const flaring = 1 - smootherstep(toLand, 0, flare);
       // Beating in, then gliding on bowed wings, then the flare: body pitched up, braking with deep beats (their phase
       // counted back from touchdown, so its wings are up as it lands), legs down and forward.
-      const coming = 1 - smoother(ways.land.flapping - 0.8, ways.land.flapping + 0.8, since);
+      const coming = 1 - smootherstep(since, ways.land.flapping - 0.8, ways.land.flapping + 0.8);
       pose.beat = Math.max(coming, flaring);
       if (flaring > 0) pose.phase = -2 * Math.PI * braking * toLand;
-      const pitchUp = flarePitch * (1 - smoother(0.35, flare, toLand)) - (flarePitch - touchPitch) * (1 - smoother(0, 0.35, toLand));
+      const pitchUp = flarePitch * (1 - smootherstep(toLand, 0.35, flare)) - (flarePitch - touchPitch) * (1 - smootherstep(toLand, 0, 0.35));
       pose.pitch = pose.pitch * (1 - flaring) + pitchUp;   // its path's descent no longer tips it once it flares
-      pose.legs = 1 - smoother(flare * 0.6, flare + 1.2, toLand);
+      pose.legs = 1 - smootherstep(toLand, flare * 0.6, flare + 1.2);
       // Its legs swung forward with its body as it pitches up, but held down under it most of the way (its feet
       // reaching for the bed ahead of it, not out level), and all the way down to the bed as it comes in.
-      pose.plant = 0.85 * flaring + 0.15 * (1 - smoother(0, 0.4, toLand));
+      pose.plant = 0.85 * flaring + 0.15 * (1 - smootherstep(toLand, 0, 0.4));
       pose.feetAhead = ahead;
       pose.brake = flaring;
       pose.neck = 0.35 * flaring;
       pose.tuck = 1 - flaring;
       pose.slim = 1 - flaring;
-      pose.strike = reachOut * flaring * smoother(0.1, 0.55, toLand);   // reaching toward the spot, drawn back as it touches
+      pose.strike = reachOut * flaring * smootherstep(toLand, 0.1, 0.55);   // reaching toward the spot, drawn back as it touches
       pose.bill = -0.6 * pitchUp - lookDown * flaring;   // its head tipped down to the spot, whatever its body's pitch
       pose.fold = 0;
       pose.look = 0;
@@ -1329,7 +1373,7 @@ export class BirdPopulation {
 
   /** The plan of spell `index` (spellPlan), after `before` (the spell before's, none for the first). */
   layPlan(bird, index, before, stay) {
-    const ways = STANDING[bird.kind];
+    const ways = HERON;
     const { walk, strike, spread, spells } = ways;
     const random = seededRandom(bird.seed, stay, index, 31);
     const plan = { start: before ? before.start + before.length : 0, length: 0, walks: false, from: before ? before.to : 0, to: 0, walkAt: 0,
@@ -1338,7 +1382,7 @@ export class BirdPopulation {
     plan.faced = plan.walkFaced = plan.facing;
     // When it is next free to do something (s into the spell): just down, once its wings are folded.
     let free = index === 0 && stay > 0 ? ways.land.hold + ways.land.fold + 0.3 : 0.5;
-    const [least, most] = bird.spot.reach ?? walk.reach;   // where its legs stay in view (laySpot)
+    const [least, most] = bird.spot.reach;   // where its legs stay in view (laySpot)
     if (index > 0 && most - least >= walk.distance[0] && random() < walk.share) {
       const distance = between(walk.distance, random());
       let way = random() < (most - plan.from) / (most - least) ? 1 : -1;   // more likely toward the more room
@@ -1396,10 +1440,9 @@ export class BirdPopulation {
    */
   standingPlace(bird, time, out) {
     const { spot } = bird;
-    const walk = STANDING[bird.kind].walk;
+    const walk = HERON.walk;
     out.x = spot.x; out.z = spot.z; out.heading = spot.heading; out.lead = spot.heading; out.walked = 0; out.walking = 0; out.striding = 0; out.stride = 0;
     out.spell = 0; out.walks = false; out.plan = null; out.into = 0;
-    if (!walk) { out.y = spot.y; return out; }
     const since = Math.max(0, time - bird.standSince);
     const { plan, index } = this.spellAt(bird, since);
     const into = since - plan.start;
@@ -1438,7 +1481,7 @@ export class BirdPopulation {
       const eased = share < ease ? share * share / (2 * ease * (1 - ease)) : share > 1 - ease ? 1 - (1 - share) * (1 - share) / (2 * ease * (1 - ease)) : (share - ease / 2) / (1 - ease);
       out.walked = eased * distance;
       offset = from + way * out.walked;
-      moving = smoother(-0.25, 0.25, going) * (1 - smoother(duration - 0.25, duration + 0.25, going));
+      moving = smootherstep(going, -0.25, 0.25) * (1 - smootherstep(going, duration - 0.25, duration + 0.25));
       // Its bearing as it goes (its neck and head), eased into from as it begins to turn and out of once it stops.
       out.striding = sprung(into, 0, [[turnAt, 1, walk.carry], [goAt + duration, 0, walk.carry]]);
     }
@@ -1462,7 +1505,6 @@ export class BirdPopulation {
    * pondFloor.js KOI_SHORE.shelf), and a straight line along it would take it out into deep water.
    */
   onBank(spot, offset, out) {
-    if (spot.angle === undefined) { out.x = spot.x; out.z = spot.z; return out; }
     const angle = spot.angle + offset / spot.radius;
     const radius = koiShoreRadius(angle) - spot.offshore;
     out.x = KOI_SHORE.centre[0] + Math.cos(angle) * radius;
@@ -1488,7 +1530,7 @@ export class BirdPopulation {
     const { alongX, alongZ } = this.bank(spot, from, to);
     const walkHeading = Math.atan2(-alongZ * way, alongX * way);
     const inward = Math.atan2(-(KOI_SHORE.centre[1] - spot.z), KOI_SHORE.centre[0] - spot.x);
-    return walkHeading + Math.sign(turnBetween(walkHeading, inward)) * STANDING.heron.walk.facePond;
+    return walkHeading + Math.sign(turnBetween(walkHeading, inward)) * HERON.walk.facePond;
   }
 
   /**
@@ -1497,7 +1539,7 @@ export class BirdPopulation {
    * spells keeping the one before's), settling in `settle` s.
    */
   idleWay(bird, time, every, settle, damping, salt, targetOf) {
-    const { jitter, still } = STANDING[bird.kind].idle;
+    const { jitter, still } = HERON.idle;
     const spell = Math.floor(time / every);
     const kept = (index) => {
       let at = index;
@@ -1512,7 +1554,7 @@ export class BirdPopulation {
   /** A bird standing (or crouching to go, frozen at `time`): its place, its wings folding as it lands, its idle ways. */
   standing(bird, time) {
     const { pose } = bird;
-    const ways = STANDING[bird.kind];
+    const ways = HERON;
     const { idle } = ways;
     const place = this.standingPlace(bird, time, scratchPlace);
     pose.x = place.x; pose.y = place.y; pose.z = place.z;
@@ -1527,7 +1569,7 @@ export class BirdPopulation {
     // the flare's last pitch, a little past level and back; its legs giving and springing back; its neck easing
     // from the flare's into its ways.
     const land = ways.land, landed = time - bird.foldSince;
-    pose.fold = smoother(land.hold, land.hold + land.fold, landed);
+    pose.fold = smootherstep(landed, land.hold, land.hold + land.fold);
     pose.beat = pose.brake = 1 - pose.fold;   // held as its last braking beat left them (src/birdRig.js BRAKE)
     pose.phase = 0;
     // Its body carried on over its feet, which stay where they came down `ahead` of its hips.
@@ -1554,7 +1596,7 @@ export class BirdPopulation {
     // A hunt, when its spell's plan says (its kind's `strike`, layHunt): it peers down at a fish, holds still but for
     // its head, stabs, and swallows its catch or stabs again; or gives up. Each part a spring of its own.
     let thrown = 0, crouch = 0, aim = 0, bill = 0, prey = 0, preyTurn = 0, preyIn = 0, preyWriggle = 0;
-    const plan = place.plan, hunt = plan?.hunt;
+    const plan = place.plan, { hunt } = plan;
     const into = hunt ? place.into - hunt.at : -1;
     if (into > 0 && into < hunt.settled) {
       const engaged = sprung(into, 0, hunt.engaged);
@@ -1581,7 +1623,7 @@ export class BirdPopulation {
     // held still (sagging and spread again once in a long hold), folded again; hunched and leaning a little meanwhile.
     let spread = 0;
     const spreading = ways.spread;
-    if (spreading && plan && plan.spreadAt !== null) {
+    if (plan.spreadAt !== null) {
       const into = place.into - plan.spreadAt, holdEnds = spreading.open + plan.spreadHold;
       const steps = [[0, 1, spreading.open, 0.7]];
       if (plan.spreadHold > spreading.shuffleAfter) {
@@ -1615,7 +1657,7 @@ export class BirdPopulation {
     pose.aim = aim;
     pose.bill = bill - 0.6 * landingPitch - lookingDown;   // its head kept level as its body settles, still looking down a moment (the flare's)
     pose.crouch = crouch * (1 - alerted) + absorbing;
-    pose.pitch = ways.tilt + landingPitch - 0.3 * thrown - (spreading ? spreading.lean * THREE.MathUtils.clamp(spread, 0, 1) : 0);   // tipped forward into its strike, and a little as it holds its wings open
+    pose.pitch = ways.tilt + landingPitch - 0.3 * thrown - spreading.lean * THREE.MathUtils.clamp(spread, 0, 1);   // tipped forward into its strike, and a little as it holds its wings open
     pose.look = look;
     pose.neck = neck;
   }

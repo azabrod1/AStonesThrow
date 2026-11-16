@@ -252,7 +252,6 @@ const TRAIL_SLIM = degrees(-4);   // and further back as its trunk is slimmed (p
 const STEP_LIFT = 0.09;        // m a walking foot is lifted at the middle of its swing (a heron wading lifts each foot clear)
 export const STEP_LENGTH = 0.13;   // m a foot moves a step (two steps a stride), src/birds.js walks it so
 
-const legScratch = { solved: new THREE.Vector2(), heel: new THREE.Vector2() };
 const bodyWorld = new THREE.Matrix4();
 
 /** The angle of a 2D vector (x, y), from +x toward +y. */
