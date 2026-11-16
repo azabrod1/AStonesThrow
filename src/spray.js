@@ -139,31 +139,53 @@ const CROWD_SECONDS = 1 / 30;            // ...the writing reckoned over about t
 const GAMMA_ORDER = 4;
 const GAMMA_TABLE_SIZE = 257;            // the gamma's quantiles, tabulated (gammaQuantiles)
 
+// A seed value's bits are read through one buffer, kept: a seed is mixed and
+// done with it before anything else can ask.
+const seedNumber = new Float64Array(1), seedWords = new Uint32Array(seedNumber.buffer);
+const SEED_START = 0x9e3779b9;
+
+/** Murmur3's finaliser. */
+function finalise(bits) {
+  let mixed = Math.imul(bits ^ (bits >>> 16), 0x85ebca6b);
+  mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35);
+  return (mixed ^ (mixed >>> 16)) >>> 0;
+}
+
+/** A seed's `state` with `value`'s bits mixed in. */
+function mixedIn(state, value) {
+  seedNumber[0] = value;
+  return finalise(finalise(state ^ seedWords[0]) ^ seedWords[1]);
+}
+
+/** mulberry32's number for a `state` already stepped on. */
+function drawn(state) {
+  let mixed = Math.imul(state ^ (state >>> 15), state | 1);
+  mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+  return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+}
+
 /**
  * A random sequence of an emitter's own, seeded by `values` (a place and a
  * time): draws from it shift no other draw of the splash. Murmur3's
  * finaliser over the values' bits, then mulberry32.
  */
 export function seededRandom(...values) {
-  const finalise = (bits) => {
-    let mixed = Math.imul(bits ^ (bits >>> 16), 0x85ebca6b);
-    mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35);
-    return (mixed ^ (mixed >>> 16)) >>> 0;
-  };
-  const number = new Float64Array(1);
-  const words = new Uint32Array(number.buffer);
-  let state = 0x9e3779b9;
-  for (const value of values) {
-    number[0] = value;
-    state = finalise(state ^ words[0]);
-    state = finalise(state ^ words[1]);
-  }
+  let state = SEED_START;
+  for (const value of values) state = mixedIn(state, value);
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;
-    let mixed = Math.imul(state ^ (state >>> 15), state | 1);
-    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    return drawn(state);
   };
+}
+
+/**
+ * The first number of seededRandom(first, second, third), without making
+ * the sequence: for a number asked for afresh every frame (src/birds.js),
+ * where a sequence made for each one was most of what posing a bird cost.
+ */
+export function seededOnce(first, second, third) {
+  const state = mixedIn(mixedIn(mixedIn(SEED_START, first), second), third);
+  return drawn((state + 0x6d2b79f5) >>> 0);
 }
 
 /** How many drops `water` m³ makes in drops of mean radius `meanRadius` (a gamma of order 4: E[r³] = 1.875·mean³). */
