@@ -8,8 +8,8 @@
 //   node tools/bird-look.mjs heron --poses=landing   (its landing's last 1.6 s as the Koi pond's heron flies it)
 //   node tools/bird-look.mjs heron --poses=standing --distance=1 --focus=0.3,1.0,0 --look=0.8   (its neck close up, head turned)
 //
-// The page's console errors are printed. The Three.js modules are served from
-// node_modules (as tools/shoot.mjs serves them), the rest from the repository.
+// The page's console errors are printed. The page takes Three.js from
+// node_modules (its import map), served with the rest of the repository.
 import { readFile, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -25,17 +25,14 @@ const server = createServer(async (request, response) => {
   try {
     const file = path.join(root, decodeURIComponent(new URL(request.url, 'http://localhost').pathname));
     if (!file.startsWith(root)) throw new Error('outside');
+    const body = await readFile(file);   // read before the head is written: a file that is not there (the browser's favicon) is a 404
     response.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' });
-    response.end(await readFile(file));
+    response.end(body);
   } catch { response.writeHead(404); response.end(); }
 });
 await new Promise((resolve) => server.listen(0, resolve));
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: ['standing', 'landing'].includes(poses) ? 2400 : 960 } });
-await page.route('https://cdn.jsdelivr.net/npm/three@0.183.2/**', async (route) => {
-  const relative = new URL(route.request().url()).pathname.replace('/npm/three@0.183.2/', '');
-  try { await route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(path.join(root, 'node_modules/three', relative)) }); } catch { await route.fulfill({ status: 404, body: '' }); }
-});
 page.on('console', (message) => { if (message.type() === 'error' || message.type() === 'warning') console.log('[page]', message.text()); });
 page.on('pageerror', (error) => console.log('[page error]', String(error)));
 await page.goto(`http://localhost:${server.address().port}/tools/bird-viewer.html?kind=${kind}&beat=${beat}&rows=${rows}&distance=${distance}${poses ? `&poses=${poses}` : ''}${sides ? `&sides=${encodeURIComponent(sides)}` : ''}${fold ? `&fold=${fold}` : ''}${focus ? `&focus=${focus}` : ''}${look ? `&look=${look}` : ''}`);

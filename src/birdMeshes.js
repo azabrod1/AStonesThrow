@@ -4,8 +4,8 @@
 // assets/birds/<kind>-model.webp and models.json; the photographs are credited
 // there and in CREDITS.md and credits.html), so its wings beat and it turns,
 // banks and glides as a bird does, seen from any side. The kinds with a model are
-// MODELLED_KINDS (each with its flight, src/birdRig.js FLIGHT); src/main.js
-// draws the rest as pictures (src/birdSprites.js) until each has one. A
+// MODELLED_KINDS (each with its flight, src/birdRig.js FLIGHT); src/birdViews.js
+// has the rest drawn as pictures (src/birdSprites.js) until each has one. A
 // standing kind (the heron: buildStandingModel) has legs and a jointed neck
 // too, and is drawn standing as well as flying.
 //
@@ -42,116 +42,47 @@
 // sun's on the side seen, as much as that side faces the sun (SUN_ON: a bird
 // between the eye and the sun is lit by the sky, its rim catching the sun; a
 // wing's sheet, lit from either side, glows a little when backlit), written
-// as radiance, and faded into the weather's haze as the scene is (BIRD_HAZE:
+// as radiance, and faded into the weather's haze as the scene is (BIRD_HAZE, src/birdDrawing.js:
 // a gull 50 m off in a fog all but gone). Three
 // meshes a bird, one draw each: `above` in the main scene (blended, so the
 // wings' and tail's cutouts have an anti-aliased edge: the renderer has no
 // MSAA), `mirror` on the
 // mirror's layer (its distance in alpha, as src/boulders.js writes it),
-// which src/main.js draws again only while a bird in its view moves
-// (mirrorBounds), and `below`, what of a bird is under the water (a wading
+// which src/main.js draws again only where a bird in its view is not as it
+// was last drawn there (mirrorChanges), and `below`, what of a bird is under the water (a wading
 // heron's legs, its bill as it strikes, its feet as it rises), shown only
 // near it. Every bird of a kind shares its geometry's buffers and its
 // image; each bird has its own joints (uJoints) and its own bounds, so a pass
 // whose view it is out of does not draw it (boundedGeometry). Every kind is the same three programs (above, mirror,
 // below), built under the veil (warmUp) with a texel standing in for the
-// image. A kind's image is fetched the first time a place with that kind is
-// shown; a failed fetch leaves that kind unshown.
+// image. A kind's model and image are fetched the first time a place and hour
+// with that kind is shown (a day's kind not by night); a failed fetch leaves
+// that kind unshown.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
 import { JOINTS, JOINT_COUNT, NECK_SHARES, FLIGHT, poseJoints, poseStanding } from './birdRig.js';
-import { SEEN_THROUGH_WATER, HAZE } from './shaders/scene.js';
+import { SEEN_THROUGH_WATER } from './shaders/scene.js';
+import { BIRDS_FOLDER, BIRD_HAZE, SUN_SHARE, SKY_SHARE, MIRROR_NEARNESS_SCALE, boundedGeometry, loadBirdTexture, spritesFor, kindsAbout, mirrorChanges as mirrorChangesOf } from './birdDrawing.js';
 
-const FOLDER = new URL('../assets/birds/', import.meta.url);
-/** The kinds drawn as models (each with its flight, src/birdRig.js, and its model in models.json); src/main.js draws the rest as pictures. */
+/** The kinds drawn as models (each with its flight, src/birdRig.js, and its model in models.json); src/birdViews.js has the rest drawn as pictures. */
 export const MODELLED_KINDS = new Set(Object.keys(FLIGHT));
-
-/**
- * The weather's haze on a bird (src/sky.js setWeather; HAZE in src/shaders/scene.js), for both views' `above` and
- * `mirror` (the drawings and the models): faded toward the haze by the light's way from it to the eye. In the
- * mirror that way is only its leg down to the water (the share of the mirrored eye's ray above the water, y = 0,
- * which the mirror's centimetres off it under ice or a gale hardly change): the water hazes what it shows by its own
- * distance (withHaze in the water's shader), the rest of the way. `below` needs none: the water hazes it too.
- * Its uniforms are the sky's own (environment.hazeUniforms), shared, so a change of weather reaches every bird.
- */
-export const BIRD_HAZE = /* glsl */ `
-${HAZE}
-vec3 birdHazed(vec3 radiance, vec3 world) {
-  float distance = length(world - cameraPosition);
-  #ifdef MIRROR
-    distance *= clamp(world.y / max(world.y - cameraPosition.y, 1e-4), 0.0, 1.0);
-  #endif
-  return withHaze(radiance, distance);
-}
-`;
-
-/**
- * A geometry drawing `source`'s vertices (its attributes and index, so one GPU buffer each, however many share them)
- * and bounded by `bounds`, a sphere its bird moves each frame: a bird's vertices are placed by its joints or its
- * picture's anchor, its mesh never moved, so three culls each pass's draw by where the bird is (a bird out of the
- * view, the mirror's or the water's, is not drawn). Never disposed: that would let go of `source`'s buffers.
- */
-export function boundedGeometry(source, bounds) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setIndex(source.index);
-  for (const [name, attribute] of Object.entries(source.attributes)) geometry.setAttribute(name, attribute);
-  geometry.boundingSphere = bounds;
-  return geometry;
-}
-/**
- * A bird's image (a WebP in assets/birds/, its rows as they lie: uv from its top left), fetched and made a mipmapped
- * sRGB texture, filtered `anisotropy` times.
- */
-export async function loadBirdTexture(url, { anisotropy = 1 } = {}) {
-  const bytes = await loadAsset(url, 'arrayBuffer');
-  const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-  const texture = new THREE.Texture(bitmap);
-  texture.flipY = false;   // its rows as they lie (tools/bird-models.py, tools/bird-sprites.py)
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.anisotropy = anisotropy;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-const boundsSphere = new THREE.Sphere(), boundsBox = new THREE.Box3();
-/**
- * The bounds (each `centre` and `radius`) of every shown bird of `sprites` that moved this frame (not `still`) and that
- * the mirror's camera sees (`frustum`), joined into `into`: how many (src/main.js draws the mirror image there again).
- */
-export function mirrorBoundsOf(sprites, into, frustum) {
-  let moving = 0;
-  for (const sprite of sprites) {
-    if (!sprite.shown || sprite.still) continue;
-    boundsSphere.set(sprite.centre, sprite.radius);
-    if (!frustum.intersectsSphere(boundsSphere)) continue;
-    into.union(boundsSphere.getBoundingBox(boundsBox));
-    moving++;
-  }
-  return moving;
-}
-const MODELS_URL = new URL('models.json', FOLDER);
+const MODELS_URL = new URL('models.json', BIRDS_FOLDER);
 const PART = { body: 0, wing: 1, tail: 2, prey: 3 };
 const RING = 16;                 // a body station's ring of vertices
 const WING_COLUMNS = 24;         // a wing's stations along the span
 const WING_ROWS = 6;             // and across the chord
 const CAMBER = 0.04;             // a wing's arch, a share of its chord
 const BLEND = 0.05;              // m either side of a wing joint over which the skin blends
-// The sun's and the sky's light on the photograph (src/birdSprites.js lights its pictures by them too).
-export const SUN_SHARE = 0.3;
-export const SKY_SHARE = 1.0;
-// How much of SUN_SHARE falls on a side by how squarely it faces the sun (`facing`, the cosine): side on (0) as the
+// How much of SUN_SHARE (src/birdDrawing.js) falls on a side by how squarely it faces the sun (`facing`, the cosine): side on (0) as the
 // photographs were lit, `toward` at most, and turned away the sun's light gone but for `away` (the body: light
 // scattered round it) or, a wing's thin vane, `through` (backlit feathers glow, a share of the light let through);
 // `rise` is how much more it gets per unit of facing (`wingRise`, up to `wingToward`, a wing's). The sky's light on
 // the body: `sky` of it side on, `skySpread` more facing the sun (the sky is brightest about it); on a wing, `side`.
 const SUN_ON = { side: 0.92, rise: 0.9, toward: 1.25, away: 0.12, through: 0.35, wingRise: 0.4, wingToward: 1.15, sky: 0.92, skySpread: 0.08 };
-export const MIRROR_NEARNESS_SCALE = 4; // src/boulders.js's: the mirror image's alpha is 1 − this / distance
 const CREST_FIN = 0.0035;         // m: half a crest's thickness at its root (it thins to a third of that at its tip)
 // A kind's body's width against its depth along it (0 the tail's tip, 1 the bill's): flat at the tail, round at the
 // breast, narrower at the head.
-const WIDTH = [[0, 0.25], [0.22, 0.35], [0.35, 0.85], [0.6, 0.95], [0.75, 0.8], [0.86, 0.72], [1, 0.5]];
+const WIDTH = { along: [0, 0.22, 0.35, 0.6, 0.75, 0.86, 1], share: [0.25, 0.35, 0.85, 0.95, 0.8, 0.72, 0.5] };
 // Where on the body the wing's shoulder is (a share from the tail's tip), and how high (a share of the body's depth
 // above its middle); the elbow and wrist, a share of the way out from the shoulder to the tip; the neck's and the
 // tail's root, along the body.
@@ -278,15 +209,6 @@ void main() {
 }
 `;
 
-/** Linear interpolation through [at, value] pairs. */
-function through(pairs, at) {
-  for (let index = 1; index < pairs.length; index++) {
-    const [a, va] = pairs[index - 1], [b, vb] = pairs[index];
-    if (at <= b) return va + (vb - va) * THREE.MathUtils.clamp((at - a) / (b - a), 0, 1);
-  }
-  return pairs[pairs.length - 1][1];
-}
-
 /** A value along a station list (its `stations` and one of its arrays) at `at`, interpolated. */
 function sample(stations, values, at) {
   if (at <= stations[0]) return values[0];
@@ -326,32 +248,32 @@ function crestNormals(positions, normals, stations) {
 
 /**
  * A kind's two wings (the header: a sheet over the flattened outline, the right one out along +z and the left
- * mirrored), from a shoulder at (shoulderX, shoulderY), added through `add` (and their triangles to `indices`): the
+ * mirrored), from a shoulder at (shoulderX, shoulderY), added through a model's builder (modelBuilder): the
  * shoulder's, elbow's and wrist's places (the right wing's, model space).
  */
-function addWings(wing, shoulderX, shoulderY, add, indices) {
+function addWings(wing, shoulderX, shoulderY, { add, quads }) {
   const root = wing.stations[0], tip = wing.tip;
-  const elbowS = root + (tip - root) * SKELETON.elbow, wristS = root + (tip - root) * SKELETON.wrist;
+  const elbowAlong = root + (tip - root) * SKELETON.elbow, wristAlong = root + (tip - root) * SKELETON.wrist;
   // The wings: a sheet over the flattened outline, the right one out along +z and the left mirrored.
   const [, chordBack, semispan, chordFront] = wing.rect;
-  const known = wing.stations.map((s, index) => [s, wing.lead[index], wing.trail[index]]).filter(([, lead]) => lead !== null);
-  const spanStations = known.map(([s]) => s), leads = known.map(([, lead]) => lead), trails = known.map(([, , trail]) => trail);
+  const known = wing.stations.map((along, index) => [along, wing.lead[index], wing.trail[index]]).filter(([, lead]) => lead !== null);
+  const spanStations = known.map(([along]) => along), leads = known.map(([, lead]) => lead), trails = known.map(([, , trail]) => trail);
   for (const side of [1, -1]) {
     const first = add.count();
     for (let column = 0; column <= WING_COLUMNS; column++) {
-      const s = root + (tip - root) * (column / WING_COLUMNS);
-      const lead = sample(spanStations, leads, s), trail = sample(spanStations, trails, s);
+      const along = root + (tip - root) * (column / WING_COLUMNS);
+      const lead = sample(spanStations, leads, along), trail = sample(spanStations, trails, along);
       // Skinned to the shoulder, the elbow or the wrist, blended over BLEND either side of each.
       let joint;
       const shoulderJoint = side > 0 ? JOINTS.rightShoulder : JOINTS.leftShoulder;
       const elbowJoint = shoulderJoint + 1, wristJoint = shoulderJoint + 2;
-      if (s < elbowS) joint = [shoulderJoint, elbowJoint, THREE.MathUtils.smoothstep(s, elbowS - BLEND, elbowS + BLEND)];
-      else if (s < wristS) {
-        const toWrist = THREE.MathUtils.smoothstep(s, wristS - BLEND, wristS + BLEND);
-        joint = toWrist > 0 ? [elbowJoint, wristJoint, toWrist] : [shoulderJoint, elbowJoint, THREE.MathUtils.smoothstep(s, elbowS - BLEND, elbowS + BLEND)];
-      } else joint = [elbowJoint, wristJoint, THREE.MathUtils.smoothstep(s, wristS - BLEND, wristS + BLEND)];
+      if (along < elbowAlong) joint = [shoulderJoint, elbowJoint, THREE.MathUtils.smoothstep(along, elbowAlong - BLEND, elbowAlong + BLEND)];
+      else if (along < wristAlong) {
+        const toWrist = THREE.MathUtils.smoothstep(along, wristAlong - BLEND, wristAlong + BLEND);
+        joint = toWrist > 0 ? [elbowJoint, wristJoint, toWrist] : [shoulderJoint, elbowJoint, THREE.MathUtils.smoothstep(along, elbowAlong - BLEND, elbowAlong + BLEND)];
+      } else joint = [elbowJoint, wristJoint, THREE.MathUtils.smoothstep(along, wristAlong - BLEND, wristAlong + BLEND)];
       // Beyond the body's root the sheet meets the body at the shoulder: its root pulled in to the body's side.
-      const z = column === 0 ? root * 0.55 : s;
+      const z = column === 0 ? root * 0.55 : along;
       for (let row = 0; row <= WING_ROWS; row++) {
         const share = row / WING_ROWS;
         // The picture's rect: wider than the outline (alpha cuts it); sample a little past each edge so its feathers
@@ -359,32 +281,27 @@ function addWings(wing, shoulderX, shoulderY, add, indices) {
         const chord = (lead + 0.02) + ((trail - 0.03) - (lead + 0.02)) * share;
         const arch = CAMBER * (lead - trail) * Math.sin(Math.PI * share);
         const position = [shoulderX + chord, shoulderY + arch, z * side];
-        const uv = [s / semispan, (chordFront - chord) / (chordFront - chordBack)];
+        const uv = [along / semispan, (chordFront - chord) / (chordFront - chordBack)];
         add(position, [0, 1, 0], uv, joint, PART.wing);
       }
     }
-    for (let column = 0; column < WING_COLUMNS; column++) {
-      for (let row = 0; row < WING_ROWS; row++) {
-        const a = first + column * (WING_ROWS + 1) + row, b = a + WING_ROWS + 1;
-        // Front faces up (the upper side's picture), whichever wing.
-        if (side > 0) indices.push(a, a + 1, b, a + 1, b + 1, b);
-        else indices.push(a, b, a + 1, a + 1, b, b + 1);
-      }
-    }
+    quads(first, WING_COLUMNS, WING_ROWS, side > 0);   // front faces up (the upper side's picture), whichever wing
   }
 
   return {
     shoulder: { x: shoulderX, y: shoulderY, z: root * 0.7 },
-    elbow: { x: shoulderX, y: shoulderY, z: elbowS },
-    wrist: { x: shoulderX, y: shoulderY, z: wristS },
+    elbow: { x: shoulderX, y: shoulderY, z: elbowAlong },
+    wrist: { x: shoulderX, y: shoulderY, z: wristAlong },
   };
 }
 
 /**
  * A model's vertices and triangles as they are built (buildModel, buildStandingModel): `add(position, normal, uv,
  * joint, part)` a vertex (its joints [first, second, the second's share]; `part` PART's, the body if none), giving its
- * index (`add.count()` how many so far); `indices` its triangles; and `geometry(front)` the geometry of them, with each
- * vertex's front-photo paint (frontPaint; none if not given). Every attribute VERTEX reads is made here alone.
+ * index (`add.count()` how many so far); `indices` its triangles, and `quads(first, lines, across, turned)` those of a
+ * grid of vertices added from `first`, `lines` + 1 lines of `across` + 1 each (two a cell, wound one way or, `turned`,
+ * the other); and `geometry(front)` the geometry of them, with each vertex's front-photo paint (frontPaint; none if
+ * not given). Every attribute VERTEX reads is made here alone.
  */
 function modelBuilder() {
   const positions = [], normals = [], uvs = [], joints = [], blends = [], parts = [], indices = [];
@@ -394,6 +311,15 @@ function modelBuilder() {
     return positions.length / 3 - 1;
   };
   add.count = () => positions.length / 3;
+  const quads = (first, lines, across, turned = false) => {
+    for (let line = 0; line < lines; line++) {
+      for (let step = 0; step < across; step++) {
+        const corner = first + line * (across + 1) + step, next = corner + across + 1;
+        if (turned) indices.push(corner, corner + 1, next, corner + 1, next + 1, next);
+        else indices.push(corner, next, corner + 1, corner + 1, next, next + 1);
+      }
+    }
+  };
   const geometry = (front = new Float32Array(parts.length * 3)) => {
     const made = new THREE.BufferGeometry();
     made.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -406,12 +332,12 @@ function modelBuilder() {
     made.setIndex(indices);
     return made;
   };
-  return { positions, normals, indices, add, geometry };
+  return { positions, normals, indices, add, quads, geometry };
 }
 
 /** A kind's model from its models.json entry (the header): its geometry, and its joints' places (model space). */
 export function buildModel(entry) {
-  const { positions, normals, indices, add, geometry: makeGeometry } = modelBuilder();
+  const builder = modelBuilder(), { positions, normals, add, quads, geometry: makeGeometry } = builder;
   const { body, wing } = entry;
   const [left, bottom, right, top] = body.rect;
   const length = right - left;
@@ -424,7 +350,7 @@ export function buildModel(entry) {
   for (let station = 0; station <= stations; station++) {
     const share = station / stations;
     const x = left + share * length;
-    const middle = middleAt(x), depth = Math.max(depthAt(x), 0.002), width = depth * through(WIDTH, share);
+    const middle = middleAt(x), depth = Math.max(depthAt(x), 0.002), width = depth * sample(WIDTH.along, WIDTH.share, share);
     // The head turns with the neck joint (blended over the neck), the tail end with the tail's.
     const headShare = THREE.MathUtils.smoothstep(x, neckX - 0.04, neckX + 0.04);
     const tailShare = 1 - THREE.MathUtils.smoothstep(x, tailX - 0.05, tailX + 0.05);
@@ -433,7 +359,7 @@ export function buildModel(entry) {
     // the crest's fin.
     const crownY = body.crown ? Math.min(sample(body.stations, body.crown, x), middle + depth) : middle + depth;
     const skullMiddle = (crownY + middle - depth) / 2, skullDepth = Math.max((crownY - (middle - depth)) / 2, 0.002);
-    const skullWidth = skullDepth * through(WIDTH, share);
+    const skullWidth = skullDepth * sample(WIDTH.along, WIDTH.share, share);
     const crestHeight = middle + depth - crownY;
     for (let around = 0; around <= RING; around++) {
       const angle = (around / RING) * Math.PI * 2;
@@ -452,18 +378,13 @@ export function buildModel(entry) {
       add([x, y, z], normal.toArray(), [share, (top - pictureY) / (top - bottom)], joint, PART.body);
     }
   }
-  for (let station = 0; station < stations; station++) {
-    for (let around = 0; around < RING; around++) {
-      const a = station * (RING + 1) + around, b = a + RING + 1;
-      indices.push(a, b, a + 1, a + 1, b, b + 1);
-    }
-  }
+  quads(0, stations, RING);
   if (body.crown) crestNormals(positions, normals, stations);
 
   // The skeleton's places.
   const shoulderX = left + SKELETON.shoulder * length;
   const shoulderY = middleAt(shoulderX) + depthAt(shoulderX) * SKELETON.shoulderHeight;
-  const wingSkeleton = addWings(wing, shoulderX, shoulderY, add, indices);
+  const wingSkeleton = addWings(wing, shoulderX, shoulderY, builder);
   const modelJoints = {
     ...wingSkeleton,
     neck: { x: neckX, y: middleAt(neckX), z: 0 },
@@ -485,19 +406,14 @@ export function buildModel(entry) {
       add([x, y, across * halfWidth], [0, 1, 0], [(across + 1) / 2, share], [JOINTS.tail, JOINTS.tail, 0], PART.tail);
     }
   }
-  for (let column = 0; column < fanColumns; column++) {
-    for (let row = 0; row < fanRows; row++) {
-      const a = tailFirst + column * (fanRows + 1) + row, b = a + fanRows + 1;
-      indices.push(a, a + 1, b, a + 1, b + 1, b);   // front faces up
-    }
-  }
+  quads(tailFirst, fanColumns, fanRows, true);   // front faces up
 
   const geometry = makeGeometry();   // painted from the side alone (a flier is seen side on, or far off): no front
   return { geometry, joints: modelJoints, span: entry.span, length, radius: Math.max(entry.span, length) * 0.6 };
 }
 
 // A standing kind's trunk's width against its depth along it (0 the tail's tip, 1 the breast).
-const STANDING_WIDTH = [[0, 0.2], [0.15, 0.42], [0.4, 0.58], [0.7, 0.62], [0.9, 0.56], [1, 0.45]];
+const STANDING_WIDTH = { along: [0, 0.15, 0.4, 0.7, 0.9, 1], share: [0.2, 0.42, 0.58, 0.62, 0.56, 0.45] };
 const NECK_RING = 16;
 // The neck's middle line and thickness, read off the photograph's outline point by point, each point averaged with up
 // to this many either side (symmetrically, so the line keeps its ends; up to the nape: the head is its own), so the
@@ -514,10 +430,10 @@ const PREY = { length: 0.09, depth: 0.022, width: 0.011, fin: 0.022, grip: 0.028
 
 /**
  * A fish built across the bill at its grip as the head stands at rest, skinned wholly to JOINTS.prey (scaled to nothing
- * until it is caught): its length along +z (its head at -z), its back toward the bill's top. Returns its grip and the
+ * until it is caught), through a model's builder: its length along +z (its head at -z), its back toward the bill's top. Returns its grip and the
  * bill's directions there (in the side's plane), which posePrey turns it by.
  */
-function addPrey(neck, add, indices) {
+function addPrey(neck, { add, quads, indices }) {
   const tip = neck[neck.length - 1];
   let back = neck.length - 1;
   while (back > 0 && Math.hypot(tip[0] - neck[back][0], tip[1] - neck[back][1]) < 0.06) back--;
@@ -541,12 +457,7 @@ function addPrey(neck, add, indices) {
       add(position, normal.toArray(), [share, 0.5 + 0.5 * up], joint, PART.prey);
     }
   }
-  for (let station = 0; station < stations; station++) {
-    for (let around = 0; around < ring; around++) {
-      const a = first + station * (ring + 1) + around, b = a + ring + 1;
-      indices.push(a, b, a + 1, a + 1, b, b + 1);
-    }
-  }
+  quads(first, stations, ring);
   // Its tail fin: a forked sheet in the plane of its depth, from the tail's wrist.
   const wrist = length / 2, spread = depth * 0.55;
   const finAt = (z, up) => add([grip.x + across.x * up, grip.y + across.y * up, z], [0, 0, 1], [1, 0.5 + up / depth], joint, PART.prey);
@@ -573,13 +484,13 @@ function frontPaint(front, positions, normals, indices, count) {
   // Which way each vertex faces, from its triangles (the trunk's rings carry normals straight out from its axis, so
   // its rounded front, where it narrows to the breast, would never face forward), turned outward as its own normal is
   // (the trunk's and the neck's rings wind opposite ways).
-  const facing = new Float32Array(count * 3), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const facing = new Float32Array(count * 3), corner = new THREE.Vector3(), area = new THREE.Vector3(), edge = new THREE.Vector3();
   for (let index = 0; index < indices.length; index += 3) {
-    const [i, j, k] = [indices[index], indices[index + 1], indices[index + 2]];
-    if (i >= count || j >= count || k >= count) continue;
-    a.fromArray(positions, i * 3); b.fromArray(positions, j * 3).sub(a); c.fromArray(positions, k * 3).sub(a);
-    b.cross(c);   // its area's normal
-    for (const vertex of [i, j, k]) for (let axis = 0; axis < 3; axis++) facing[vertex * 3 + axis] += b.getComponent(axis);
+    const first = indices[index], second = indices[index + 1], third = indices[index + 2];
+    if (first >= count || second >= count || third >= count) continue;
+    corner.fromArray(positions, first * 3); area.fromArray(positions, second * 3).sub(corner); edge.fromArray(positions, third * 3).sub(corner);
+    area.cross(edge);   // its area's normal
+    for (const vertex of [first, second, third]) for (let axis = 0; axis < 3; axis++) facing[vertex * 3 + axis] += area.getComponent(axis);
   }
   const { heights } = front, stations = heights.length;
   const lowest = heights[0], highest = heights[stations - 1];
@@ -617,7 +528,7 @@ function frontPaint(front, positions, normals, indices, count) {
  * forward on its breast and neck is painted from its front picture instead, where it has one (frontPaint).
  */
 export function buildStandingModel(entry) {
-  const { positions, normals, indices, add, geometry: makeGeometry } = modelBuilder();
+  const builder = modelBuilder(), { positions, normals, indices, add, quads, geometry: makeGeometry } = builder;
   const { side, wing } = entry;
   const [left, bottom, right, top] = side.rect;
   const pictureUv = (x, y) => [(x - left) / (right - left), (top - y) / (top - bottom)];
@@ -630,19 +541,14 @@ export function buildStandingModel(entry) {
       const share = station / stations;
       const x = trunkLeft + share * (trunkRight - trunkLeft);
       const topY = sample(trunk.stations, trunk.top, x), bottomY = sample(trunk.stations, trunk.bottom, x);
-      const middle = (topY + bottomY) / 2, depth = Math.max((topY - bottomY) / 2, 0.002), width = depth * through(STANDING_WIDTH, share);
+      const middle = (topY + bottomY) / 2, depth = Math.max((topY - bottomY) / 2, 0.002), width = depth * sample(STANDING_WIDTH.along, STANDING_WIDTH.share, share);
       for (let around = 0; around <= RING; around++) {
         const angle = (around / RING) * Math.PI * 2;
         const normal = new THREE.Vector3(0, Math.cos(angle) / depth, Math.sin(angle) / width).normalize();
         add([x, middle + depth * Math.cos(angle), width * Math.sin(angle)], normal.toArray(), pictureUv(x, middle + depth * 0.9 * Math.cos(angle)), [JOINTS.body, JOINTS.body, 0]);
       }
     }
-    for (let station = 0; station < stations; station++) {
-      for (let around = 0; around < RING; around++) {
-        const a = first + station * (RING + 1) + around, b = a + RING + 1;
-        indices.push(a, b, a + 1, a + 1, b, b + 1);
-      }
-    }
+    quads(first, stations, RING);
   }
   // The neck and head: rings along the middle line, each skinned between the chain's joints either side of it.
   const firstPastNape = side.neck.findIndex((point) => point[3] > 0.5);
@@ -695,12 +601,7 @@ export function buildStandingModel(entry) {
         add(position, normal.toArray(), pictureUv(x + normalX * radius * up * 0.85, y + normalY * radius * up * 0.85), joint);
       }
     });
-    for (let ring = 0; ring < neck.length - 1; ring++) {
-      for (let around = 0; around < NECK_RING; around++) {
-        const a = first + ring * (NECK_RING + 1) + around, b = a + NECK_RING + 1;
-        indices.push(a, b, a + 1, a + 1, b, b + 1);
-      }
-    }
+    quads(first, neck.length - 1, NECK_RING);
   }
   const bodyVertices = positions.length / 3;   // the trunk's, the neck's and the head's (frontPaint)
   // A thin tube along points ([x, y, z], radius each, joint each), painted from the picture under its middle line.
@@ -717,12 +618,7 @@ export function buildStandingModel(entry) {
         add([at[0] + normal.x * radius, at[1] + normal.y * radius, at[2] + normal.z * radius], normal.toArray(), points[index].uv ?? pictureUv(at[0], at[1]), joint, part);
       }
     });
-    for (let ring = 0; ring < points.length - 1; ring++) {
-      for (let around = 0; around < LEG_RING; around++) {
-        const a = first + ring * (LEG_RING + 1) + around, b = a + LEG_RING + 1;
-        indices.push(a, b, a + 1, a + 1, b, b + 1);
-      }
-    }
+    quads(first, points.length - 1, LEG_RING);
   };
   const legs = side.legs.map((leg, index) => {
     const z = index === 0 ? LEG_SPREAD : -LEG_SPREAD;
@@ -754,8 +650,8 @@ export function buildStandingModel(entry) {
   // The wings: as a flying kind's, from the shoulder at the top of the trunk a little behind its front.
   const shoulderX = trunkRight - 0.32 * (trunkRight - trunkLeft);
   const shoulderY = sample(trunk.stations, trunk.top, shoulderX) - 0.03;
-  const wingSkeleton = addWings(wing, shoulderX, shoulderY, add, indices);
-  const prey = addPrey(neck, add, indices);
+  const wingSkeleton = addWings(wing, shoulderX, shoulderY, builder);
+  const prey = addPrey(neck, builder);
   const geometry = makeGeometry(frontPaint(entry.front, positions, normals, indices, bodyVertices));
   const hipsHeight = -Math.min(...side.legs.map((leg) => leg.foot[1]));
   // The neck's joints, and each link's direction as photographed (the last the head's: the nape to the bill's tip).
@@ -771,14 +667,18 @@ export function buildStandingModel(entry) {
   };
 }
 
+const warmUpJoint = new THREE.Matrix4().makeTranslation(0, 0.3, -1.4);   // in front of the camera: warmUp's stand-in
+
 /**
  * The birds' models: `above` and `mirror` for the main scene (the mirror's
- * on `mirrorLayer` alone), `below` for the under-water pass. show(population)
- * gives each bird its meshes, update(population, camera) poses them,
- * mirrorBounds tells src/main.js where a moving bird's mirror image is;
- * onLoaded is called when a kind's image has come.
+ * on `mirrorLayer` alone), `below` for the under-water pass. show(birds,
+ * dark) gives each of `birds` (src/birds.js: those of MODELLED_KINDS, as
+ * src/birdViews.js sorts them) its meshes and fetches the models of the
+ * kinds about at that hour, update() poses them, mirrorChanges tells
+ * src/main.js where a bird's mirror image is to be drawn again
+ * (src/birdDrawing.js); onLoaded is called when a kind's image has come.
  */
-export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
+export function createBirdModels({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
   const above = new THREE.Group(), below = new THREE.Group(), mirror = new THREE.Group();
   const standIn = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
   standIn.needsUpdate = true;
@@ -809,7 +709,7 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
       await loadCatalogue();
       const entry = catalogue.models?.[kind];
       if (!entry) return;
-      const texture = await loadBirdTexture(new URL(entry.atlas, FOLDER), { anisotropy: 4 });
+      const texture = await loadBirdTexture(new URL(entry.atlas, BIRDS_FOLDER), { anisotropy: 4 });
       const model = entry.standing ? buildStandingModel(entry) : buildModel(entry);
       // A standing kind's fourth picture is its legs' colours (a column a leg, buildStandingModel), where a flying kind's is its tail's.
       const rects = (entry.standing ? ['side', 'under', 'upper', 'legs', entry.front ? 'front' : 'side'] : ['body', 'under', 'upper', 'tail', 'body']).map((name) => new THREE.Vector4(...entry.uv[name]));
@@ -834,11 +734,14 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
   }
 
   function makeSprite() {
+    // Its joints' matrices one after another, as the rig writes them: the uniform's own value (three sends a flat
+    // array of numbers as it is), so posing a bird copies nothing.
+    const jointArray = new Float32Array(JOINT_COUNT * 16);
     const uniforms = {
       ...shared,
       uAtlas: { value: standIn },
       uRects: { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4(0, 0, 1, 1)) },
-      uJoints: { value: Array.from({ length: JOINT_COUNT }, () => new THREE.Matrix4()) },
+      uJoints: { value: jointArray },
     };
     const placeholder = new THREE.BufferGeometry();
     const aboveMesh = new THREE.Mesh(placeholder, material('above', uniforms));
@@ -850,8 +753,8 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     mirror.add(mirrorMesh);
     below.add(belowMesh);
     // Its bounds (place: about its middle, its kind's radius) and its geometry a kind, sharing the kind's (boundedGeometry).
-    return { kind: null, meshes: [aboveMesh, mirrorMesh], under: belowMesh, uniforms, centre: new THREE.Vector3(), radius: 1, bounds: new THREE.Sphere(new THREE.Vector3(), -1), geometries: new Map(),
-      shown: false, still: false, jointArray: new Float32Array(JOINT_COUNT * 16), drawnJoints: new Float32Array(JOINT_COUNT * 16) };
+    return { bird: null, kind: null, meshes: [aboveMesh, mirrorMesh], under: belowMesh, uniforms, centre: new THREE.Vector3(), radius: 1, bounds: new THREE.Sphere(new THREE.Vector3(), -1), geometries: new Map(),
+      shown: false, mirrored: false, jointArray, mirroredJoints: new Float32Array(JOINT_COUNT * 16) };
   }
 
   /** A sprite's meshes given its kind's model and image, once come. */
@@ -870,53 +773,58 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     sprite.under.visible = false;
   }
 
-  function show(population, camera, iceAt) {
-    while (pool.length < population.birds.length) pool.push(makeSprite());
-    for (const sprite of pool) hide(sprite);
-    sprites = population.birds.map((bird, index) => Object.assign(pool[index], { kind: bird.kind }));
+  /** The modelled birds of a place (src/birds.js setPlace), `dark` after dark: a sprite each, and the hour's kinds' models fetched if they have not been. */
+  function show(birds, dark = false) {
+    sprites = spritesFor(pool, birds, makeSprite, hide);
     for (const sprite of sprites) dress(sprite);
-    for (const kind of new Set(sprites.map((sprite) => sprite.kind))) load(kind);
-    update(population, camera, iceAt);
+    for (const kind of kindsAbout(birds, dark)) load(kind);
+    update();
   }
 
-  /** Each bird posed (src/birds.js showAt); `iceAt(x, z)` the ice's top there, or null where there is open water. */
-  function update(population, camera, iceAt = () => null) {
-    population.birds.forEach((bird, index) => { if (sprites[index]) place(sprites[index], bird.pose, iceAt); });
+  /** Each bird posed as its pose is now (src/birds.js showAt). */
+  function update() {
+    for (const sprite of sprites) place(sprite);
   }
 
-  const standingPose = {};
-  function place(sprite, at, iceAt) {
+  function place(sprite) {
+    const at = sprite.bird.pose;
+    if (at.shown && !kinds.has(sprite.kind)) load(sprite.kind);   // another hour's kind, first shown now
     const loaded = kinds.get(sprite.kind);
     const flight = FLIGHT[sprite.kind];
     const standing = at.flying === false;
     const ready = Boolean(loaded) && Boolean(flight) && at.shown && (!standing || loaded.model.standing);
-    const wasShown = sprite.shown;
     sprite.shown = ready;
     for (const mesh of sprite.meshes) mesh.visible = ready;
     sprite.under.visible = false;
     if (!ready) return;
     if (loaded.model.standing) {
-      // Standing in the water its feet are on the bed (src/birds.js laySpot); on a frozen pond, on the ice over them
-      // (none stands on one now: src/birds.js BIRDS_WHEN_FROZEN).
-      const ice = standing && at.y < 0 ? iceAt(at.x, at.z) : null;
-      const pose = ice === null ? at : Object.assign(standingPose, at, { y: ice });
-      poseStanding(sprite.jointArray, loaded.model, flight, pose);
-      // What of it is under the water (its legs, wading; its bill, striking) drawn in the under-water pass.
-      sprite.under.visible = ice === null && (standing ? at.y < 0 : at.y < 1.2);
-      sprite.centre.set(at.x, pose.y + (standing ? loaded.model.skeleton.hipsHeight : 0), at.z);
+      // Standing in the water its feet are on the bed (src/birds.js laySpot); none stands on a frozen pond (src/birds.js
+      // BIRDS_WHEN_FROZEN). What of it is under the water (its legs, wading; its bill, striking; its feet as it rises
+      // or comes down) is drawn in the under-water pass.
+      poseStanding(sprite.jointArray, loaded.model, flight, at);
+      sprite.under.visible = standing ? at.y < 0 : at.y < 1.2;
+      sprite.centre.set(at.x, at.y + (standing ? loaded.model.skeleton.hipsHeight : 0), at.z);
     } else {
       poseJoints(sprite.jointArray, loaded.model, flight, at);
       sprite.centre.set(at.x, at.y, at.z);
     }
-    // Still when it is posed as it was drawn last (a heron standing quite still): its mirror image is not drawn again.
-    sprite.still = wasShown && sprite.jointArray.every((value, index) => value === sprite.drawnJoints[index]);
-    sprite.drawnJoints.set(sprite.jointArray);
-    sprite.uniforms.uJoints.value.forEach((matrix, index) => matrix.fromArray(sprite.jointArray, index * 16));
+    // A pose that is not a number is not drawn (three would take the joints' array for a list of matrices).
+    if (Number.isNaN(sprite.jointArray[0])) { hide(sprite); return; }
     sprite.radius = loaded.model.radius;
     sprite.bounds.set(sprite.centre, sprite.radius);
   }
 
-  const mirrorBounds = (into, frustum) => mirrorBoundsOf(sprites, into, frustum);
+  /** Whether a sprite's joints are not as the mirror last drew them (a heron standing quite still: they are); taken as drawn so from now (src/birdDrawing.js mirrorChanges). */
+  function changed(sprite) {
+    const { jointArray, mirroredJoints } = sprite;
+    let index = 0;
+    while (index < jointArray.length && jointArray[index] === mirroredJoints[index]) index++;
+    if (index === jointArray.length) return false;
+    mirroredJoints.set(jointArray);
+    return true;
+  }
+
+  const mirrorChanges = (into, frustum) => mirrorChangesOf(sprites, into, frustum, changed);
 
   /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so its programs are built. */
   function warmUp() {
@@ -930,13 +838,13 @@ export function createBirdView({ lighting, haze, mirrorLayer, onLoaded = () => {
     const meshes = [...sprite.meshes, sprite.under];
     const was = meshes.map((mesh) => mesh.geometry);
     for (const mesh of meshes) { mesh.geometry = geometry; mesh.visible = true; mesh.frustumCulled = false; }
-    sprite.uniforms.uJoints.value.forEach((matrix) => matrix.makeTranslation(0, 0.3, -1.4));
+    for (let joint = 0; joint < JOINT_COUNT; joint++) warmUpJoint.toArray(sprite.jointArray, joint * 16);
     return { done() { meshes.forEach((mesh, index) => { mesh.geometry = was[index]; mesh.frustumCulled = true; }); geometry.dispose(); if (!sprites.includes(sprite)) hide(sprite); } };
   }
 
   return {
     above, below, mirror,
-    show, update, mirrorBounds, warmUp,
+    show, update, mirrorChanges, warmUp,
     get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0) + (sprite.under.visible ? 1 : 0), 0); },
   };
 }
