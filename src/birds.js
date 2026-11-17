@@ -718,6 +718,11 @@ export class BirdPopulation {
    * bed, src/birdMeshes.js drawing what of it is under the water there) and which way it faces, drawn from its seed
    * and the stay (its group's `angles`, `offshore`, `toPond`), so it is somewhere new each time it comes back, and
    * each visit to the page finds it somewhere of its own.
+   * Only the Koi pond's bank is laid (KOI_SHORE): no other place has wading water (8 to 25 cm) in the home view. The
+   * lake's (src/pondFloor.js SHORE) runs beside and behind the eye, ahead of it no more than 30 cm out, under the
+   * frame's bottom, and its far bank is the photo's; the Reflecting Pool's walls stand in 60 cm and more; the lagoon's
+   * beach is in view, but grey herons do not live in Polynesia (its heron is the Pacific reef heron), nor at the
+   * Reflecting Pool (a great blue heron's).
    */
   laySpot(bird, stay) {
     const { group } = bird;

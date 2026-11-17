@@ -689,7 +689,11 @@ over its shoulder if the splash is behind it; a thing thrown near puts it up, an
 the way it faces. It comes back half a minute to a minute later, gliding in
 and flaring as herons do (pitched up, legs forward, braking with deep beats)
 to land somewhere new on the far bank, holding its wings up a moment before
-folding them. The day's birds are not
+folding them. Only the Koi pond has a heron standing: at the lakes, water
+shallow enough to wade in (8 to 25 cm) runs beside and behind the eye, out
+of the home view (ahead of it, under its bottom edge), and the far bank is
+the photograph's; the lagoon's beach is in view, but no grey heron lives
+in Polynesia (its heron is the Pacific reef heron). The day's birds are not
 about after dark; at Lakeside, the Harbour, the Mesas, the Desert oasis
 and the Reflecting Pool a black-crowned night heron, which feeds by night
 and lives at all five, crosses the sky now and then instead (`BIRDS_AT_NIGHT`), flown high
