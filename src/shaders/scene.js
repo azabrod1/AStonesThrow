@@ -1562,6 +1562,7 @@ uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera
 #define mirrorTexel(uv) textureLod(uReflection, uv, 0.0)   // the mirror image itself: its mip levels are spreadMirror's alone
 uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky.js), mipmapped: the ice's frosted mirror
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
+uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
 uniform vec4 uNearLand[NEAR_LAND_SECTORS];   // the photo's near land (src/sky.js Near land): each sector's centre (radians, atan(z, x)), half width (radians; 0: none), distance (m), edge (radians)
 uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen but while a splash rises from a hole, else 0 (src/main.js)
@@ -1697,9 +1698,9 @@ vec3 galeFoamAt(vec2 restXZ) {
 // pixel's own water deep (a stone over the floor), is moved back (main).
 #define STONE_OVERSHOOT 0.75
 
-// What is near in the mirror image (the splash, a floater, a bird, a
-// shore's boulders, the koi's garden, the pool's walls) has its nearness to
-// the mirror camera in alpha (1 − scale/distance; 1 for the sky). A near object's reflection must move with the ripples by
+// The mirror image holds the splash (uMirrorNear not empty): what is near
+// in it has its nearness to the mirror camera in alpha (1 − scale/distance;
+// 1 for the sky). A near object's reflection must move with the ripples by
 // d/(L + d) of what the sky's does (d its distance from the surface, L the
 // mirror camera's): its point at d along the rippled ray is looked up, not
 // the ray's direction. So the lookup starts where the rippled direction
@@ -1714,14 +1715,10 @@ vec3 galeFoamAt(vec2 restXZ) {
 // every texel edge of its silhouette, and the jump drew 1-pixel curves of
 // the object's light across the water. A choice between the flat mirror's
 // texel and the rippled one, made pixel by pixel, cut the image into shards
-// along every edge. Only pixels whose lookup finds something near take
-// this, up to three fetches each; the sky's, one. It once took only those
-// in the rectangle the splash's image covered, and the cached image's near
-// things were read as the sky outside it: where a moving bird's region
-// joined the rectangle (src/main.js), the garden's image by the bank stood
-// sharp in a box round the heron, the rest of it spread to grey, under rain
-// (spreadMirror). \`near\` is set to the lookup it settled on, before it is
-// held inside the image, and the nearness found there (0 for the sky), for
+// along every edge. Only pixels whose flat or rippled lookup falls in the
+// splash's rectangle take this; up to three fetches each. \`near\` is set to
+// the lookup it settled on, before it is held inside the image, and the
+// nearness found there (0 for the sky, as outside the rectangle), for
 // spreadMirror.
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
@@ -1734,9 +1731,13 @@ vec3 fadePastMirrorEdge(vec3 shown, vec2 pastEdge, vec3 ray) {
 vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
   vec2 lookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
   near = vec3(rippleUv, 0.0);
+  vec4 flatCoord = uReflectionMatrix * vec4(vWorld, 1.0);
+  vec2 flatUv = flatCoord.xy / max(flatCoord.w, 1e-4);
+  bool flatNear = all(greaterThanEqual(flatUv, uMirrorNear.xy)) && all(lessThanEqual(flatUv, uMirrorNear.zw));
+  bool rippleNear = all(greaterThanEqual(rippleUv, uMirrorNear.xy)) && all(lessThanEqual(rippleUv, uMirrorNear.zw));
   vec4 found = mirrorTexel(lookup);
-  float nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
-  if (nearness <= MIRROR_FARTHEST) return found.rgb;   // the sky
+  if (!flatNear && !rippleNear) return found.rgb;
+  float nearness = 0.0;
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float surfaceDistance = distance(vWorld, mirrorEye);
   for (int refinement = 0; refinement < 2; refinement++) {
@@ -1766,8 +1767,8 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
 // ray that clears the horizon, so far out, where the rays graze, the image is lifted toward what stands higher, and
 // the water before the far shore takes the hills' tops and the sky, paler, as it does on a lake. The cut moves with
 // the ray's climb, so the box shortens smoothly toward the horizon: taps left out one by one as their rays dipped
-// drew a band across the far water where each went. A near thing (one whose nearness the image holds,
-// nearReflection: the splash, a floater, a bird, a shore's boulders, the koi's garden, the Pool's walls and deck)
+// drew a band across the far water where each went. A near thing in nearReflection's reach (in the
+// splash's rectangle: the splash, a floater, the thing in the loch; in the Pool, the whole image: its walls and deck)
 // spreads by L/(L + d) of that, L its distance from the water here and d the water's from the eye, as nearReflection
 // moves it, about the lookup it settled on (\`near\`: that lookup and the nearness found there), so the spread image
 // lies over the sharp one; where the photo's own land stands near (nearLandReach), what the dome shows there spreads
@@ -1799,9 +1800,11 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVarian
   float horizontal = max(length(ray.xz), 1e-3);
   vec4 raised = coord + 0.01 * horizontal * uReflectionMatrix[1];
   vec2 perClimb = (raised.xy / max(raised.w, 1e-4) - coord.xy / max(coord.w, 1e-4)) / 0.01;   // uv per unit of climb
-  // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d),
-  // about the lookup nearReflection settled on: spread by its nearness about the rippled direction's lookup instead
-  // (which misplaces it), the garden's image by the bank stood as that lookup's shards.
+  // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d).
+  // Outside nearReflection's reach the cached image's near things (the boulders, the reeds, the lagoon's palms; the
+  // koi's garden writes no nearness at all, src/koiGarden.js) spread as the sky does (on near land's bearings, as that land does), as the sharp lookup moves
+  // them: spread by their own nearness there, the garden's image by the bank stood as the sharp lookup's shards, and
+  // the spread had smoothed them.
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float fromMirror = distance(vWorld, mirrorEye);
   float reach = near.z > 0.0 ? clamp(1.0 - fromMirror * near.z, 0.0, 1.0) : nearLandReach(ray, fromMirror);   // a near thing's, or the dome's
@@ -1916,7 +1919,7 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
   vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
   vec3 near;   // (unused: the frost spreads the sky's cube)
-  vec3 reflected = nearReflection(reflectUv, reflectedRay, near);
+  vec3 reflected = uMirrorNear.x > uMirrorNear.z ? mirrorTexel(clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb : nearReflection(reflectUv, reflectedRay, near);
   // Frost spreads the reflected ray over about twice its rms slope: past a little frost the mirror is the sky's cube
   // (the dome, which the mirror image holds but for what is near) blurred by its mip levels that wide (ICE_FROST_LEVELS
   // a radian).
@@ -2202,8 +2205,10 @@ void main() {
   vec4 stillRayCoord = uReflectionMatrix * vec4(-v.x, v.y, -v.z, 0.0);
   vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
   vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
-  vec3 near;   // where the image was read and the nearness found there (0: the sky), for spreadMirror
-  vec3 reflected = nearReflection(reflectUv, reflectedRay, near);
+  vec3 reflected;
+  vec3 near = vec3(reflectUv, 0.0);   // where the image was read and the nearness found there (0: the sky), for spreadMirror
+  if (uMirrorNear.x > uMirrorNear.z) reflected = mirrorTexel(clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
+  else reflected = nearReflection(reflectUv, reflectedRay, near);
   // What the ripples too fine for the pixel do to it (spreadMirror): far out, the far shore's image spreads down the
   // water and pales toward it, and a wake too fine to resolve shows as a V of paler, duller water across it.
   reflected = spreadMirror(reflected, near, reflectedRay, reflectCoord, slopeVariance);

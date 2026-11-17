@@ -204,6 +204,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uReflection: { value: null },
     uSkyCube: { value: skyCube },   // the ice's frosted mirror (WATER_FRAGMENT iceSurface); from below, the window's sky
     uReflectionMatrix: { value: new THREE.Matrix4() },
+    uMirrorNear: { value: new THREE.Vector4(1, 1, 0, 0) },   // the splash's image in the mirror (uv), empty when none
     uMirrorSize: { value: new THREE.Vector2(1, 1) },
     uMirrorLevel: { value: 0 },   // the height the mirror image mirrors about (src/main.js); the splash's mirror materials share it
     uUnderColor: { value: null },
@@ -460,12 +461,17 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
       cavitiesOpen = count > 0;
       if (inner.material !== innerUnderMaterial) inner.material = patchMaterial();
     },
-    update({ underTarget, reflectionTarget, reflectionMatrix, stonesUnder = false, resolution, camera }) {
+    /** mirrorRect: where the splash is drawn in the mirror image (its pixels: x, y, width, height; 0 wide when nowhere). */
+    update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect = null, stonesUnder = false, resolution, camera }) {
       uniforms.uStonesUnder.value = stonesUnder ? 1 : 0;
       uniforms.uReflection.value = reflectionTarget.texture;
       uniforms.uReflectionMatrix.value.copy(reflectionMatrix);
       const width = reflectionTarget.width, height = reflectionTarget.height;
       uniforms.uMirrorSize.value.set(width, height);
+      // In a pool the whole mirror image holds near things, its walls and deck (src/pool.js).
+      if (pool) uniforms.uMirrorNear.value.set(0, 0, 1, 1);
+      else if (mirrorRect && mirrorRect.z > 0) uniforms.uMirrorNear.value.set(mirrorRect.x / width, mirrorRect.y / height, (mirrorRect.x + mirrorRect.z) / width, (mirrorRect.y + mirrorRect.w) / height);
+      else uniforms.uMirrorNear.value.set(1, 1, 0, 0);
       uniforms.uUnderColor.value = underTarget.texture;
       uniforms.uUnderDepth.value = underTarget.depthTexture;
       uniforms.uResolution.value.copy(resolution);

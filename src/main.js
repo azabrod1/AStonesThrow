@@ -1370,8 +1370,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // from the mirror camera into the target's alpha (MIRROR_COMMON in
   // src/shaders/fluid.js); the dome and the clear leave alpha at 1, which
   // says "as far as the sky". The water shader looks near objects up by that
-  // distance wherever the image holds one (nearReflection in
-  // src/shaders/scene.js). With nothing alive the cached mirror
+  // distance inside the rectangle the splash's image covers and any bird's
+  // (nearRect, handed to the surface each frame). With nothing alive the cached mirror
   // stays untouched: no pass at all. The mirror image has underScale of the
   // canvas's resolution; the rectangle is in its own pixels. Each draw ends
   // by making its mip levels, which spread the image where the ripples are
@@ -1392,6 +1392,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const mirrorShift = new THREE.Vector3();
   const splashRect = new THREE.Vector4();     // this frame's splash image in the reflection target (x, y, width, height; 0 wide: none)
   const mirroredRect = new THREE.Vector4();   // the last frame's
+  const birdsRect = new THREE.Vector4();      // every bird the mirror sees, still or not (updateReflection)
+  const nearRect = new THREE.Vector4();       // splashRect and birdsRect: where the water looks the image up by its nearness
+  const nearBox = new THREE.Box3();
   const mirrorRegion = new THREE.Vector4();
   const mirrorFrustum = new THREE.Frustum();   // what the mirror's camera sees (placeMirrorCamera): a bird outside it is not drawn again
   const mirrorViewProjection = new THREE.Matrix4();
@@ -1496,11 +1499,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // its mesh's farthest point (src/rock.js `reach`; a toy slide's corners are 3.5 of its nominal radii out, a box of
     // 1.5 cut its image short and left pieces of its last ones in the cached mirror), never less than 1.5 radii.
     for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(2 * (Math.max(1.5, rock.reach) * rock.radius + RIDE_MIRROR_MARGIN))));
-    if (mirrorBox.isEmpty() || mirrorBox.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
-    mirrorBox.min.y = Math.max(mirrorBox.min.y, mirrorLevel.value);
+    rectOfImage(mirrorBox, splashRect);
+  }
+
+  /** Where `box` (world) falls in the reflection target, above the mirror's level, into `into` (0 wide when nowhere). */
+  function rectOfImage(box, into) {
+    into.set(0, 0, 0, 0);
+    if (box.isEmpty() || box.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
+    box.min.y = Math.max(box.min.y, mirrorLevel.value);
     let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
     for (let corner = 0; corner < 8; corner++) {
-      mirrorCorner.set(corner & 1 ? mirrorBox.max.x : mirrorBox.min.x, corner & 2 ? mirrorBox.max.y : mirrorBox.min.y, corner & 4 ? mirrorBox.max.z : mirrorBox.min.z);
+      mirrorCorner.set(corner & 1 ? box.max.x : box.min.x, corner & 2 ? box.max.y : box.min.y, corner & 4 ? box.max.z : box.min.z);
       mirrorCorner.applyMatrix4(mirrorCamera.matrixWorldInverse);
       if (mirrorCorner.z > -mirrorCamera.near) { left = -1; right = 1; bottom = -1; top = 1; break; }   // reaches behind the camera: all of it
       mirrorCorner.applyMatrix4(mirrorCamera.projectionMatrix);
@@ -1513,10 +1522,29 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const x1 = THREE.MathUtils.clamp(Math.ceil((right * 0.5 + 0.5) * width) + 2, 0, width);
     const y0 = THREE.MathUtils.clamp(Math.floor((bottom * 0.5 + 0.5) * height) - 2, 0, height);
     const y1 = THREE.MathUtils.clamp(Math.ceil((top * 0.5 + 0.5) * height) + 2, 0, height);
-    if (x1 > x0 && y1 > y0) splashRect.set(x0, y0, x1 - x0, y1 - y0);
+    if (x1 > x0 && y1 > y0) into.set(x0, y0, x1 - x0, y1 - y0);
   }
 
+  /**
+   * The mirror image drawn again where it is stale (redrawMirror), and where the water looks it up by its nearness
+   * (nearRect): the splash's rectangle and every bird the mirror sees, standing still or not, so a heron's image is
+   * as sharp whether it moves or not. The cached scenery around it there (the koi's garden) writes no nearness, so
+   * the rectangle shows nowhere but on the bird.
+   */
   function updateReflection() {
+    redrawMirror();
+    nearBox.makeEmpty();
+    if (!skip.mirror) birdView.mirrorBounds(nearBox, mirrorFrustum);
+    rectOfImage(nearBox, birdsRect);
+    if (birdsRect.z === 0) nearRect.copy(splashRect);
+    else if (splashRect.z === 0) nearRect.copy(birdsRect);
+    else {
+      const x0 = Math.min(splashRect.x, birdsRect.x), y0 = Math.min(splashRect.y, birdsRect.y);
+      nearRect.set(x0, y0, Math.max(splashRect.x + splashRect.z, birdsRect.x + birdsRect.z) - x0, Math.max(splashRect.y + splashRect.w, birdsRect.y + birdsRect.w) - y0);
+    }
+  }
+
+  function redrawMirror() {
     const objects = skip.fluid || skip.mirror ? nothingMirrored : splash.mirrorObjects();
     // A floater whose image is not where it now is (moving, or come to rest since it was last drawn), or one riding water
     // that moves under it (src/rock.js rideTheWater: the wind's waves, the solver's ripples, the rings, the rain's).
@@ -3044,7 +3072,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const quiet = !grab.rock && !finger.inWater && !cannon.active && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0), quiet);
     surface.chooseLean(renderer);
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: nearRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = !skip.surface;
@@ -3349,6 +3377,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
+    nearRect.set(0, 0, 0, 0);
   }
 
   /** Commit all place-dependent state once, after its sky has arrived. */
