@@ -632,7 +632,7 @@ behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instan
 
 **Birds** (`src/birds.js`; `src/birdViews.js` has a kind with a model drawn by `src/birdMeshes.js` and
 the rest as pictures by `src/birdSprites.js`). Every place but
-the Pool (whose view looks down into the water) has its own, the ones that
+the Pool (whose view looks down into the water) and Europa (no air) has its own, the ones that
 live where its photograph was taken (Poly Haven's coordinates put most of
 the skies in South Africa):
 
@@ -1253,6 +1253,22 @@ The curated locations include:
   `src/pondFloor.js`).
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
+- **Europa** (`?sky=europa`; `?sky=jupiter` too): Jupiter's ice moon. No one has
+  photographed its surface from the ground, so its sky is computed rather than
+  stitched (`tools/europa-sky.py`, numpy, seeded): a black sky with stars and the
+  Milky Way, the small, far sun (a tenth of a degree across) behind the eye's
+  right, Jupiter 12° across low ahead, gibbous in that sun with its belts and
+  Great Red Spot, and ice to a near horizon (2.2 km off for an eye 1.5 m up):
+  a refrozen basin, double ridges stained reddish-brown and a field of chaos
+  plates, ray-marched and lit by the sun alone and the sunlit ice round it.
+  Through the usual pipeline (`tools/sky-probe.mjs`, `tools/sky-encode.mjs`),
+  its horizon strip reaching 30° up (`stripAbove`) so Jupiter is drawn from
+  the 8k. Airless, its sky has almost no mean, so the dome's cap is a share
+  of its sun instead (`sunCap`, `radianceCap` in `src/sky.js`). The beach is
+  frost cracked into plates (`SHORE_LOOKS.frost`), the water the ocean under
+  the ice, blue-black (`WATER_CLARITIES.europa`); it starts Frozen and at the
+  level view, so Jupiter stands over the ice and in it. No fish and no birds
+  yet.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never
@@ -1301,6 +1317,8 @@ M=--at=38.8893,-77.0464
 node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2026-09-20T10:38:00-04:00 $M
 node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2026-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
 node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2026-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
+# Europa's (computed by tools/europa-sky.py: no time or place to give)
+node tools/sky-probe.mjs assets/sky/europa_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -2073,6 +2091,13 @@ farther out, so it rises into the view rather than filling its corner.
   and `credits.html` from the credits `birds.json` and `models.json`
   record; rerun it after either bird tool (`--check`, in `npm test`, fails
   if either file is not as it would write it).
+- `python3 tools/europa-sky.py [--preview=file.png] [--draft]` computes
+  Europa's sky (its opening comment says how): `assets/sky/europa_2k.hdr`
+  and the 8k file its horizon strip is cut from (`europa_8k.hdr`, never
+  committed); then `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify`
+  on it, as for any sky. About seven minutes (`--draft`: a 2k preview in
+  one); needs numpy. Over its black sky the encoder's relative error reads
+  near 100%: it measures nothing there.
 - `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
   Reflecting Pool's skies, one an hour, from its plan,
   `tools/mall-backdrop.json`: it fetches the photographs (cached in
@@ -2092,7 +2117,7 @@ farther out, so it rises into the view rather than filling its corner.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
-  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for the
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for Europa and the
   Reflecting Pool, its `stripAbove`) to 3° below cut from Poly Haven's 8k file (downloaded beside it when missing,
   never committed; `--no-horizon` skips it, and the insets), and a sky's insets
   (`assets/sky/name_insets.jpg`, from `name_insets.hdr` where it is), which the page fetches after

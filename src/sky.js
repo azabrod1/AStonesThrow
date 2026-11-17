@@ -85,7 +85,10 @@
 // capped at RADIANCE_CAP times the mean sky radiance (scaled down to keep
 // its hue). Only a sun low ahead is in the home view's direct sight, where
 // the cap leaves the photo's white disc and its starburst; the others' only
-// in the mirror image and the cube.
+// in the mirror image and the cube. An airless sky has almost no mean (Europa's:
+// black but for its stars, Jupiter and its ice on the skyline), which would cap
+// Jupiter and the sunlit ice to a grey: such a sky names `sunCap`, and its cap is
+// that share of its sun's irradiance (on the dome's scale) instead.
 //
 // Light by the hour. Poly Haven exposes each panorama to be looked at, as an
 // eye adapted to its light would see it: the sunlit hours of a series share
@@ -440,6 +443,13 @@ const SKIES = {
       night: { file: 'mall_night', label: 'Night', clock: '21:30', lit: 6 },
     },
   },
+  // Europa's own (src/places.js PLACES `europa`), no place of its own: no photograph but a panorama computed from what
+  // is known of the moon (tools/europa-sky.py): a black sky with its stars, the far, small sun behind the eye's right,
+  // Jupiter 12° across low ahead, gibbous in that sun, and ice to a near horizon, its ridges and chaos stained
+  // reddish-brown. Airless, its sky has almost no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter
+  // stands up to 17° high, so its horizon strip reaches 30° (`stripAbove`), the whole of the level view's sky sharp.
+  // tools/europa-sky.py puts its sun SUN_AZIMUTH right of its ahead: change both. Its 8k is that tool's (`builtBy`).
+  europa: { ownPlace: false, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30, hours: { day: { file: 'europa', label: 'Day' } } },
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
@@ -743,6 +753,13 @@ export function stripAbove(file) {
 // across north runs past 360 ([350, 370]), never back round ([350, 10]),
 // since the tool and this layout take its width as their difference.
 const INSET_BLOCK = 16;
+/** The dome's cap for the hour whose file is `file` against its measurements (Brightness), in the file's own units. */
+export function radianceCap(file, measurement) {
+  const sunCap = skyOfFile(file)?.sunCap;
+  return sunCap ? sunCap * luminance(measurement.sunIrradiance) : RADIANCE_CAP * luminance(measurement.skyRadiance);
+}
+/** The tool that computes the panorama of the hour whose file is `file` (its sky's `builtBy`), or undefined for a photograph. */
+export const skyBuiltBy = (file) => skyOfFile(file)?.builtBy;
 /** The insets of the hour whose file is `file`: its sky's `insets`, or none. */
 export const skyInsets = (file) => skyOfFile(file)?.insets ?? [];
 /** The atlas of `insets`: { width, height, places: [{ x, y, width, height }] } in texels. */
@@ -1126,7 +1143,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     const backdrop = skyBackdrop(skyName);
     domeUniforms.uBackdrop.value.set(...(backdrop?.centre ?? [0, 0, 0]), backdrop?.radius ?? 0);
     domeUniforms.uScale.value = scale;
-    domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
+    domeUniforms.uRadianceCap.value = place.sunCap ? radianceCap(file, measurement) * scale : RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();
     previous?.dispose();
     environment.horizonReady = loadHorizon(file, signal);   // the strip follows the panorama; a superseded load's is dropped

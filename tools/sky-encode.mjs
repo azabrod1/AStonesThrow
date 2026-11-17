@@ -8,7 +8,7 @@
 // 17° up to 3° down, or higher for a sky with a `stripAbove`) cut from the 8k panorama, assets/sky/<name>_8k.hdr,
 // which this tool downloads from Poly Haven when it is missing (never kept
 // in the repository: 100 MB each). A sky tools/mall-backdrop.py builds (an
-// hour's `file` in tools/mall-backdrop.json) is no Poly Haven file: its 8k is
+// hour's `file` in tools/mall-backdrop.json), or Europa's (tools/europa-sky.py), is no Poly Haven file: its 8k is
 // that tool's, written locally, so where it is missing the committed strip and
 // insets are kept as they are, not re-encoded, and the rest go on; --verify
 // still checks the committed files (committedFile). The 2k photo gives the dome 5.7 pixels a
@@ -58,7 +58,7 @@
 // .hdr's peak (to half floats' 65504, where the page's half floats stop it).
 // Two kinds of block follow each pixel instead, their bytes a level or two
 // over what each needs, for the JPEG's rounding: one that holds a pixel over
-// the dome's cap (DOME_CAP), where the sun's or the moon's disc would leave
+// the dome's cap (src/sky.js radianceCap), where the sun's or the moon's disc would leave
 // the glow beside it a few levels of the base image, its colour in coarse
 // steps (frames showed green and purple specks on the sun's reflection),
 // and one whose brightest pixel is CONTRAST times its darkest (coded), where
@@ -120,7 +120,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { HORIZON_STRIP, horizonRows, stripAbove } from '../src/sky.js';
+import { HORIZON_STRIP, horizonRows, stripAbove, radianceCap, skyBuiltBy } from '../src/sky.js';
 import { parseHorizonStrip } from '../src/horizonStrip.js';
 import encodeJpeg, { init as initEncoder } from '@jsquash/jpeg/encode.js';
 import decodeJpeg, { init as initDecoder } from '@jsquash/jpeg/decode.js';
@@ -140,7 +140,6 @@ const SKY_BLUR = 6;            // pixels of a 2K panorama: the radius of each bo
 const SKY_EASE = 8;            // degrees over which that softening comes in
 const GROUND_BLUR = 16;        // pixels of a 2K panorama (2048 wide; a 4K's twice as many): the radius of each of its three box passes
 const DARKEST_CODE = 0.5;      // the coded value a block of black is exposed for
-const DOME_CAP = 30;           // src/sky.js's RADIANCE_CAP: times the sky's mean radiance, over which the dome shows only the hue
 const CONTRAST = 4;            // a block whose brightest pixel's coded value is this many times its darkest's follows each pixel
 const MAX_GAIN_MARGIN = 8;     // levels: the most a block that follows each pixel adds to its bytes, for the JPEG's rounding
 
@@ -315,7 +314,7 @@ async function encodeImage(name, panorama, measurement, quality, horizonRow = pa
   // What each pixel needs: log2 of the boost that brings its brightest
   // channel's byte to SDR_TOP. A block takes its brightest pixel's, unless it
   // holds a pixel over the dome's cap: then each pixel keeps its own.
-  const cap = DOME_CAP * luminanceOf(measurement.skyRadiance, 0);
+  const cap = radianceCap(name.replace(/_(\d+k|horizon|insets)$/, ''), measurement);
   const columns = width / BLOCK;
   const blockOf = (index) => Math.floor(index / width / BLOCK) * columns + Math.floor((index % width) / BLOCK);
   const needed = new Float64Array(width * height);
@@ -396,12 +395,14 @@ async function encodeImage(name, panorama, measurement, quality, horizonRow = pa
   return { name, file, report, decoded, width, height };
 }
 
-// The skies tools/mall-backdrop.py builds, its hours' files: their 8k sources are its own, never Poly Haven's.
-const BUILT_SKIES = new Set(Object.values(JSON.parse(await readFile(path.join(root, 'tools/mall-backdrop.json'), 'utf8')).hours).map((hour) => hour.file));
+// The skies tools/mall-backdrop.py builds, its hours' files, and those a sky names a tool for (src/sky.js `builtBy`:
+// Europa's): their 8k sources are their own, never Poly Haven's.
+const MALL_SKIES = new Set(Object.values(JSON.parse(await readFile(path.join(root, 'tools/mall-backdrop.json'), 'utf8')).hours).map((hour) => hour.file));
+const builder = (name) => (MALL_SKIES.has(name) ? 'tools/mall-backdrop.py' : skyBuiltBy(name));
 
 /**
  * The panorama's horizon strip (the header): its 8k source, downloaded if missing, cut to the band and encoded; or
- * null for a built sky (BUILT_SKIES) whose source is not here, its committed strip left as it is.
+ * null for a built sky (builder) whose source is not here, its committed strip left as it is.
  */
 async function encodeHorizon(hdrPath, measurement) {
   const name = path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '');
@@ -409,8 +410,8 @@ async function encodeHorizon(hdrPath, measurement) {
   try {
     await access(sourcePath);
   } catch {
-    if (BUILT_SKIES.has(name)) {
-      console.log(`${name}: no ${path.basename(sourcePath)} (tools/mall-backdrop.py writes it): the committed strip and insets kept, not re-encoded`);
+    if (builder(name)) {
+      console.log(`${name}: no ${path.basename(sourcePath)} (${builder(name)} writes it): the committed strip and insets kept, not re-encoded`);
       return null;
     }
     console.log(`${name}: downloading ${HORIZON_URL(name)}`);

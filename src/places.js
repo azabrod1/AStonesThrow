@@ -18,7 +18,9 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // (src/tropics.js); or the Reflecting Pool (`mall`), a granite-walled basin
 // 618 m long (MALL_POOL), its walls, coping and lawn src/mallPool.js's, its
 // water clipped to the walls, under a backdrop matte-painted from
-// photographs (src/sky.js `mall`, tools/mall-backdrop.py). A place may have its own water (`water`, a key of
+// photographs (src/sky.js `mall`, tools/mall-backdrop.py); or Europa (`europa`), Jupiter's ice moon: the
+// lake's shore in frost under a computed airless sky (src/sky.js `europa`, tools/europa-sky.py), its own
+// ocean under a refrozen skin of ice, starting frozen. A place may have its own water (`water`, a key of
 // WATER_CLARITIES, whatever clarity is chosen, and its card, `waterCard`),
 // its own ground (`shore`, in place of its sky's), its own start
 // (`defaultWater`, `defaultView`), and, at Loch Ness, something far out now
@@ -31,7 +33,7 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // are its sky's (REED_SKIES) unless it says: the fresh lakes have them,
 // the sea cove, the bare rock shore, the salt flat, the frozen alpine
 // reservoir, Loch Ness and the lagoon none, and the Pool, the Koi pond and
-// the Reflecting Pool have their own grounds.
+// the Reflecting Pool have their own grounds; Europa none.
 export const PLACES = {
   ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
@@ -48,6 +50,10 @@ export const PLACES = {
   // coping and ground (`mall`, src/mallPool.js) under its own sky, a backdrop of the Mall (src/sky.js `mall`), and its
   // own still water over its blue-coated bed (since 2026).
   mall: { sky: 'mall', pool: false, reeds: false, shoreKind: 'mall', mall: true, water: 'mall', waterCard: { image: 'assets/sky/thumbs/mall.jpg', name: 'Pool water', note: 'Still over its blue bed: a mirror for the monuments' } },
+  // Europa: the lake's shore and bed under Europa's sky, its beach frost (`shore`, src/pondFloor.js SHORE_LOOKS), its
+  // water the ocean under the ice (WATER_CLARITIES.europa), frozen at first (`defaultWater`) and seen from water level,
+  // Jupiter low ahead over the ice and in it (`defaultView`). No fish yet, and no birds over an airless moon.
+  europa: { sky: 'europa', pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
 export const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);

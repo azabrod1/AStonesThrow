@@ -1,0 +1,30 @@
+{
+  "source": "europa_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 25.05,
+    "azimuth": 199.95,
+    "direction": [
+      0.85158,
+      0.42339,
+      0.30913
+    ],
+    "pixels": 1
+  },
+  "sunIrradiance": [
+    5.996,
+    5.8557,
+    5.6804
+  ],
+  "skyRadiance": [
+    0.0045706,
+    0.0041052,
+    0.0036554
+  ],
+  "horizonRadiance": {
+    "median": 0.00044678,
+    "p90": 0.66606
+  },
+  "maxLuminance": 688730
+}
