@@ -348,8 +348,8 @@ import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './f
 import { createFishView } from './fishMeshes.js';
 import { BirdPopulation } from './birds.js';
 import { createBirdViews } from './birdViews.js';
-import { EuropaLife } from './europaLife.js';
-import { createEuropaLifeView } from './europaLifeMeshes.js';
+import { EuropaScenery } from './europaScenery.js';
+import { createEuropaSceneryView } from './europaSceneryMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
 import { compileOnly } from './precompile.js';
@@ -1206,17 +1206,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const birdView = createBirdViews({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
   sceneMain.add(birdView.above, birdView.mirror);
   sceneUnder.add(birdView.below);   // what of a standing bird is in the water (the heron's legs)
-  // And Europa's life above its ice in their place (src/europaLife.js, drawn by src/europaLifeMeshes.js): no bird has
-  // air to fly in there, so with the birds on it has its plume drifters and ice hoppers instead, on the birds' seed.
-  const europaLife = new EuropaLife({ seed: Number(birdSeed) });
-  const europaLifeView = createEuropaLifeView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
-  sceneMain.add(europaLifeView.above, europaLifeView.mirror);
-  /** Every bird posed at `time` (src/birds.js showAt), and drawn so; and Europa's life (src/europaLife.js). */
+  // And Europa's scenery in their place (src/europaScenery.js, drawn by src/europaSceneryMeshes.js): no bird has air to
+  // fly in there, so with the birds on it has its plume and a probe crossing its sky instead, on the birds' seed.
+  const europaScenery = new EuropaScenery({ seed: Number(birdSeed) });
+  const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
+  sceneMain.add(europaSceneryView.above, europaSceneryView.mirror);
+  /** Every bird posed at `time` (src/birds.js showAt), and drawn so; and Europa's scenery (src/europaScenery.js). */
   function poseBirds(time) {
     birds.showAt(time);
     birdView.update(camera);
-    europaLife.showAt(time);
-    europaLifeView.update();
+    europaScenery.showAt(time);
+    europaSceneryView.update();
   }
   /** The place's birds, as they start at `time` (the caller draws the mirror image whole again, with them or without). */
   function applyBirds(time) {
@@ -1226,10 +1226,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     birds.setConditions({ solarElevation: lighting.solarElevation, sunDirection });
     birds.showAt(time);
     birdView.show(birds, camera);
-    europaLife.setPlace(birdsOn ? placeName : 'none');
-    europaLife.reset(time);
-    europaLife.showAt(time);
-    europaLifeView.show(europaLife);
+    europaScenery.setPlace(birdsOn ? placeName : 'none');
+    europaScenery.reset(time);
+    europaScenery.showAt(time);
+    europaSceneryView.show(europaScenery);
   }
   applyBirds(0);
   sceneMain.environment = environment.envTexture;
@@ -1493,7 +1493,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // Only what reaches into the region is drawn (src/mirrorRegion.js): the lagoon's palms, a shore's boulders, the birds.
       const frustum = frustumOfRegion(mirrorCamera, region, reflectionTarget.width, reflectionTarget.height, regionFrustum);
       tropics.keepToRegion(frustum);
-      keepMeshesToRegion(frustum, [boulders.mirror, birdView.mirror, europaLifeView.mirror], regionHidden);
+      keepMeshesToRegion(frustum, [boulders.mirror, birdView.mirror, europaSceneryView.mirror], regionHidden);
     }
     // three.js makes a target's whole mip chain after each render() into it: drawn whole, only after the last of them
     // here; a region's, none, its levels then remade over the region alone (refreshMipsInRegion).
@@ -1577,7 +1577,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A bird not as the mirror last drew it, where the mirror's camera (placed by now) sees it: its bounds, into
     // birdBox. Asked once a frame drawn, which takes each bird as drawn so (src/birdViews.js mirrorChanges): one
     // flying, every frame; a heron standing still, not.
-    const birdsMoving = !skip.mirror && birdView.mirrorChanges(birdBox.makeEmpty(), mirrorFrustum) + europaLifeView.mirrorChanges(birdBox, mirrorFrustum) > 0;
+    const birdsMoving = !skip.mirror && birdView.mirrorChanges(birdBox.makeEmpty(), mirrorFrustum) + europaSceneryView.mirrorChanges(birdBox, mirrorFrustum) > 0;
     if (viewChanged) {
       drawMirror(null, objects);
       viewChanged = false;
@@ -3164,7 +3164,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaLifeView.above, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3395,7 +3395,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishes.resetClock();
     visitor.reset(0);   // nothing out on the loch; the first sighting from the start of its stream
     birds.reset(0);   // a heron back where it stands...
-    europaLife.reset(0);
+    europaScenery.reset(0);
     poseBirds(0);     // ...and drawn there: the next frame may come before the next step
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
@@ -3582,7 +3582,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The fish's programs, whatever lives here (none in the Pool), and a medusa's (Europa's ice lanterns, src/fishMeshes.js) where they live.
     const fishWarmUp = everything || fishOn ? fishView.warmUp({ medusas: everything || fishView.medusas }) : null;
     const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' five programs (a model's above, mirror and below the water; a picture's above and mirror), whatever flies here
-    const lifeWarmUp = everything || (birdsOn && placeName === 'europa') ? europaLifeView.warmUp() : null;   // Europa's life above the ice: five programs (a drifter's and a hopper's above and mirror, the plume's)
+    const lifeWarmUp = everything || (birdsOn && placeName === 'europa') ? europaSceneryView.warmUp() : null;   // Europa's scenery: three programs (the probe's above and mirror, the plume's)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
     buildPreview(everything ? 'pizza' : thingName);
@@ -3792,8 +3792,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get birdsOn() { return birdsOn; },
     /** The birds (src/birds.js), as they are posed now: each one's kind, habit, mode and pose; and the draw calls they take. */
     get birds() { return { drawCalls: birdView.drawCalls, birds: birds.report() }; },
-    /** Europa's life above the ice (src/europaLife.js), as posed now, and the draw calls it takes. */
-    get europaLife() { return { drawCalls: europaLifeView.drawCalls, ...europaLife.report() }; },
+    /** Europa's scenery (src/europaScenery.js), as posed now, and the draw calls it takes. */
+    get europaScenery() { return { drawCalls: europaSceneryView.drawCalls, ...europaScenery.report() }; },
     /** Puts the place's heron up now, as a splash at (x, z) beside it would (tools/bird-probe.mjs). */
     startleBirds(x, z) { birds.startle(stepsTime, x, z); },
     /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */

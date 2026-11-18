@@ -753,23 +753,22 @@ mirror image), the heron 3 (and its legs under the water);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the
 standing birds' flush and return, the frame rate and the cost.
 
-**Europa's life above the ice** (`src/europaLife.js`, drawn by
-`src/europaLifeMeshes.js`), in the birds' place there (the Effects setting's
-birds turn it on and off): with no air nothing can glide or beat a wing, so
-everything up is on a parabola in Europa's 1.315 m/s² (a 1 m fall takes
-1.23 s; a 10 m/s leap rises 38 m and is up 15 s), bent only by thrust of its
-own. Speculative, on the research notes' least implausible "flyers":
-plume drifters, translucent bells glowing blue-green (about 480 nm, deep-sea
-bioluminescence's colour) that live in a vent on the far ice and are thrown
-out when it erupts, then brake their fall by puffing out the vapour they
-took in, a puff and a flash every second and a half, sinking slowly in a
-sawtooth; and an ice hopper, springtail-like, crossing the far ice in long,
-low leaps of four to six seconds, a slow somersault in some. The plume is
-licence (vapour is all but invisible, and Europa's plumes are contested): a
-faint column of streaks while it erupts. Procedural models, no photographs,
-nothing to credit. Closed form in time and seeded (the birds' seed), out of
-throw reach, in the mirror; `tools/europa-life-probe.mjs` checks it, its
-gravity and its timing.
+**Europa's sky** (`src/europaScenery.js`, drawn by
+`src/europaSceneryMeshes.js`), in the birds' place there (the Effects setting's
+birds turn it on and off): nothing flies where there is no air, so a vent on
+the far ice erupts now and then, a faint column of sunlit ice grains
+(licence: vapour is all but invisible, and Europa's plumes are contested),
+and a probe crosses the sky. It is modelled after Europa Clipper as NASA and
+JPL give it: solar arrays 30.5 m tip to tip, five panels a wing, a 3 m
+high-gain dish, the radar's 17.6 m antennas along the wings and an 8.5 m
+magnetometer boom. Its arrays face the sun; about that line it turns to show
+its wings to the eye, as NASA's artist's view of it over Europa does. Lit by the
+sun and from below by the sunlit ice, it crosses in front of Jupiter about
+half a minute into a visit. It takes four minutes to cross, from behind the
+eye's right to behind its left, 300 m off and so about 6° across. That is
+licence too: Clipper's closest passes are some 25 km up at 4.5 km/s. Closed
+form in time and seeded (the birds' seed), out of throw reach, in the mirror;
+`tools/europa-scenery-probe.mjs` checks it.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -1298,7 +1297,7 @@ The curated locations include:
   `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
   bands, blue where the frost is thin and in the bare leads between (where
   alone Jupiter is mirrored), its shade lit blue, as the far ice's is. No birds (no air): its
-  life above the ice instead (below). With no
+  plume and probe instead (below). With no
   air it has no weather and no wind (its sky's `airless`, `placeAirless` in
   `src/places.js`): there the weather is held clear and the wind calm,
   whatever the Weather and Wind settings, `?weather` or `?windStrength` say,
@@ -1861,7 +1860,7 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
   `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`, `tools/bird-probe.mjs`,
-  `tools/europa-life-probe.mjs`,
+  `tools/europa-scenery-probe.mjs`,
   `tools/garden-probe.mjs`, `tools/tropics-probe.mjs`,
   `tools/gravity-probe.mjs` and `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
