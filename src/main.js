@@ -279,6 +279,10 @@
 // the weather (WEATHERS: the sky's cloud and haze, src/sky.js, the rain,
 // src/rain.js, the snow, src/snow.js, a storm's lightning,
 // src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather);
+// at a place with no air (Europa: src/places.js placeAirless) the weather is
+// held clear and the wind calm, whatever ?weather, ?windStrength or the
+// choices remembered say, and those choices are kept for the next place with
+// air (weatherChoice, windChoice; holdAir);
 // ?fish=off (or none, the harness's --fish=none) leaves every water without
 // fish (the Effects setting; setFish), and ?birds=off (or none) every place
 // without birds (the same setting; setBirds: src/birds.js, drawn by
@@ -306,7 +310,7 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { PLACES, placeShore, waterForPlace } from './places.js';
+import { PLACES, placeShore, waterForPlace, placeAirless } from './places.js';
 import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour, skyBackdrop } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
@@ -622,6 +626,13 @@ const SKY_ASSETS_STORAGE_KEY = 'stone-pond-sky-assets';
 // is nearly as bright as the light in it: its droplets scatter, they hardly
 // absorb. It comes in still air (`wind`: calm, as a gale comes with a storm),
 // damp (the deck dries slowly, a little wet).
+// Where there is no air (an airless place: Europa, src/places.js
+// placeAirless) there is no weather: the Weather setting's choice is kept
+// (weatherChoice, still remembered on this device) but clear is in force, and
+// the wind is AIRLESS_WIND, the gentlest the water has (its ripples glassy:
+// src/ambientWaves.js WIND_STRENGTHS), whatever the Wind setting says; going
+// on to a place with air brings both choices back (holdAir).
+const AIRLESS_WIND = 'calm';
 const FOG_LAYER = 60;   // metres: a radiation fog's depth (50 to 100 m in the morning over a lake)
 const SNOW_AIR = { freezing: true, drying: 0.05 };
 const MILD_AIR = { freezing: false, drying: 1 };
@@ -776,15 +787,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   migrateStoredSettings();
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 
-  // The weather: the page's ?weather, else the last choice here, else clear;
-  // applied once the pond is built (applyWeather, after the warm-up).
+  // The weather chosen: the page's ?weather, else the last choice here, else
+  // clear; in force once the pond is built (applyWeather, after the warm-up),
+  // but at an airless place, where clear is (weatherName, below).
   const storedWeather = storedChoice(WEATHER_STORAGE_KEY);
   const requestedWeather = pageParameters.get('weather');
-  let weatherName = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
-  // Start network work before awaiting the sky. Settle failures immediately:
-  // even a failed sky must not leave an unhandled rain rejection behind.
-  const rainDownload = WEATHERS[weatherName].rain
-    ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
+  let weatherChoice = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
 
   // The place (PLACES): ?sky (or the old ?water=pool), else the place last
   // chosen here; its sky's hour ?time, else the one nearest the time of day
@@ -798,6 +806,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   };
   const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? (pageParameters.get('water') === 'pool' ? 'pool' : null) ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
   let placeName = firstPlace;
+  // The weather in force: the choice, but clear where there is no air (AIRLESS_WIND, above).
+  let weatherName = placeAirless(firstPlace) ? 'clear' : weatherChoice;
+  // Start network work before awaiting the sky. Settle failures immediately:
+  // even a failed sky must not leave an unhandled rain rejection behind.
+  const rainDownload = WEATHERS[weatherName].rain
+    ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
   // The sky (src/sky.js Starting): its maps now, its photo on its way while
   // the pond is built and its programs warmed up (warmUp), awaited after them
   // (awaitSky); a failure is reported then, or before the warm-up if it came
@@ -943,8 +957,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   applyWind(windName);
   // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale, or a fog's calm, overrides only while it lasts.
   let windChoice = windName;
-  // A storm brings its gale, unless the page's ?windStrength says otherwise.
-  if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
+  // A storm brings its gale, unless the page's ?windStrength says otherwise; an airless place its calm, whatever it says.
+  if (placeAirless(placeName)) applyWind(AIRLESS_WIND);
+  else if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
   // The water (WATER_CHOICES): the page's ?water, else the last choice here,
   // else Lake. Entering Swiss Alps defaults to Frozen, but a saved water
   // choice in that same place survives reload. Page water/ice parameters
@@ -1658,12 +1673,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /**
    * The weather by name (WEATHERS): the sky's cloud and haze at once, the
    * deck's wet, the snow and its air at once, and the rain, which falls
-   * once its ring's table has come.
+   * once its ring's table has come. The sky is given the choice
+   * (weatherChoice): an airless one keeps it and holds clear (src/sky.js
+   * setWeather), so the next sky with air loads under it at once.
    */
   function applyWeather(name) {
     weatherName = name;
     const weather = WEATHERS[name];
-    environment.setWeather(weather);
+    environment.setWeather(WEATHERS[weatherChoice]);
     if (!weather.lightning) environment.setFlash(1);
     wetDeck.value = weather.wet;
     wetIce.value = weather.air?.freezing ? 0 : weather.wet;
@@ -3359,9 +3376,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splashRect.set(0, 0, 0, 0);
   }
 
+  /**
+   * Into an airless place or out of one (AIRLESS_WIND): there clear and calm, the choices kept; back under air the
+   * Weather setting's choice again, and its wind (a storm's gale, a fog's calm) or the Wind setting's.
+   */
+  function holdAir() {
+    const airless = placeAirless(placeName);
+    const weather = airless ? 'clear' : weatherChoice;
+    const wind = airless ? AIRLESS_WIND : WEATHERS[weather].wind ?? windChoice;
+    if (wind !== windName) blowWind(wind);
+    if (weather !== weatherName) applyWeather(weather).catch((error) => console.warn('The rain could not be loaded.', error));
+  }
+
   /** Commit all place-dependent state once, after its sky has arrived. */
   function applyPlace(place) {
     const next = PLACES[place];
+    const airChanges = placeAirless(place) !== placeAirless(placeName);
     const standing = glide ? glide.name : viewName();
     const poolChanges = pooled !== Boolean(next.pool);
     const viewsChange = poolChanges || mallHere !== Boolean(next.mall);   // the pool's and the Reflecting Pool's views are their own
@@ -3392,6 +3422,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     visitor.reset(stepsTime);
     applyFish();
     applyBirds(stepsTime);
+    if (airChanges) holdAir();   // only an airless place's coming or going changes the weather and the wind in force
     // Into the pool or the Reflecting Pool or out of it, the eye on the same view of the new kind (their views are their
     // own); to another shore on the lake's water (the Koi pond's, the lagoon's), kept where it may stand there, its turn
     // and zoom kept.
@@ -3605,6 +3636,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The page resolves only after the user explicitly chooses to continue.
     // No input or frame loop runs while the choice is pending.
     await onRainError(message);
+    weatherChoice = 'clear';
     await applyWeather('clear');
     try { window.localStorage.setItem(WEATHER_STORAGE_KEY, 'clear'); } catch { /* storage may be disabled */ }
   }
@@ -3675,14 +3707,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get skipping() { return skipping; },
     /** Trace each stone (the header; ?trace=1, the T key) from its next step on; off takes the traces away. */
     setTrace(on) { setTracing(on); },
-    /** The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy, gale), remembered on this device. */
+    /**
+     * The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy, gale), remembered on this device; at an
+     * airless place only remembered, the calm kept (AIRLESS_WIND), and blown at the next place with air.
+     */
     setWind(name) {
       if (!Object.hasOwn(WIND_STRENGTHS, name)) return;
       windChoice = name;
-      blowWind(name);
+      if (!placeAirless(placeName)) blowWind(name);
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
+    /** The wind in force (calm at an airless place); `windChoice` the Wind setting's own. */
     get wind() { return windName; },
+    get windChoice() { return windChoice; },
+    /** Whether the place shown has no air (src/places.js placeAirless: Europa): its weather held clear, its wind calm. */
+    get airless() { return placeAirless(placeName); },
     /** The sounds on or off (src/sound.js), remembered on this device. */
     setSound(on) {
       sound.setEnabled(on);
@@ -3849,16 +3888,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * light-snow, heavy-snow, blizzard, fog), remembered on this device. The sky
      * clouds over and the snow falls at once; the rain falls once its ring's
      * table has come (the first time, about 0.6 MB). Resolves when it falls.
+     * At an airless place (Europa) the choice is only kept and remembered,
+     * clear held in force (holdAir); it comes at the next place with air.
      */
     setWeather(name) {
       if (!Object.hasOwn(WEATHERS, name)) return Promise.resolve(weatherName);
       try { window.localStorage.setItem(WEATHER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      weatherChoice = name;
+      if (placeAirless(placeName)) {
+        environment.setWeather(WEATHERS[name]);   // kept by the airless sky, held clear (src/sky.js)
+        return Promise.resolve(weatherName);
+      }
       // A storm's or a blizzard's gale, or a fog's calm, while it lasts, then the Wind setting's own choice again (WEATHERS).
       if (WEATHERS[name].wind) blowWind(WEATHERS[name].wind);
       else if (WEATHERS[weatherName].wind) blowWind(windChoice);
       return applyWeather(name).then(() => weatherName);
     },
+    /** The weather in force (clear at an airless place); `weatherChoice` the Weather setting's own. */
     get weather() { return weatherName; },
+    get weatherChoice() { return weatherChoice; },
     /** Whether rain is falling (its ring's table has come). */
     get raining() { return rain.on; },
     /** Whether snow is falling. */

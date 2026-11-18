@@ -174,6 +174,14 @@
 // against the cloud, and faded where the photo is darker than its sky, where
 // its land stands in front of the bolt.
 //
+// An airless sky (`airless`: Europa's) has no weather: no cloud, haze or fog
+// can stand in it, and its dome's land-versus-sky test, made for a sky lit
+// brighter than its land, would grey Jupiter and the sunlit ice under cloud
+// while its black sky stayed black. Under such a sky the weather set is kept
+// but not applied (setWeather, applyWeather: clear in force), so a sky with
+// air loaded next takes it up again; src/main.js holds its own weather clear
+// there too (src/places.js placeAirless), and its wind calm.
+//
 // Asset requests time out after 30 seconds without progress; the current sky
 // stays until all replacement assets arrive. Initial calibration loads in parallel.
 //
@@ -446,16 +454,18 @@ const SKIES = {
   // Europa's own (src/places.js PLACES `europa`), no place of its own: no photograph but a panorama computed from what
   // is known of the moon (tools/europa-sky.py): a black sky with its stars, the far, small sun behind the eye's right,
   // Jupiter 12° across low ahead, gibbous in that sun, and ice to a near horizon, its ridges and chaos stained
-  // reddish-brown. Airless, its sky has almost no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter
+  // reddish-brown. Airless (`airless`: no weather, Weather above), its sky has almost no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter
   // stands up to 17° high, so its horizon strip reaches 30° (`stripAbove`), the whole of the level view's sky sharp.
   // tools/europa-sky.py puts its sun SUN_AZIMUTH right of its ahead: change both. Its 8k is that tool's (`builtBy`).
   // Its black sky lights nothing: the light that fills a shadow, lights a splash's sides and greys a frosted mirror
   // is its sunlit ice's, as on the Moon its regolith's (`iceShine`, added to the ambient as a share of its sun: the
   // ice's albedo, 0.65, times its sun's sine, 0.42, over the quarter of a thing's view the ice fills, about).
-  europa: { ownPlace: false, iceShine: 0.07, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30, hours: { day: { file: 'europa', label: 'Day' } } },
+  europa: { ownPlace: false, airless: true, iceShine: 0.07, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30, hours: { day: { file: 'europa', label: 'Day' } } },
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
+/** Whether a sky has no air (Europa's): no weather may stand in it (Weather, above). */
+export const skyAirless = (name) => Boolean(SKIES[name]?.airless);
 /**
  * A sky's near land (Near land) into `vectors` (nearLandUniforms), turned into the scene as the dome turns the hour's
  * file (`north`, its rotation and mirror: DOME_FRAGMENT's lookup): each stretch's centre (atan(z, x), radians), half
@@ -1046,7 +1056,9 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
   }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), air: new THREE.Vector3(), airDensity: 0, lux: 1, level: 1 };
-  let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
+  const CLEAR_WEATHER = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
+  let weather = CLEAR_WEATHER;
+  let airless = false;   // the sky shown has no air (`airless`): the weather set is kept, clear is in force
 
   /**
    * Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) at one of
@@ -1148,6 +1160,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     const backdrop = skyBackdrop(skyName);
     domeUniforms.uBackdrop.value.set(...(backdrop?.centre ?? [0, 0, 0]), backdrop?.radius ?? 0);
     domeUniforms.uScale.value = scale;
+    airless = Boolean(place.airless);
     domeUniforms.uRadianceCap.value = place.sunCap ? radianceCap(file, measurement) * scale : RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();
     previous?.dispose();
@@ -1188,17 +1201,18 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
    * none), its haze's brightness against the cloud's (`hazeBrightness`) and
    * its depth (`hazeLayer`, metres). Applied at once, the cube and the
    * prefiltered map captured again (Weather, above); the weather already
-   * over it changes nothing.
+   * over it changes nothing, and under an airless sky it is kept for the
+   * next sky with air, clear in force.
    */
   function setWeather({ cover = 0, light = 1, visibility = Infinity, hazeBrightness = HAZE_BRIGHTNESS, hazeLayer = HAZE_LAYER } = {}) {
     if (cover === weather.cover && light === weather.light && visibility === weather.visibility && hazeBrightness === weather.hazeBrightness && hazeLayer === weather.hazeLayer) return;
     weather = { cover, light, visibility, hazeBrightness, hazeLayer };
-    applyWeather();
+    if (!airless) applyWeather();   // under an airless sky nothing changes: clear stays in force (Weather, above)
   }
 
   /** The lighting of the hour (clear) under the weather; then the cube and the prefiltered map. */
   function applyWeather() {
-    const { cover, light, visibility, hazeBrightness, hazeLayer } = weather;
+    const { cover, light, visibility, hazeBrightness, hazeLayer } = airless ? CLEAR_WEATHER : weather;
     const sunSine = Math.max(lighting.sunDirection.y, 0);
     const hazeDensity = Number.isFinite(visibility) ? 3 / visibility : 0;
     // What reaches the ground of the sun's direct light: what the cloud leaves, through the haze along the sun's path

@@ -91,7 +91,10 @@
 //     View note follows) and the Water page shows the pool's own water in
 //     place of the lake's; its Weather row opens the Weather page, whose seven
 //     choices (one list of cards) fit, whose Heavy rain brings the rain
-//     and whose Heavy snow the snow, at once; its Reset all, pressed once,
+//     and whose Heavy snow the snow, at once, and at Europa (no air: on the
+//     desktop) the weather clear and the wind calm, both pages greyed out and
+//     saying why, the choices kept and remembered and back in force at
+//     Lakeside; its Reset all, pressed once,
 //     asks again and, pressed again, sets every setting as a first visit
 //     has it, the rows following, and forgets them; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
@@ -992,6 +995,52 @@ for (const framing of FRAMINGS) {
   check(snowy.weather === 'heavy-snow' && snowy.snowing && !snowy.raining && snowy.row === 'Heavy snow' && snowy.checked.join() === 'heavy-snow',
     `Heavy snow brings the snow at once and stops the rain (${snowy.weather}, snowing: ${snowy.snowing}, raining: ${snowy.raining}), the row reads "${snowy.row}", one choice checked (${snowy.checked.join(', ')})`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-weather.png`) });
+  // Europa has no air (src/places.js placeAirless): its weather held clear and its wind calm whatever was chosen, the
+  // pages' choices greyed out and saying why, a press on one changing nothing; the choices kept and remembered, and
+  // back at a place with air in force again. Once, on the desktop: its sky is another download.
+  if (framing.name === 'desktop') {
+    const airState = () => page.evaluate(() => {
+      const pond = window.__pond, row = (name) => document.querySelector(`.menu-tier[data-open="${name}"] .menu-tier-value`).textContent;
+      const greyed = (id) => [...document.querySelectorAll(`#${id} [role="radio"]`)].every((choice) => choice.getAttribute('aria-disabled') === 'true');
+      return { sky: pond.sky, airless: pond.airless, weather: pond.weather, choice: pond.weatherChoice, stored: localStorage.getItem('stone-pond-weather'), wind: pond.wind, windChoice: pond.windChoice, storedWind: localStorage.getItem('stone-pond-wind'),
+        raining: pond.raining, snowing: pond.snowing, rows: `${row('weather')}, ${row('wind')}`, weatherGreyed: greyed('weather'), windGreyed: greyed('wind'), note: document.getElementById('weather-note').textContent, windNote: document.getElementById('wind-note').textContent };
+    });
+    await page.evaluate(() => window.__pond.setWind('breeze'));
+    await press('.menu-page[data-page="weather"] .menu-back');
+    await page.waitForTimeout(400);
+    await press('#settings .menu-tier[data-open="sky"]');
+    await page.waitForTimeout(400);
+    await press('#sky [data-value="europa"]');
+    await page.waitForFunction(() => window.__pond.sky === 'europa' && !document.querySelector('.menu-tier[data-open="sky"] .menu-tier-value').textContent.endsWith('\u2026'), null, { timeout: patience(60000) }).catch(() => {});
+    await press('.menu-page[data-page="sky"] .menu-back');
+    await page.waitForTimeout(400);
+    await press('#settings .menu-tier[data-open="weather"]');
+    await page.waitForTimeout(400);
+    await page.click('#weather [data-value="storm"]', { force: true });   // greyed out (aria-disabled, which Playwright would wait on): nothing happens
+    const airless = await airState();
+    await page.screenshot({ path: path.join(outputFolder, `${framing.name}-weather-airless.png`) });
+    check(airless.sky === 'europa' && airless.airless && airless.weather === 'clear' && !airless.raining && !airless.snowing && airless.wind === 'calm'
+      && airless.choice === 'heavy-snow' && airless.stored === 'heavy-snow' && airless.windChoice === 'breeze' && airless.storedWind === 'breeze'
+      && airless.weatherGreyed && airless.windGreyed && airless.rows === 'None, None' && airless.note.includes('no air') && airless.note.includes('Heavy snow') && airless.windNote.includes('Breeze'),
+      `at Europa the weather is ${airless.weather} and the wind ${airless.wind} (chosen and remembered: ${airless.choice}/${airless.stored}, ${airless.windChoice}/${airless.storedWind}), a greyed choice pressed changes nothing, the rows read "${airless.rows}", the note "${airless.note}"`);
+    await page.evaluate(() => window.__pond.setWeather('heavy-rain'));
+    const kept = await airState();
+    check(kept.weather === 'clear' && !kept.raining && kept.choice === 'heavy-rain' && kept.stored === 'heavy-rain', `at Europa a weather asked for is kept and remembered (${kept.choice}, ${kept.stored}), clear held (${kept.weather}, raining: ${kept.raining})`);
+    await press('.menu-page[data-page="weather"] .menu-back');
+    await page.waitForTimeout(400);
+    await press('#settings .menu-tier[data-open="sky"]');
+    await page.waitForTimeout(400);
+    await press('#sky [data-value="lakeside"]');
+    await page.waitForFunction(() => window.__pond.sky === 'lakeside' && window.__pond.raining, null, { timeout: patience(60000) }).catch(() => {});
+    await press('.menu-page[data-page="sky"] .menu-back');
+    await page.waitForTimeout(400);
+    await press('#settings .menu-tier[data-open="weather"]');
+    await page.waitForTimeout(400);
+    const back = await airState();
+    check(back.sky === 'lakeside' && !back.airless && back.weather === 'heavy-rain' && back.raining && back.wind === 'breeze' && back.rows === 'Heavy rain, Breeze' && !back.weatherGreyed && !back.windGreyed,
+      `back at Lakeside the choices are in force again (${back.weather}, raining: ${back.raining}; ${back.wind}), the rows read "${back.rows}", the choices ${back.weatherGreyed || back.windGreyed ? 'still greyed' : 'open'}`);
+    await page.evaluate(() => window.__pond.setWind('calm'));
+  }
   await press('#weather [data-value="clear"]');
   await press('.menu-page[data-page="weather"] .menu-back');
   await page.waitForTimeout(400);

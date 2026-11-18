@@ -1,6 +1,6 @@
 // Shared place data: sky, shore, water and its settings card live together.
 // New places extend this registry rather than adding special cases to the page.
-import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
+import { SKY_NAMES, REED_SKIES, skyShore, skyAirless } from './sky.js';
 
 // The places (the Location setting): a sky (src/sky.js SKIES) and what lies
 // about the water, the lake's bed and shore, or the Pool's tiled pool on its
@@ -35,6 +35,10 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // the sea cove, the bare rock shore, the salt flat, the frozen alpine
 // reservoir, Loch Ness and the lagoon none, and the Pool, the Koi pond and
 // the Reflecting Pool have their own grounds; Europa none.
+// A place under an airless sky (src/sky.js `airless`: Europa's) has no
+// weather and no wind (placeAirless): src/main.js holds its weather clear and
+// its wind calm there, whatever is chosen or asked by the page, and keeps
+// the choices for the next place with air.
 export const PLACES = {
   ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
@@ -55,9 +59,12 @@ export const PLACES = {
   // water the ocean under the ice (WATER_CLARITIES.europa), frozen at first (`defaultWater`) and seen from water level,
   // Jupiter low ahead over the ice and in it (`defaultView`), its ice an old crust (`iceCrust`): frost nearly all over,
   // as bright as Europa's (albedo about 0.65), stained reddish-brown along bands as its lineae are, Jupiter mirrored only
-  // in the bare leads between. No fish but glowing ice lanterns (src/fish.js), no birds over an airless moon.
+  // in the bare leads between. No fish but glowing ice lanterns (src/fish.js); no birds, weather or wind over an airless
+  // moon (its sky's `airless`, placeAirless).
   europa: { sky: 'europa', pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', iceCrust: [0.72, 0.52, 0.40, 1], waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
+/** Whether a place has no air (its sky's `airless`: Europa): clear and calm there, whatever the Weather and Wind settings say. */
+export const placeAirless = (place) => skyAirless(PLACES[place]?.sky);
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
 export const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);
 

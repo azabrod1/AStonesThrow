@@ -29,7 +29,7 @@
 // time of day last chosen: the harness's browser keeps no storage),
 // --weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog
 // the weather (WEATHERS in src/main.js; the rain waits for its ring's table
-// before the first frame),
+// before the first frame; at an airless place, --sky=europa, held clear),
 // --water=clear|lake|pond|murky|frozen the water (WATER_CHOICES in src/
 // main.js; the old --water=pool is --sky=pool), and --ice=thin|thick freezes
 // it, that thick (ICE_THICKNESS in src/ice.js; frozen thin otherwise).
@@ -189,7 +189,7 @@ try {
   console.error(problems.join('\n'));
   await browser.close(); server.close(); process.exit(1);
 }
-if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: patience(60000) });
+if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing || window.__pond.airless, null, { timeout: patience(60000) });
 // The sky's horizon strip (src/sky.js, Horizon) comes after the panorama: every frame shows it.
 await page.evaluate(() => window.__pond.horizonReady);
 // The lagoon's scanned bark and sand (src/tropics.js loadSurfaces), which come after its scenery is built.

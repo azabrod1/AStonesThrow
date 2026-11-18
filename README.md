@@ -1270,8 +1270,13 @@ The curated locations include:
   Frozen and at the level view, so Jupiter stands over the ice and in it. Its
   ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
   `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
-  bands, Jupiter mirrored only in the bare leads between. No fish and no birds
-  yet.
+  bands, Jupiter mirrored only in the bare leads between. No birds. With no
+  air it has no weather and no wind (its sky's `airless`, `placeAirless` in
+  `src/places.js`): there the weather is held clear and the wind calm,
+  whatever the Weather and Wind settings, `?weather` or `?windStrength` say,
+  and the Weather and Wind pages grey their choices out and say why. The
+  choices are kept, still remembered on the device, and come back at the next
+  place with air; no rain, snow or gale program is built for it.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never
@@ -2004,7 +2009,7 @@ farther out, so it rises into the view rather than filling its corner.
   the first touch), `--trace` (each stone's path drawn as a line),
   `--wind-strength=calm|breeze|windy|gale` (the page's
   own default is calm), `--weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard` (waits for
-  the rain's table before the first frame). With
+  the rain's table before the first frame; held clear at `--sky=europa`). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
   the flight is stepped in slow frames too, so the first frame is at most
@@ -2065,7 +2070,9 @@ farther out, so it rises into the view rather than filling its corner.
   `?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard`
   (`--weather=` for the harness) the weather, `WEATHERS` in `src/main.js`,
   over the one last chosen on the device (a storm or a blizzard brings a
-  gale while it lasts, unless `?windStrength` says otherwise).
+  gale while it lasts, unless `?windStrength` says otherwise); at Europa,
+  which has no air, the weather is held clear and the wind calm whatever
+  either says, the choice kept for the next place.
 - `?view=shore|behind|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
