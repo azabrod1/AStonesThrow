@@ -14,8 +14,12 @@ public domain (SOURCES; credited in CREDITS.md and credits.html):
   agree. The image is laid on the ground turned so that its sun (from the east, IMAGE_SUN degrees to the north) is
   the scene's sun; its brightness is the ground's light and shade below LIGHT_SCALE pixels, and above it the relief
   is lit by the scene's sun, shadows and all (`lighting`); tinted by its albedo from frost white to the
-  reddish-brown of the matrix and lineae (Galileo's clear filter has no colour). Under its
-  9 m pixels a fractal frost (`MICRO`) carries the shading down to a few centimetres. Where the mosaic has no data
+  reddish-brown of the matrix and lineae (Galileo's clear filter has no colour). Under its 9 m pixels stand crags
+  (`CRAGS`: ridged noise up to some 40 m, in fields between smoother plains, none in the hollow), which the 9 m pixels
+  would hide, sunlit and shaded by their own slope; a face too steep to hold frost (`STEEP`) is bare ice, blue (`BARE`:
+  NASA's colour images show the purest ice white and blue), and the shade is lit by the sunlit ice about it (`FILL`),
+  blue off ice onto ice, the only light in an airless shadow. Under the crags a fractal frost (`MICRO`) carries the
+  shading down to a few centimetres. Where the mosaic has no data
   (between and around its frames) each column of it is reflected into its data, and past its edges it repeats as a
   mirror does, so the ground runs on to the skyline without seams. The ground is drawn a column of the panorama at a
   time, marched outward from the eye (`render_ground`): each step's ground covers the rows between the highest so far
@@ -69,10 +73,12 @@ WIDTH, HEIGHT, DOWN = 8192, 4096, 4    # the 8k panorama, and the 2k's 4 x 4 mea
 
 # The public-domain images it is made from: where each comes from and the SHA-256 of the file it keeps.
 SOURCES = {
-    # Cassini ISS, NASA/JPL/Space Science Institute: PIA07782, Cassini's best maps of Jupiter (cylindrical), 3601 x 1801.
-    'jupiter': {'file': 'PIA07782.jpg',
-                'url': 'https://upload.wikimedia.org/wikipedia/commons/1/1e/Jupiter_Cylindrical_Map_-_Dec_2000_PIA07782.jpg',
-                'sha256': '6b835ddd8036ea9efd25def04f75aa60b69b096025a37eeae5e9b6978e0a2281'},
+    # Cassini ISS, NASA/JPL/Space Science Institute: PIA07782, Cassini's best maps of Jupiter (cylindrical), 3601 x 1801,
+    # as Wikimedia renders it at its standard 3840 px (3840 x 1921): Wikimedia turns automated clients away from originals
+    # (HTTP 429) and asks them for its standard sizes. Its disc is some 280 pixels of the 8k: the map is ample either way.
+    'jupiter': {'file': 'PIA07782_3840px.jpg',
+                'url': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Jupiter_Cylindrical_Map_-_Dec_2000_PIA07782.jpg/3840px-Jupiter_Cylindrical_Map_-_Dec_2000_PIA07782.jpg',
+                'sha256': 'ca4e6c0b5b86ea5d2b849820654139922230d8a0877c20c5273628198cae2898'},
     # Galileo SSI, NASA/JPL; mosaic USGS Astrogeology (Bland et al. 2021, doi:10.5066/P9VKKK7C): observation 12ESCHAOS_01,
     # Conamara Chaos at 9 m a pixel, float32 equirectangular GeoTIFF, one member of the zip (its local header's offset and
     # compressed size).
@@ -111,8 +117,20 @@ TAN_INCIDENCE = 0.8        # its sun's slant, as photoclinometry takes it: sets 
 RELIEF_REACH = 5000.0      # m: relief longer than this is filtered out (the brightness's slow drifts are albedo)
 CONTRAST = 0.8             # the image's light and shade, softened for the scene's higher sun (the image's sun is lower)
 LIGHT_SCALE = 6            # pixels: finer, the image's light and shade; coarser, the relief's under the scene's sun
-ICE = np.array([0.74, 0.72, 0.68])      # albedo (linear RGB): Europa's frost, beige-white (natural colour, not Galileo's stretch)
-STAIN = np.array([0.50, 0.37, 0.27])    # the reddish-brown of the matrix and lineae
+ICE = np.array([0.78, 0.80, 0.82])      # albedo (linear RGB): Europa's frost, a cool white (NASA: white and blue are the purest ice)
+BARE = np.array([0.34, 0.60, 0.84])     # bare ice where a face is too steep to hold frost: blue, as a glacier's is
+STAIN = np.array([0.52, 0.38, 0.27])    # the reddish-brown of the matrix and lineae
+STEEP = (0.35, 1.0)        # slopes (rise over run) from which frost gives way to bare ice, and by which it is bare
+FILL = {'share': 0.24, 'colour': np.array([0.62, 0.80, 1.0])}   # the light the sunlit ice round about throws into the shade
+# (no air to light it: only the ice's own, a share of level ice's light; coloured by the ice it comes off, and again by
+# the ice it falls on, so the shade is blue, as on a glacier)
+# Crags over the chaos's relief, under its 9 m pixels: ridged noise, (wavelength, amplitude) m, each octave's crests the
+# sharper where the coarser's are (a ridged multifractal), in fields (CRAG_FIELD m across) between smoother plains, from
+# the hollow's rim outward. Its 9 m pixels hide whatever stands under them; this is what ice under a sun and in vacuum
+# makes of its relief: Hobley et al. 2018 (Nature Geoscience) predict blades of ice some 15 m tall (penitentes) at
+# Europa's low latitudes, Conamara's among them.
+CRAGS = [(260.0, 38.0), (100.0, 17.0), (40.0, 7.5), (16.0, 3.0), (6.5, 1.4)]
+CRAG_FIELD = 900.0
 BASIN = {'flat': 160.0, 'rise': 520.0}  # the refrozen hollow about the eye: level to `flat` m, the chaos's own relief by `rise`
 MICRO = [(7.0, 0.55), (3.1, 0.26), (1.4, 0.12), (0.62, 0.05), (0.27, 0.022)]   # frost under the image's pixels: (wavelength, amplitude) m
 MICRO_REACH = 3000.0       # m: past this the frost is under a pixel
@@ -226,7 +244,7 @@ def load_ground():
     near = blur(filled, LIGHT_SCALE)
     brightness = (filled / near) ** CONTRAST * np.sqrt(near / np.median(filled)) * lighting(blur(heights, LIGHT_SCALE // 2))
     albedo = blur(filled, 12) / np.median(local)  # a hundred metres' mean: the albedo, its shading averaged out
-    stain = smoothstep(1.04, 0.7, albedo)
+    stain = 0.75 * smoothstep(1.0, 0.68, albedo)   # the darker matrix and lineae: frost all but hides some of it
     return heights, brightness.astype(np.float32), stain.astype(np.float32)
 
 
@@ -282,7 +300,7 @@ class Ground:
         self.across = PIXEL * math.cos(math.radians(LATITUDE))
         level = self.sample(self.heights, *self._pixel(np.zeros(1), np.zeros(1)), cubic=True)[0]
         self.heights -= level
-        self.highest = float(self.heights.max()) + 2.0
+        self.highest = float(self.heights.max()) + 2.0 + sum(amplitude for _, amplitude in CRAGS)
 
     def _pixel(self, x, z):
         column = EYE_AT[0] + (x * self.east[0] + z * self.east[1]) / self.across
@@ -321,11 +339,29 @@ class Ground:
         """The ground's height: the chaos's relief, level in the hollow about the eye, and the frost on it near."""
         column, row = self._pixel(x, z)
         height = self.sample(self.heights, column, row, cubic=True)
-        height = height * smoothstep(BASIN['flat'], BASIN['rise'], np.hypot(x, z))
+        height = height * smoothstep(BASIN['flat'], BASIN['rise'], np.hypot(x, z)) + self.crags(x, z, distance)
         near = distance < MICRO_REACH
         if near.any():
             height[near] += self.frost(x[near], z[near], distance[near])
         return height
+
+    def chaos(self, x, z):
+        """The chaos's relief alone (m), level in the hollow (smooth to its slope: a cubic B-spline)."""
+        return self.sample(self.heights, *self._pixel(x, z), cubic=True) * smoothstep(BASIN['flat'], BASIN['rise'], np.hypot(x, z))
+
+    def crags(self, x, z, distance):
+        """The crags (CRAGS, m), each octave fading out as it falls under a pixel; none in the hollow."""
+        reach = np.hypot(x, z)
+        where = smoothstep(BASIN['flat'], BASIN['rise'] * 1.4, reach) * (0.25 + 0.75 * smoothstep(-0.3, 0.3, noise(x, z, CRAG_FIELD, 40)))
+        pixel = distance * 2 * math.pi / (WIDTH * SUB)
+        total = np.zeros_like(x)
+        sharp = np.ones_like(x)
+        for octave, (wavelength, amplitude) in enumerate(CRAGS):
+            fade = np.clip(wavelength / np.maximum(pixel, 1e-6) / 3.0 - 1.0, 0.0, 1.0)
+            crest = (1.0 - np.abs(noise(x, z, wavelength, 20 + octave))) ** 4
+            total += amplitude * fade * sharp * (crest - 0.2)
+            sharp = 0.35 + 0.9 * crest
+        return total * where
 
     def frost(self, x, z, distance, gradient=False):
         """The frost's fractal relief (m), each octave fading out as it falls under a pixel; with `gradient`, its slope
@@ -350,10 +386,23 @@ class Ground:
         column, row = self._pixel(x, z)
         brightness = self.sample(self.brightness, column, row)
         stain = self.sample(self.stain, column, row)
-        albedo = ICE[None, :] * (1 - stain[:, None]) + STAIN[None, :] * stain[:, None]
+        # The crags' light and slope: the ground's normal with and without them, by differences a pixel or more across.
+        step = np.maximum(distance * 2 * math.pi / (WIDTH * SUB), 1.5)
+        def slope(height):
+            return ((height(x + step, z) - height(x - step, z)) / (2 * step), (height(x, z + step) - height(x, z - step)) / (2 * step))
+        base_x, base_z = slope(self.chaos)
+        crag_x, crag_z = slope(lambda at_x, at_z: self.crags(at_x, at_z, distance))
+        def lambert(along_x, along_z):
+            return (-along_x * SUN_DIRECTION[0] + SUN_DIRECTION[1] - along_z * SUN_DIRECTION[2]) / np.sqrt(1 + along_x ** 2 + along_z ** 2)
+        whole_x, whole_z = base_x + crag_x, base_z + crag_z
+        lit = lambert(whole_x, whole_z)
+        crag_light = np.clip(np.maximum(lit, 0) / np.maximum(lambert(base_x, base_z), 0.05), 0.0, 2.5)
+        bare = smoothstep(STEEP[0], STEEP[1], np.hypot(whole_x, whole_z))
+        frosted = ICE[None, :] * (1 - stain[:, None]) + STAIN[None, :] * stain[:, None]
+        albedo = frosted * (1 - bare[:, None]) + BARE[None, :] * bare[:, None]
         # Fresh frost about the eye (the hollow refrozen): its shading lightened toward level ice.
         hollow = smoothstep(BASIN['flat'] * 1.2, BASIN['flat'] * 0.5, np.hypot(x, z))
-        brightness = brightness + (1.0 - brightness) * 0.6 * hollow
+        brightness = (brightness + (1.0 - brightness) * 0.6 * hollow) * crag_light
         horizontal = math.hypot(SUN_DIRECTION[0], SUN_DIRECTION[2])
         frost = np.ones_like(x)
         near = distance < MICRO_REACH
@@ -361,7 +410,9 @@ class Ground:
             slope = self.frost(x[near], z[near], distance[near], gradient=True) / horizontal
             frost[near] = np.clip(1.0 + slope * horizontal / SUN_DIRECTION[1], 0.15, 2.2)
         light = brightness * frost
-        return albedo * light[:, None] * SUN_LIGHT[None, :] * SUN_DIRECTION[1] / math.pi
+        facing_up = 1 / np.sqrt(1 + whole_x ** 2 + whole_z ** 2)
+        fill = FILL['share'] * (0.55 + 0.45 * facing_up)
+        return albedo * (light[:, None] + fill[:, None] * FILL['colour'][None, :] * albedo) * SUN_LIGHT[None, :] * SUN_DIRECTION[1] / math.pi
 
 
 def noise(x, z, wavelength, salt):

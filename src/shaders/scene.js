@@ -105,6 +105,9 @@ vec3 snowShade(vec2 point) {
 // iceCrust: Europa's): the snow ice's threshold lowered (ICE_CRUST_REACH),
 // so frost covers nearly all of it, rough and white, the bare ice left in
 // dark leads, and its frost a little warm, stained along long bands (ICE_CRUST_LINEA).
+// Its ice is blue where the frost on it is thin (ICE_CRUST_THIN) and in its
+// leads (ICE_CRUST_LEAD), and its shade is lit blue by the sunlit ice about it
+// (ICE_CRUST_FILL): under a black sky nothing else lights it.
 //
 // Wet (the flood round a hole and the splash's drops, src/ice.js; the rain's
 // film), the ice is darker, its white ice greyed, and smooth: a mirror. Once
@@ -158,6 +161,10 @@ ${ICE_UNIFORMS}
 #define ICE_CRUST_REACH 0.44           // how far a crust (uIceCrust.w 1) lowers the snow ice's threshold: frost nearly all over
 #define ICE_CRUST_LINEA 0.3            // m: the width of its stained bands, about (iceSurface)...
 #define ICE_CRUST_CAST 0.12            // ...and the share of their stain all its frost takes
+#define ICE_CRUST_THIN vec3(0.68, 0.85, 1.0)    // the tint of ice under thin frost: blue, as a glacier's (NASA: blue and white are the purest ice)
+#define ICE_CRUST_FILL 0.22            // the light the sunlit ice round about throws into its shade, against level ice's...
+#define ICE_CRUST_FILL_TINT vec3(0.62, 0.80, 1.0)   // ...blue, off ice onto ice (no air: nothing else lights a shadow)
+#define ICE_CRUST_LEAD vec3(0.05, 0.22, 0.42)  // what a bare lead's ice sends back of the sun's light: deep blue over the black sea
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
 
@@ -1958,6 +1965,10 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float linea = 1.0 - abs(2.0 * valueNoise(lineaAt + 0.8 * valueNoise(vWorld.xz * 0.4 + 5.0)) - 1.0);
   float stain = ICE_CRUST_CAST + (1.0 - ICE_CRUST_CAST) * smoothstep(0.86, 0.96, linea) * (0.5 + 0.5 * valueNoise(vWorld.xz * 7.0));
   scattered *= mix(vec3(1.0), uIceCrust.rgb, uIceCrust.w * stain);
+  vec3 levelSun = uSunIrradiance * max(uSunDir.y, 0.0);
+  scattered = mix(scattered, scattered * ICE_CRUST_THIN, uIceCrust.w * (1.0 - smoothstep(0.45, 0.95, look.white)))
+    + uIceCrust.w * ICE_CRUST_FILL * ICE_WHITE_ALBEDO * levelSun * ICE_CRUST_FILL_TINT * ICE_CRUST_THIN;
+  under += uIceCrust.w * ICE_CRUST_LEAD * levelSun * (0.3 + 0.7 * shade.x) * (1.0 - look.white);
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
   float sineInside = clamp(length(v.xz) / ICE_INDEX, 0.0, 0.99);

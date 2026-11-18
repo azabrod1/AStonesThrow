@@ -1281,7 +1281,12 @@ The curated locations include:
   km off for an eye 1.5 m up): Conamara Chaos as Galileo imaged it at 9 m a
   pixel (USGS's controlled mosaic 12ESCHAOS_01), a double ridge and rafted
   plates, its relief worked out from the image's own shading, marched a
-  column at a time with a fractal frost under the image's pixels.
+  column at a time with crags under the image's pixels (ridged noise, up to
+  some 40 m: blades of ice such as Hobley et al. 2018 predict there) and a
+  fractal frost under them. Its frost is a cool white, the matrix and lineae
+  reddish-brown, faces too steep to hold frost bare blue ice (NASA's colour
+  images show the purest ice white and blue), and its shade lit blue by the
+  sunlit ice about it, the only light there is in an airless shadow.
   Through the usual pipeline (`tools/sky-probe.mjs`, `tools/sky-encode.mjs`),
   its horizon strip reaching 30° up (`stripAbove`) so Jupiter is drawn from
   the 8k. Airless, its sky has almost no mean, so the dome's cap is a share
@@ -1291,7 +1296,8 @@ The curated locations include:
   Frozen and at the level view, so Jupiter stands over the ice and in it. Its
   ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
   `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
-  bands, Jupiter mirrored only in the bare leads between. No birds (no air): its
+  bands, blue where the frost is thin and in the bare leads between (where
+  alone Jupiter is mirrored), its shade lit blue, as the far ice's is. No birds (no air): its
   life above the ice instead (below). With no
   air it has no weather and no wind (its sky's `airless`, `placeAirless` in
   `src/places.js`): there the weather is held clear and the wind calm,
