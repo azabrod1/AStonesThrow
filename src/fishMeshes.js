@@ -64,6 +64,19 @@
 // multiplied by it, its sunlit share only (the sky's light still reaches
 // under it). The pool's basin is drawn where the surface shows it, so its
 // shadows are too; the lake's bed on the straight line, and its shadows.
+//
+// A medusa (src/fish.js `form`: Europa's ice lantern) is drawn in its own
+// way, three draw calls a kind, and two programs of its own (MEDUSA_*,
+// MEDUSA_BED_*), compiled under the veil as the fish's are (warmUp,
+// `medusas`): its bell, oral arms and tentacles one mesh (medusaGeometry),
+// pulsing and swaying in the vertex shader, its light added to what lies
+// behind it (it is light, not paint: blue-green, as the deep sea's animals
+// make it), then its depth alone where it is solid, so the water above
+// dims it by the water before it, not the bay's whole depth; from under the
+// water drawn after the surface instead (holdLights, drawLights); and, where
+// a fish's shadow would be, the light it casts on the bed, added. The water shows it as it
+// shows the fish, through the surface and through a hole in the ice
+// (src/shaders/scene.js: the ice is the surface's, over this pass).
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 import { FISH_SPECIES } from './fish.js';
@@ -657,6 +670,275 @@ void main() {
 }
 `;
 
+// A medusa (src/fish.js `form`: Europa's ice lantern), a unit long, its bell's apex at the nose (+x), as a fish's is:
+// its bell a dome `shape.width` across and MEDUSA.height deep, its margin a little turned in (MEDUSA.margin, the polar
+// angle there from the apex), scalloped into lappets; four frilled oral arms hanging from under its middle; and
+// MEDUSA.tentacles thin tentacles from its margin, trailing behind it and sagging (`droop`) as they go. The bell is
+// one sheet, seen from either side; the arms are curtains, each ruffled; each tentacle a ribbon turned to the eye
+// (MEDUSA_VERTEX), a thread of light in a soft halo. medusaInfo: its part (MEDUSA_PART), where along it (the bell: 0
+// at the apex to 1 at the margin; an arm or tentacle: 0 at its root to 1 at its tip), round it (rad) and across it
+// (a tentacle's ribbon -1 to 1; an arm's curtain -1 to 1 across its middle). Its positions are its rest (unpulsed,
+// unswayed, a tentacle's middle line), as tools/fish-probe.mjs measures its lowest points against the bed;
+// MEDUSA_VERTEX moves it, by the same closed forms (medusaPoint's twins there) with its pulse and sway.
+const MEDUSA = {
+  height: 0.16, margin: 1.85, lappets: 16, lappet: 0.035,
+  rings: 14, around: 48,
+  tentacles: 12, tentacleSteps: 48, tentacleLength: [0.62, 0.8], gather: 0.35, droop: 0.2, halo: 0.022,
+  arms: 4, armSteps: 28, armAcross: 4, armRoot: 0.42, armLength: 0.42, armWidth: 0.05, ruffle: 0.012,
+  squeeze: 0.2, stretch: 0.15,   // the bell at its pulse's height: the margin drawn in this share, the dome this much deeper
+};
+const MEDUSA_PART = { bell: 0, arm: 1, tentacle: 2 };
+const tentacleLength = (index) => MEDUSA.tentacleLength[0] + (MEDUSA.tentacleLength[1] - MEDUSA.tentacleLength[0]) * ((index * 0.618034) % 1);
+/** A point of a medusa at rest (the header above): its part, along, round and across, as medusaInfo has them. */
+export function medusaPoint(shape, part, along, round, across) {
+  const radius = 0.5 * shape.width;
+  const bell = (share, angle) => {
+    const polar = share * MEDUSA.margin;
+    const lappet = 1 + MEDUSA.lappet * smoothstep(0.82, 1, share) * Math.cos(MEDUSA.lappets * angle);
+    const out = radius * Math.sin(polar) * lappet;
+    return [0.5 - MEDUSA.height * (1 - Math.cos(polar)) / (1 - Math.cos(MEDUSA.margin)), out * Math.cos(angle), out * Math.sin(angle)];
+  };
+  if (part === MEDUSA_PART.bell) return bell(along, round);
+  if (part === MEDUSA_PART.tentacle) {
+    const index = Math.floor(round / (2 * Math.PI) * MEDUSA.tentacles);
+    const [rootX, rootY, rootZ] = bell(1, round);
+    const reach = along * tentacleLength(index);
+    const gathered = 1 - MEDUSA.gather * along;
+    return [rootX - reach, rootY * gathered - MEDUSA.droop * reach ** 1.5, rootZ * gathered];
+  }
+  // An arm: a curtain in the plane of the axis and its way round, ruffled across that plane.
+  const reach = along * MEDUSA.armLength;
+  const width = MEDUSA.armWidth * (1 - 0.6 * along) * (0.6 + 0.4 * Math.sin(Math.PI * along));
+  const index = Math.floor(round / (2 * Math.PI) * MEDUSA.arms);
+  const ruffle = MEDUSA.ruffle * across * Math.sin(along * 38 + across * 5 + index);
+  const out = across * width;
+  return [MEDUSA.armRoot - reach, out * Math.cos(round) - ruffle * Math.sin(round) - MEDUSA.droop * reach ** 1.5, out * Math.sin(round) + ruffle * Math.cos(round)];
+}
+/** A medusa's mesh at rest (the header above): position and medusaInfo. */
+export function medusaGeometry(shape) {
+  const positions = [], infos = [], indices = [];
+  const add = (part, along, round, across) => { positions.push(...medusaPoint(shape, part, along, round, across)); infos.push(part, along, round, across); };
+  const grid = (columns, rows, at) => {
+    const first = positions.length / 3;
+    for (let row = 0; row <= rows; row++) for (let column = 0; column <= columns; column++) at(column / columns, row / rows);
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        const here = first + row * (columns + 1) + column;
+        indices.push(here, here + 1, here + columns + 1, here + 1, here + columns + 2, here + columns + 1);
+      }
+    }
+  };
+  // Its tentacles, then its arms, then its bell (the light of each is added: MEDUSA_FRAGMENT).
+  for (let index = 0; index < MEDUSA.tentacles; index++) {
+    const round = (index + 0.5) / MEDUSA.tentacles * 2 * Math.PI;
+    grid(1, MEDUSA.tentacleSteps, (across, along) => add(MEDUSA_PART.tentacle, along, round, across * 2 - 1));
+  }
+  for (let index = 0; index < MEDUSA.arms; index++) {
+    const round = (index + 0.25) / MEDUSA.arms * 2 * Math.PI;
+    grid(MEDUSA.armAcross * 2, MEDUSA.armSteps, (across, along) => add(MEDUSA_PART.arm, along, round, across * 2 - 1));
+  }
+  grid(MEDUSA.around, MEDUSA.rings, (round, along) => add(MEDUSA_PART.bell, along, round * 2 * Math.PI, 0));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('medusaInfo', new THREE.Float32BufferAttribute(infos, 4));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+// A medusa swum (the header above): its bell pulses (a quick squeeze, MEDUSA.squeeze, and a slow relaxing, once a
+// beat of its phase), its tentacles and arms sway and trail into a turn, each tentacle drawn as a ribbon across the eye.
+export const MEDUSA_VERTEX = /* glsl */`
+attribute vec4 medusaInfo;  // its part (MEDUSA_PART), along, round and across it
+attribute vec4 swim;        // its pulse's phase, its light (src/fish.js glow), its bend into a turn, its seed
+uniform float uBellRadius;  // its bell's radius, a share of its length
+varying vec4 vInfo;
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying vec3 vSwim;         // its light, its squeeze now (0 to 1), its seed
+${SEEN_THROUGH_WATER}
+#define TWO_PI 6.2831853
+float squeezeAt(float phase) {
+  float beat = fract(phase / TWO_PI);
+  return smoothstep(0.0, 0.18, beat) * (1.0 - smoothstep(0.18, 0.8, beat));
+}
+vec3 bellAt(float share, float angle, float squeeze) {
+  float polar = share * ${MEDUSA.margin.toFixed(3)};
+  float lappet = 1.0 + ${MEDUSA.lappet.toFixed(3)} * smoothstep(0.82, 1.0, share) * cos(${MEDUSA.lappets.toFixed(1)} * angle);
+  float outward = uBellRadius * sin(polar) * lappet * (1.0 - ${MEDUSA.squeeze.toFixed(3)} * squeeze * smoothstep(0.3, 1.0, share));
+  float down = ${MEDUSA.height.toFixed(3)} * (1.0 + ${MEDUSA.stretch.toFixed(3)} * squeeze) * (1.0 - cos(polar)) / ${(1 - Math.cos(MEDUSA.margin)).toFixed(4)};
+  return vec3(0.5 - down, outward * cos(angle), outward * sin(angle));
+}
+// A tentacle's middle line, swaying: a wave running down it, slow, and its root riding the margin's pulse.
+vec3 tentacleAt(float along, float angle, float squeeze, float phase) {
+  float index = floor(angle / TWO_PI * ${MEDUSA.tentacles.toFixed(1)});
+  float tentacleLength = ${MEDUSA.tentacleLength[0].toFixed(3)} + ${(MEDUSA.tentacleLength[1] - MEDUSA.tentacleLength[0]).toFixed(3)} * fract(index * 0.618034);
+  vec3 root = bellAt(1.0, angle, squeeze);
+  float reach = along * tentacleLength;
+  float gathered = 1.0 - ${MEDUSA.gather.toFixed(3)} * along;
+  vec3 point = vec3(root.x - reach, root.y * gathered - ${MEDUSA.droop.toFixed(3)} * pow(reach, 1.5), root.z * gathered);
+  float wave = 0.035 * along * sin(0.5 * phase - 6.0 * along + index * 1.7);
+  point.yz += wave * vec2(-sin(angle), cos(angle)) + vec2(0.02 * along * sin(0.5 * phase - 4.0 * along + index), 0.0);
+  return point;
+}
+vec3 bent(vec3 point, float bend) {
+  // Into a turn, what trails behind the bell swings out the more the farther behind (as a fish's tail, FISH_VERTEX).
+  float behind = max(0.4 - point.x, 0.0);
+  point.z += bend * 0.3 * behind * behind;
+  return point;
+}
+void main() {
+  float part = medusaInfo.x, along = medusaInfo.y, angle = medusaInfo.z, across = medusaInfo.w;
+  float squeeze = squeezeAt(swim.x);
+  mat4 placed = modelMatrix * instanceMatrix;
+  vec3 local;
+  vec3 normal = vec3(1.0, 0.0, 0.0);
+  if (part < 0.5) {
+    local = bellAt(along, angle, squeeze);
+    vec3 alongWay = bellAt(min(along + 0.02, 1.0), angle, squeeze) - bellAt(max(along - 0.02, 0.0), angle, squeeze);
+    vec3 roundWay = vec3(0.0, -sin(angle), cos(angle));
+    normal = along < 0.01 ? vec3(1.0, 0.0, 0.0) : normalize(cross(roundWay, alongWay));
+    local = bent(local, swim.z);
+  } else if (part < 1.5) {
+    // An arm: as medusaPoint has it, swaying a little behind the bell.
+    float index = floor(angle / TWO_PI * ${MEDUSA.arms.toFixed(1)});
+    float reach = along * ${MEDUSA.armLength.toFixed(3)};
+    float width = ${MEDUSA.armWidth.toFixed(3)} * (1.0 - 0.6 * along) * (0.6 + 0.4 * sin(3.14159265 * along));
+    float ruffle = ${MEDUSA.ruffle.toFixed(3)} * across * sin(along * 38.0 + across * 5.0 + index + 0.4 * sin(0.5 * swim.x));
+    float outward = across * width * (1.0 - 0.25 * squeeze);
+    local = vec3(${MEDUSA.armRoot.toFixed(3)} + 0.02 * squeeze - reach, outward * cos(angle) - ruffle * sin(angle) - ${MEDUSA.droop.toFixed(3)} * pow(reach, 1.5), outward * sin(angle) + ruffle * cos(angle));
+    local.yz += 0.02 * along * vec2(sin(0.5 * swim.x - 3.0 * along + index), cos(0.4 * swim.x - 2.0 * along + index));
+    normal = vec3(0.0, -sin(angle), cos(angle));
+    local = bent(local, swim.z);
+  } else {
+    local = bent(tentacleAt(along, angle, squeeze, swim.x), swim.z);
+  }
+  vec3 world = (placed * vec4(local, 1.0)).xyz;
+  if (part > 1.5) {
+    // A ribbon across the eye: its halo's half-width either side of the middle line, narrowing to its tip.
+    vec3 ahead = (placed * vec4(bent(tentacleAt(min(along + 0.02, 1.0), angle, squeeze, swim.x), swim.z), 1.0)).xyz;
+    vec3 behind = (placed * vec4(bent(tentacleAt(max(along - 0.02, 0.0), angle, squeeze, swim.x), swim.z), 1.0)).xyz;
+    vec3 tangent = normalize(ahead - behind + 1e-6);
+    vec3 sideways = cross(tangent, normalize(cameraPosition - world));
+    float size = length(instanceMatrix[0].xyz);
+    world += normalize(sideways + 1e-6) * across * ${MEDUSA.halo.toFixed(3)} * (1.0 - 0.5 * along) * size;
+  }
+  vInfo = medusaInfo;
+  vWorld = world;
+  vNormal = normalize(mat3(placed) * normal);
+  vSwim = vec3(swim.y, squeeze, swim.w);
+  gl_Position = projectionMatrix * viewMatrix * vec4(seenThroughWater(world, 0.0), 1.0);
+}
+`;
+
+// A medusa's light (the header above): what it makes, added to what lies behind it (its body clear jelly, lit by next
+// to nothing down there). Blue-green, about 480 nm (MEDUSA_LIGHT; src/fish.js), the colour sea water carries farthest:
+// a ring of photophores round its margin and the canals running out to it from the apex, beads of light running down
+// its tentacles, faint specks on its arms, the bell's jelly glowing faintly where it is seen edge on (the light it
+// holds). Its light (src/fish.js glow) brightens with each squeeze; a flash (above calm) runs round its margin as a
+// wheel of light. From an eye under the water, the water between dims it (no colour added: it is light).
+const MEDUSA_LIGHT = [0.04, 0.62, 1.0];   // linear RGB of 480 nm light, as bright as its blue
+const MEDUSA_HUE = `mix(vec3(${MEDUSA_LIGHT.map((value) => value.toFixed(3)).join(', ')}), vec3(0.06, 0.85, 0.78), 0.35 * hueSeed)`;   // each its own, 475 to 490 nm
+// The light a medusa casts on the bed under it: a lamp of its own, falling off as the inverse square of the distance
+// and the cosine at the bed, dimmed by the water it crosses, so it pools in a soft patch under one swimming low and
+// fades to nothing under one high. `radiance` is its light's as drawn (calm), `power` the lamp's against it (m²), the
+// bed's albedo, and the patch's half size (heights over the bed).
+const MEDUSA_GLOW = { radiance: 14, power: 0.04, bedAlbedo: 0.35, reach: 3 };
+export const MEDUSA_FRAGMENT = /* glsl */`
+uniform vec3 uFogExtinction;
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform vec3 uAbsorb;
+uniform float uDepthOnly;    // 1 in its depth's pass (createFishView): only where it is solid enough to stand for what is behind
+varying vec4 vInfo;
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying vec3 vSwim;
+#define TWO_PI 6.2831853
+float medusaHash(float value) { return fract(sin(value * 91.345) * 47453.21); }
+void main() {
+  float part = vInfo.x, along = vInfo.y, angle = vInfo.z, across = vInfo.w;
+  float glow = vSwim.x, squeeze = vSwim.y, hueSeed = vSwim.z;
+  vec3 hue = ${MEDUSA_HUE};
+  float flash = smoothstep(0.6, 1.0, glow);
+  float light = glow * (0.75 + 0.5 * squeeze);
+  vec3 color;
+  float solid;
+  vec3 toEye = normalize(cameraPosition - vWorld);
+  if (part < 0.5) {
+    vec3 normal = normalize(vNormal);
+    float edgeOn = pow(1.0 - abs(dot(normal, toEye)), 2.5);
+    float canals = 1.0 - smoothstep(0.0, 0.12 + fwidth(angle) * 8.0, abs(fract(angle / TWO_PI * 8.0) - 0.5) * 2.0);
+    canals *= smoothstep(0.1, 0.4, along);
+    float ring = exp(-pow((along - 0.97) / 0.03, 2.0));
+    float photophores = ring * (0.4 + 0.6 * smoothstep(0.5, 0.9, sin(angle * 32.0) * 0.5 + 0.5));
+    float gonads = exp(-pow((along - 0.42) / 0.08, 2.0)) * (0.5 + 0.5 * cos(angle * 4.0));
+    // The flash: a wheel of light running round the margin (Atolla's).
+    float wheel = pow(0.5 + 0.5 * cos(angle * 3.0 - glow * 24.0 - squeeze), 6.0) * flash;
+    float made = 0.15 + 0.4 * canals + 1.4 * photophores + 0.4 * gonads + 0.35 * edgeOn + 3.0 * wheel * ring + 0.6 * flash * edgeOn;
+    color = hue * made * light * ${MEDUSA_GLOW.radiance.toFixed(2)};
+    // Its jelly lit by what light reaches it from above (next to none, under ice).
+    float depth = max(-vWorld.y, 0.0);
+    vec3 down = (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * exp(-uAbsorb * depth);
+    color += down * 0.08 * (0.2 + edgeOn) * vec3(0.8, 0.9, 1.0);
+    solid = 1.0;
+  } else if (part < 1.5) {
+    float edge = abs(across);
+    float specks = smoothstep(0.82, 1.0, medusaHash(floor(along * 60.0) + floor(edge * 6.0) * 61.0 + hueSeed * 13.0)) * (0.6 + 0.4 * sin(along * 20.0 - glow * 6.0));
+    float made = (0.08 + 0.25 * smoothstep(0.6, 1.0, edge) + 0.9 * specks) * (1.0 - smoothstep(0.75, 1.0, along));
+    color = hue * made * light * ${MEDUSA_GLOW.radiance.toFixed(2)};
+    solid = 1.0 - along;
+  } else {
+    // A thread of light in its halo; beads running down it, from the margin to its tip.
+    float core = exp(-pow(across / 0.18, 2.0)), halo = exp(-3.0 * abs(across)) * (1.0 - abs(across));
+    float bead = pow(0.5 + 0.5 * sin(along * 46.0 - angle * 7.0 - glow * 5.0 - squeeze * 2.0), 8.0);
+    float fade = 1.0 - smoothstep(0.55, 1.0, along);
+    float made = (0.35 * core + 0.12 * halo) * (0.35 + 1.6 * bead) * fade;
+    color = hue * made * light * ${MEDUSA_GLOW.radiance.toFixed(2)};
+    solid = core * fade;
+  }
+  if (uDepthOnly > 0.5 && solid < 0.5) discard;
+  if (cameraPosition.y < 0.0) color *= exp(-uFogExtinction * distance(vWorld, cameraPosition));
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+// The light on the bed (MEDUSA_GLOW, above): a quad on the bed under each medusa, its light added.
+export const MEDUSA_BED_VERTEX = /* glsl */`
+attribute vec4 glowInfo;     // its height over the bed (m), its light (src/fish.js glow), its squeeze, its seed
+uniform float uSeenThrough;  // as FISH_SHADOW_VERTEX's
+varying vec2 vQuad;
+varying vec4 vGlow;
+varying vec3 vWorld;
+${SEEN_THROUGH_WATER}
+void main() {
+  vQuad = position.xz;
+  vGlow = glowInfo;
+  vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  vWorld = world.xyz;
+  vec3 drawn = uSeenThrough > 0.5 ? seenThroughWater(world.xyz, 0.0) : world.xyz;
+  gl_Position = projectionMatrix * viewMatrix * vec4(drawn, 1.0);
+}
+`;
+export const MEDUSA_BED_FRAGMENT = /* glsl */`
+uniform vec3 uFogExtinction;
+varying vec2 vQuad;
+varying vec4 vGlow;
+varying vec3 vWorld;
+void main() {
+  float height = max(vGlow.x, 0.05);
+  float apart = length(vQuad) * height * ${MEDUSA_GLOW.reach.toFixed(1)};   // m across the bed from under it
+  float reach = sqrt(apart * apart + height * height);
+  float hueSeed = vGlow.w;
+  vec3 irradiance = ${MEDUSA_HUE} * ${(MEDUSA_GLOW.radiance * MEDUSA_GLOW.power).toFixed(4)} * vGlow.y * (0.75 + 0.5 * vGlow.z) * height / (reach * reach * reach) * exp(-uFogExtinction * reach);
+  vec3 color = irradiance * ${(MEDUSA_GLOW.bedAlbedo / Math.PI).toFixed(4)} * (1.0 - smoothstep(0.7, 1.0, length(vQuad)));
+  if (cameraPosition.y < 0.0) color *= exp(-uFogExtinction * distance(vWorld, cameraPosition));
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+/** A medusa's squeeze at `phase` (MEDUSA_VERTEX squeezeAt's twin), for its light on the bed. */
+const squeezeAt = (phase) => { const beat = ((phase / (2 * Math.PI)) % 1 + 1) % 1; return smoothstep(0, 0.18, beat) * (1 - smoothstep(0.18, 0.8, beat)); };
+
 const matrix = new THREE.Matrix4();
 const forward = new THREE.Vector3(), up = new THREE.Vector3(), side = new THREE.Vector3(), scale = new THREE.Vector3();
 
@@ -695,11 +977,30 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
     uniforms: { ...lights, uSeenThrough: seenUniform },
   });
+  // A medusa's (medusaGeometry): its light drawn added over what is behind it, writing no depth; then the same mesh
+  // writing its depth alone (uDepthOnly, the same program) where it is solid enough, so the water above measures the
+  // water between the eye and it, not the bed far behind it (src/shaders/scene.js uUnderDepth: through the whole depth
+  // of the bay its light would be dimmed to nothing). From under the water both are held back from the under-water pass
+  // and its light drawn after the surface (holdLights, drawLights). And its light on the bed (MEDUSA_BED_*), added,
+  // where the fish's shadow would be.
+  const medusaMaterial = (species, depthOnly) => new THREE.ShaderMaterial({
+    vertexShader: MEDUSA_VERTEX, fragmentShader: MEDUSA_FRAGMENT,
+    side: THREE.DoubleSide, forceSinglePass: true, transparent: true, depthWrite: depthOnly, colorWrite: !depthOnly,
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    uniforms: { ...lights, ...fog, uBellRadius: { value: 0.5 * species.shape.width }, uDepthOnly: { value: depthOnly ? 1 : 0 } },
+  });
+  const medusaBedMaterial = () => new THREE.ShaderMaterial({
+    vertexShader: MEDUSA_BED_VERTEX, fragmentShader: MEDUSA_BED_FRAGMENT,
+    transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
+    uniforms: { ...fog, uSeenThrough: seenUniform },
+  });
   const shadowQuad = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
-  let kinds = [];   // [{ body, fins, shadow, fish }]
+  let kinds = [];   // [{ meshes, fish, ... }]
   const shapes = new Map();
   const shapesFor = (species) => {
-    if (!shapes.has(species)) shapes.set(species, { body: fishBody(species.shape), fins: fishFins(species.shape) });
+    if (!shapes.has(species)) shapes.set(species, species.form === 'medusa' ? { body: medusaGeometry(species.shape) } : { body: fishBody(species.shape), fins: fishFins(species.shape) });
     return shapes.get(species);
   };
   // A kind's meshes: its instances its fish, the body's and the fins' each with its own matrices and swim (written alike).
@@ -718,13 +1019,24 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
       mesh.frustumCulled = false;
       return mesh;
     };
+    if (species.form === 'medusa') {
+      // A medusa (medusaGeometry): its light, its depth after it, and its light on the bed before them.
+      const body = instance(shape.body, medusaMaterial(species, false), { swim });
+      const depth = instance(shape.body, medusaMaterial(species, true), { swim });
+      const glow = instance(shadowQuad, medusaBedMaterial(), { glowInfo: shadowInfo });
+      body.renderOrder = 2;
+      depth.renderOrder = 3;
+      glow.renderOrder = 1;
+      group.add(body, depth, glow);
+      return { medusa: true, meshes: [body, depth, glow], body, depth, glow, fish, swim, shadowInfo };
+    }
     const body = instance(shape.body, bodyMaterial(species), { swim });
     const fins = instance(shape.fins, finMaterial(species), { swim: finSwim });
     fins.renderOrder = 2;
     const shadow = instance(shadowQuad, shadowMaterial(), { shadowInfo });
     shadow.renderOrder = 1;
     group.add(body, fins, shadow);
-    return { body, fins, shadow, fish, swim, finSwim, shadowInfo };
+    return { meshes: [body, fins, shadow], body, fins, shadow, fish, swim, finSwim, shadowInfo };
   }
   // A new water's fish: the new meshes made before the old go, and the warm-up's materials kept (warmUp), so the programs stay.
   function show(population) {
@@ -740,7 +1052,7 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
     update();
   }
   function remove(made, disposeMaterials) {
-    for (const mesh of [made.body, made.fins, made.shadow]) {
+    for (const mesh of made.meshes) {
       group.remove(mesh);
       mesh.geometry.dispose();
       if (disposeMaterials) mesh.material.dispose();
@@ -754,7 +1066,9 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
     const refractedSine = sunSine / 1.333;
     const run = refractedSine / Math.sqrt(1 - refractedSine * refractedSine);   // tan θt: down-sun per metre down
     const toSunX = sunSine > 1e-5 ? sun.x / sunSine : 0, toSunZ = sunSine > 1e-5 ? sun.z / sunSine : 0;
-    for (const { body, fins, shadow, fish, swim, finSwim, shadowInfo } of kinds) {
+    for (const made of kinds) {
+      if (made.medusa) { placeMedusas(made); continue; }
+      const { body, fins, shadow, fish, swim, finSwim, shadowInfo } = made;
       fish.forEach((one, index) => {
         const drawn = one.shown ?? one;   // as src/fish.js showAt has it, between its last two steps
         const cosPitch = Math.cos(drawn.pitch), sinPitch = Math.sin(drawn.pitch);
@@ -791,30 +1105,83 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
       shadow.visible = sun.y > 0;
     }
   }
+  /** A kind of medusas where they are drawn: each one's matrix (as a fish's), its swim (its light for a fish's beat) and its light's patch on the bed under it. */
+  function placeMedusas({ body, depth, glow, fish, swim, shadowInfo }) {
+    fish.forEach((one, index) => {
+      const drawn = one.shown ?? one;
+      const cosPitch = Math.cos(drawn.pitch), sinPitch = Math.sin(drawn.pitch);
+      forward.set(Math.cos(drawn.heading) * cosPitch, sinPitch, Math.sin(drawn.heading) * cosPitch);
+      up.set(-Math.cos(drawn.heading) * sinPitch, cosPitch, -Math.sin(drawn.heading) * sinPitch);
+      side.crossVectors(forward, up);
+      matrix.makeBasis(forward, up, side).scale(scale.setScalar(one.length));
+      matrix.setPosition(drawn.x, drawn.y, drawn.z);
+      body.setMatrixAt(index, matrix);
+      depth.setMatrixAt(index, matrix);
+      swim.setXYZW(index, drawn.phase, drawn.glow, drawn.bend, one.seed);
+      // Its light on the bed, under its bell (MEDUSA_GLOW): a patch MEDUSA_GLOW.reach times its height over the bed each way.
+      const bellX = drawn.x + forward.x * 0.35 * one.length, bellZ = drawn.z + forward.z * 0.35 * one.length;
+      const bed = -bedDepthAt(bellX, bellZ);
+      const height = Math.max(drawn.y + forward.y * 0.35 * one.length - bed, 0.05);
+      matrix.makeScale(MEDUSA_GLOW.reach * height, 1, MEDUSA_GLOW.reach * height);
+      matrix.setPosition(bellX, bed + 0.002, bellZ);
+      glow.setMatrixAt(index, matrix);
+      shadowInfo.setXYZW(index, height, drawn.glow, squeezeAt(drawn.phase), one.seed);
+    });
+    body.instanceMatrix.needsUpdate = true;
+    depth.instanceMatrix.needsUpdate = true;
+    glow.instanceMatrix.needsUpdate = true;
+    swim.needsUpdate = true;
+    shadowInfo.needsUpdate = true;
+  }
   /**
-   * One fish, for the warm-up to draw (the three programs every kind shares), then gone: done(). Its materials are
-   * never disposed, so the programs outlive any water without fish (the Pool's).
+   * One fish, for the warm-up to draw (the three programs every kind shares), and with `medusas` one medusa too (its
+   * two: the warm-up's pass of everything, and a place with them), then gone: done(). Their materials are never
+   * disposed, so the programs outlive any water without them (the Pool's).
    */
-  function warmUp() {
+  function warmUp({ medusas = false } = {}) {
     const kept = kinds;
     const species = FISH_SPECIES.koi;
     const one = { species, length: 0.4, x: 0, y: -0.5, z: -1.4, heading: 0, pitch: 0, phase: 0, beat: 0, bend: 0, seed: 0.5 };
-    const made = build(species, [one]);
-    kinds = [made];
+    const made = [build(species, [one])];
+    if (medusas) {
+      const lantern = FISH_SPECIES.lantern;
+      made.push(build(lantern, [{ ...one, species: lantern, length: 0.6, x: 0.3, glow: 0.5 }]));
+    }
+    kinds = made;
     update();
     return {
       done() {
-        remove(made, false);
+        for (const each of made) remove(each, false);
         kinds = kept;
       },
     };
   }
+  /**
+   * From under the water (src/main.js renderFromBelow) the surface is drawn after the under-water pass, over what
+   * wrote no depth: a medusa's light (it is light, seen through, and writes none) would be covered. It lies between
+   * the eye and the surface whichever way the eye looks up at it, so there it is held back from the under-water pass
+   * (holdLights) and drawn over the surface after it (drawLights), tested against the depth of what is in front of it.
+   */
+  function holdLights(held) {
+    for (const made of kinds) if (made.medusa) made.body.visible = made.depth.visible = !held;
+  }
+  function drawLights(renderer, camera) {
+    const lights = kinds.filter((made) => made.medusa).map((made) => made.body);
+    if (lights.length === 0) return;
+    const shown = group.children.map((child) => child.visible);
+    for (const child of group.children) child.visible = lights.includes(child);
+    try { renderer.render(group, camera); } finally { group.children.forEach((child, index) => { child.visible = shown[index]; }); }
+  }
   return {
     group,
     show,
+    holdLights,
+    drawLights,
     update,
     warmUp,
-    get drawCalls() { return kinds.length * 3; },
+    get drawCalls() { return kinds.reduce((sum, { meshes }) => sum + meshes.length, 0); },
+    /** Whether any of the water's kinds is a medusa (src/main.js warmUp: their programs drawn under the veil). */
+    get medusas() { return kinds.some(({ medusa }) => medusa); },
     get count() { return kinds.reduce((sum, { fish }) => sum + fish.length, 0); },
   };
 }

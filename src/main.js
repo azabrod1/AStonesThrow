@@ -3127,7 +3127,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     belowBackground.render(renderer, mainTarget);
     // A stone in its hole's air is cut at the hole's floor for an eye above the water (src/rock.js); from below, whole.
     for (const rock of rocks) rock.cutBelowAtSurface(true);
+    fishView.holdLights(true);   // a medusa's light writes no depth: drawn after the surface, over it (src/fishMeshes.js)
     if (!skip.floor) renderer.render(sceneUnder, camera);
+    fishView.holdLights(false);
     for (const rock of rocks) rock.cutBelowAtSurface(false);
     const hidden = hiddenFromBelow();
     const wasVisible = hidden.map((object) => object.visible);
@@ -3138,6 +3140,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const mesh of splash.cavityGroup.children) mesh.material = surface.cavityMaterial;
     surface.fromBelow(false);
     hidden.forEach((object, index) => { object.visible = wasVisible[index]; });
+    if (!skip.floor) fishView.drawLights(renderer, camera);
   }
 
   // ?paused=1 starts with the clock stopped, so the harness's frames start
@@ -3502,7 +3505,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program
       iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
     }
-    const fishWarmUp = everything || fishOn ? fishView.warmUp() : null;   // the fish's one program, whatever lives here (none in the Pool)
+    // The fish's programs, whatever lives here (none in the Pool), and a medusa's (Europa's ice lanterns, src/fishMeshes.js) where they live.
+    const fishWarmUp = everything || fishOn ? fishView.warmUp({ medusas: everything || fishView.medusas }) : null;
     const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' five programs (a model's above, mirror and below the water; a picture's above and mirror), whatever flies here
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.

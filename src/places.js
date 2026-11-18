@@ -52,7 +52,7 @@ export const PLACES = {
   mall: { sky: 'mall', pool: false, reeds: false, shoreKind: 'mall', mall: true, water: 'mall', waterCard: { image: 'assets/sky/thumbs/mall.jpg', name: 'Pool water', note: 'Still over its blue bed: a mirror for the monuments' } },
   // Europa: the lake's shore and bed under Europa's sky, its beach frost (`shore`, src/pondFloor.js SHORE_LOOKS), its
   // water the ocean under the ice (WATER_CLARITIES.europa), frozen at first (`defaultWater`) and seen from water level,
-  // Jupiter low ahead over the ice and in it (`defaultView`). No fish yet, and no birds over an airless moon.
+  // Jupiter low ahead over the ice and in it (`defaultView`). No fish but glowing ice lanterns (src/fish.js), no birds over an airless moon.
   europa: { sky: 'europa', pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
