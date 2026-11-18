@@ -60,7 +60,7 @@ export const PLACES = {
   // Jupiter low ahead over the ice and in it (`defaultView`), its ice an old crust (`iceCrust`): frost nearly all over,
   // as bright as Europa's (albedo about 0.65), stained reddish-brown along bands as its lineae are, Jupiter mirrored only
   // in the bare leads between. No fish but glowing ice lanterns (src/fish.js); no birds, weather or wind over an airless
-  // moon (its sky's `airless`, placeAirless).
+  // moon (its sky's `airless`, placeAirless), but its life above the ice (src/europaLife.js).
   europa: { sky: 'europa', pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', iceCrust: [0.72, 0.52, 0.40, 1], waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
 /** Whether a place has no air (its sky's `airless`: Europa): clear and calm there, whatever the Weather and Wind settings say. */
