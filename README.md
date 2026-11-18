@@ -1254,13 +1254,16 @@ The curated locations include:
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
 - **Europa** (`?sky=europa`; `?sky=jupiter` too): Jupiter's ice moon. No one has
-  photographed its surface from the ground, so its sky is computed rather than
-  stitched (`tools/europa-sky.py`, numpy, seeded): a black sky with stars and the
-  Milky Way, the small, far sun (a tenth of a degree across) behind the eye's
-  right, Jupiter 12° across low ahead, gibbous in that sun with its belts and
-  Great Red Spot, and ice to a near horizon (2.2 km off for an eye 1.5 m up):
-  a refrozen basin, double ridges stained reddish-brown and a field of chaos
-  plates, ray-marched and lit by the sun alone and the sunlit ice round it.
+  photographed its surface from the ground, so its sky is put together from
+  spacecraft images (`tools/europa-sky.py`, numpy, public-domain sources it
+  downloads and checks): a black sky with stars and the Milky Way, the small,
+  far sun (a tenth of a degree across) behind the eye's right, Jupiter low
+  ahead as Cassini mapped it (PIA07782) on a globe 12.2° by 11.4°, gibbous in
+  that sun with its belts and Great Red Spot, and ice to a near horizon (2.2
+  km off for an eye 1.5 m up): Conamara Chaos as Galileo imaged it at 9 m a
+  pixel (USGS's controlled mosaic 12ESCHAOS_01), a double ridge and rafted
+  plates, its relief worked out from the image's own shading, marched a
+  column at a time with a fractal frost under the image's pixels.
   Through the usual pipeline (`tools/sky-probe.mjs`, `tools/sky-encode.mjs`),
   its horizon strip reaching 30° up (`stripAbove`) so Jupiter is drawn from
   the 8k. Airless, its sky has almost no mean, so the dome's cap is a share
@@ -2105,9 +2108,12 @@ farther out, so it rises into the view rather than filling its corner.
   Europa's sky (its opening comment says how): `assets/sky/europa_2k.hdr`
   and the 8k file its horizon strip is cut from (`europa_8k.hdr`, never
   committed); then `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify`
-  on it, as for any sky. About seven minutes (`--draft`: a 2k preview in
-  one); needs numpy. Over its black sky the encoder's relative error reads
-  near 100%: it measures nothing there.
+  on it, as for any sky. Its sources (Cassini's Jupiter map, Galileo's
+  Conamara mosaic: one member of USGS's 1.5 GB zip, fetched by byte range)
+  are downloaded once into `tools/.europa-sources/` (gitignored) and checked
+  by SHA-256. About five minutes (`--draft`: a 2k preview in about one);
+  needs numpy and Pillow. Over its black sky the encoder's relative error
+  reads near 100%: it measures nothing there.
 - `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
   Reflecting Pool's skies, one an hour, from its plan,
   `tools/mall-backdrop.json`: it fetches the photographs (cached in

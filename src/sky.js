@@ -451,11 +451,12 @@ const SKIES = {
       night: { file: 'mall_night', label: 'Night', clock: '21:30', lit: 6 },
     },
   },
-  // Europa's own (src/places.js PLACES `europa`), no place of its own: no photograph but a panorama computed from what
-  // is known of the moon (tools/europa-sky.py): a black sky with its stars, the far, small sun behind the eye's right,
-  // Jupiter 12° across low ahead, gibbous in that sun, and ice to a near horizon, its ridges and chaos stained
-  // reddish-brown. Airless (`airless`: no weather, Weather above), its sky has almost no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter
-  // stands up to 17° high, so its horizon strip reaches 30° (`stripAbove`), the whole of the level view's sky sharp.
+  // Europa's own (src/places.js PLACES `europa`), no place of its own: no photograph from the ground but a panorama
+  // put together from spacecraft images (tools/europa-sky.py): a black sky with its stars, the far, small sun behind
+  // the eye's right, Cassini's Jupiter 12° across low ahead, gibbous in that sun, and Galileo's Conamara Chaos to a
+  // near horizon, its matrix stained reddish-brown. Airless (`airless`: no weather, Weather above), its sky has almost
+  // no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter stands up to 17° high, so its horizon strip
+  // reaches 30° (`stripAbove`), the whole of the level view's sky sharp.
   // tools/europa-sky.py puts its sun SUN_AZIMUTH right of its ahead: change both. Its 8k is that tool's (`builtBy`).
   // Its black sky lights nothing: the light that fills a shadow, lights a splash's sides and greys a frosted mirror
   // is its sunlit ice's, as on the Moon its regolith's (`iceShine`, added to the ambient as a share of its sun: the

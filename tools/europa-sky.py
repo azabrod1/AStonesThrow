@@ -1,17 +1,31 @@
-"""Europa's sky (src/sky.js `europa`, the place src/places.js PLACES `europa`): a panorama computed, not photographed.
+"""Europa's sky (src/sky.js `europa`, the place src/places.js PLACES `europa`): a panorama computed from spacecraft images.
 
-No one has stood on Europa, so its sky is drawn from what is known of it rather than stitched from photographs: no
-air, so a black sky with its stars and the Milky Way by day, the Sun small (5.2 au: a fifth of the width it has from
-Earth, a disc 0.1 degrees across) and white; Jupiter, 671 000 km off, 12.2 degrees across (JUPITER `radius`, its
-angular radius), its belts and zones, its Great Red Spot, lit as a sphere by that sun (so as gibbous as the sun's
-place makes it, its night side black against the stars), its equator through its middle as it is seen from a moon in
-its equatorial plane; and ice to the horizon, under which the scene's own water and ice lie. The ground is a height
-field (`terrain`) ray-marched from an eye EYE metres up on a moon of Europa's radius (its curvature hides what lies
-past 2 to 3 km): a refrozen basin about the eye (the scene's own pond lies in it), its rim of rising, hummocky
-plain, the double ridges Galileo photographed crossing it (two crests and a trough between, 100 to 250 m high, their
-flanks stained reddish-brown, as Europa's lineae are), and to the right a field of chaos terrain, tilted plates of
-crust between darker refrozen matrix. Everything is lit by the sun alone, shadows and all (no sky to fill them),
-and by the sunlit ice round it (a share of the light the ground gives back, by how far a face looks down).
+No one has stood on Europa, so its sky is put together from what spacecraft have seen of it and of Jupiter, all of it
+public domain (SOURCES; credited in CREDITS.md and credits.html):
+
+- The ground is Conamara Chaos as Galileo saw it on its twelfth orbit (December 1997) at 9 m a pixel: the
+  observation mosaic 12ESCHAOS_01 of USGS's photogrammetrically controlled Galileo mosaics (Bland et al. 2021). The
+  eye stands EYE metres up on a moon of Europa's radius (its horizon 2.2 km off; relief beyond it rises over the
+  skyline), in a refrozen hollow (`BASIN`, where the scene's own pond lies) among the chaos: a double ridge to the
+  right, rafted plates with their ridged tops and cliffs, the darker matrix between. Its relief is the image's own,
+  by photoclinometry (`relief`: a slope along the image's sun for each pixel's brightness, integrated in Fourier
+  space, the drifts that albedo would build filtered out; its height set by TAN_INCIDENCE so the plates and the
+  ridge stand up to some 230 m, as Conamara's do), so the shading the image holds and the shape it is drawn on
+  agree. The image is laid on the ground turned so that its sun (from the east, IMAGE_SUN degrees to the north) is
+  the scene's sun; its brightness is the ground's light and shade below LIGHT_SCALE pixels, and above it the relief
+  is lit by the scene's sun, shadows and all (`lighting`); tinted by its albedo from frost white to the
+  reddish-brown of the matrix and lineae (Galileo's clear filter has no colour). Under its
+  9 m pixels a fractal frost (`MICRO`) carries the shading down to a few centimetres. Where the mosaic has no data
+  (between and around its frames) each column of it is reflected into its data, and past its edges it repeats as a
+  mirror does, so the ground runs on to the skyline without seams. The ground is drawn a column of the panorama at a
+  time, marched outward from the eye (`render_ground`): each step's ground covers the rows between the highest so far
+  and its own, by exactly how much of each it covers, so near and far, slope and silhouette are anti-aliased.
+- Jupiter is Cassini's map of it (PIA07782, eleven days of December 2000) on an oblate globe (`JUPITER`: 12.2
+  degrees across its equator, 11.4 pole to pole, as from Europa), its equator through its middle as from a moon in
+  its plane, the Great Red Spot turned toward the eye; lit by the same sun (so as gibbous as the sun's place makes
+  it, its night side black against the stars), darkened to its limb as a cloud deck is (Minnaert's law).
+- The sky is black: stars (a seeded field down to magnitude STAR_FAINTEST, each in one pixel of the 8k), the Milky
+  Way, and the Sun small (5.2 au: a disc 0.1 degrees across) and white.
 
 The frame: the file's columns run as tools/sky-probe.mjs says (azimuth 360·u from the left edge, turning right).
 The sun stands at SUN `azimuth`, the scene's ahead SUN_AZIMUTH to its left (src/sky.js `europa` turns the panorama
@@ -23,28 +37,50 @@ draws them.
 
 It renders the 8k panorama (8192 x 4096: the horizon strip's source, tools/sky-encode.mjs, never committed:
 assets/sky/europa_8k.hdr, gitignored) and the 2k one the dome draws (assets/sky/europa_2k.hdr), the 8k's 4 x 4
-means, so a star's or the sun's light is the same in both. Each 8k pixel takes one ray, and pixels at the
-terrain's edges (where it meets sky, or a nearer slope a farther one) four more. Seeded (SEED): the same files
+means. Its sources are downloaded once into tools/.europa-sources/ (gitignored; the Conamara mosaic is one member
+of USGS's 1.5 GB zip, fetched by its byte range) and checked against their SHA-256. Deterministic: the same files
 every run. Then, as for any sky:
 
   python3 tools/europa-sky.py
   node tools/sky-probe.mjs assets/sky/europa_2k.hdr
   node tools/sky-encode.mjs assets/sky/europa_2k.hdr --verify
 
-About seven minutes (--draft: the 2k alone, for a look, in one); needs numpy. --preview=file.png writes a tone-mapped look
-at the 2k panorama. Over its black sky the encoder's relative error reads near 100%: it measures nothing there.
+About five or six minutes (--draft: the 2k alone, one ray a column, in about one); needs numpy and Pillow.
+--preview=file.png writes a tone-mapped look at the 2k panorama. Over its black sky the encoder's relative error
+reads near 100%: it measures nothing there.
 """
 import argparse
+import hashlib
 import math
 import os
+import struct
 import time
+import urllib.request
+import zlib
 
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKY = os.path.join(ROOT, 'assets', 'sky')
+SOURCE_DIR = os.path.join(ROOT, 'tools', '.europa-sources')
+USER_AGENT = 'a-stones-throw-sky-tool/1.0 (one-off download of public-domain maps)'
 SEED = 5
 WIDTH, HEIGHT, DOWN = 8192, 4096, 4    # the 8k panorama, and the 2k's 4 x 4 means of it
+
+# The public-domain images it is made from: where each comes from and the SHA-256 of the file it keeps.
+SOURCES = {
+    # Cassini ISS, NASA/JPL/Space Science Institute: PIA07782, Cassini's best maps of Jupiter (cylindrical), 3601 x 1801.
+    'jupiter': {'file': 'PIA07782.jpg',
+                'url': 'https://upload.wikimedia.org/wikipedia/commons/1/1e/Jupiter_Cylindrical_Map_-_Dec_2000_PIA07782.jpg',
+                'sha256': '6b835ddd8036ea9efd25def04f75aa60b69b096025a37eeae5e9b6978e0a2281'},
+    # Galileo SSI, NASA/JPL; mosaic USGS Astrogeology (Bland et al. 2021, doi:10.5066/P9VKKK7C): observation 12ESCHAOS_01,
+    # Conamara Chaos at 9 m a pixel, float32 equirectangular GeoTIFF, one member of the zip (its local header's offset and
+    # compressed size).
+    'conamara': {'file': '12ESCHAOS_01_GalileoSSI_Equi-cog.tif',
+                 'url': 'https://planetarymaps.usgs.gov/mosaic/Europa/Europa_mosaics/Europa_Mosaics_Equirectangular.zip',
+                 'member': (67617322, 26253307),
+                 'sha256': '9b0936d0b0d38dfc58ef883d1359ae335d43e486de98ad1dad88774bad6786d8'},
+}
 
 EYE = 1.5                  # metres over the ice
 MOON_RADIUS = 1560.8e3     # Europa's, metres: the horizon of an eye EYE up is 2.2 km off
@@ -54,48 +90,73 @@ HALO = 2e-5                # the sun's glare, L = E·HALO/θ² (θ in radians) o
 HALO_REACH = 12.0
 AHEAD = SUN['azimuth'] - SUN_AZIMUTH
 
-# Jupiter: its centre (bearing, elevation, degrees), its angular radius, its axis's tilt from the sky's vertical
-# (degrees, toward the right), the longitude at its middle and the Great Red Spot's (degrees).
-JUPITER = {'bearing': -10.0, 'elevation': 11.0, 'radius': 6.1, 'tilt': 20.0, 'longitude': 0.0, 'spot': (-22.5, 28.0)}
-# Its bands from south to north: [latitude (degrees) where a band's colour is full, its albedo (linear RGB)].
-BANDS = [
-    (-90, (0.36, 0.35, 0.34)), (-62, (0.46, 0.43, 0.40)), (-50, (0.58, 0.53, 0.47)), (-42, (0.66, 0.60, 0.52)),
-    (-36, (0.72, 0.66, 0.56)), (-30, (0.52, 0.39, 0.28)), (-25, (0.80, 0.74, 0.62)), (-19, (0.82, 0.76, 0.64)),
-    (-14, (0.48, 0.32, 0.21)), (-9, (0.55, 0.38, 0.26)), (-5, (0.86, 0.82, 0.72)), (0, (0.88, 0.84, 0.74)),
-    (5, (0.84, 0.79, 0.68)), (9, (0.45, 0.30, 0.20)), (15, (0.50, 0.34, 0.23)), (19, (0.82, 0.76, 0.64)),
-    (23, (0.80, 0.73, 0.60)), (27, (0.54, 0.41, 0.30)), (32, (0.76, 0.70, 0.59)), (38, (0.64, 0.57, 0.49)),
-    (46, (0.60, 0.55, 0.49)), (60, (0.46, 0.44, 0.42)), (90, (0.36, 0.35, 0.35)),
-]
-SPOT = {'colour': (0.74, 0.34, 0.20), 'size': (11.0, 5.5)}   # the Great Red Spot's albedo and half sizes (degrees of longitude and latitude)
+# Jupiter: its centre (bearing, elevation, degrees), its angular radii (equatorial and polar, degrees: 71 492 and
+# 66 854 km at 671 100 km), its axis's tilt from the sky's vertical (degrees, toward the left), and the map's column (degrees
+# from its left edge) at the meridian facing the eye: the Great Red Spot (134 there) 28 degrees right of it.
+JUPITER = {'bearing': -10.0, 'elevation': 11.0, 'radius': 6.095, 'polar': 5.70, 'tilt': 20.0, 'meridian': 106.0,
+           'albedo': 0.52, 'minnaert': 0.85}
 
 STARS = 14000              # drawn down to magnitude STAR_FAINTEST
 STAR_FAINTEST = 7.0
 STAR_ZERO = 2.4e-6         # a magnitude-0 star's light (irradiance, in the sun's units)
 MILKY_WAY = {'pole': (40.0, 35.0), 'width': 11.0, 'radiance': 0.0025}   # its pole (bearing, elevation), half width (degrees)
 
-# The ground's albedos (linear RGB): Europa's ice, and the reddish-brown of its lineae and ridge flanks.
-ICE = np.array([0.80, 0.82, 0.84])
-PLAIN = np.array([0.72, 0.70, 0.67])
-STAIN = np.array([0.45, 0.30, 0.19])
-# The basin: flat to its rim, `rim` m off (give or take `wobble`), rising `height` m over `rise` m beyond it.
-BASIN = {'rim': 900.0, 'wobble': 260.0, 'height': 45.0, 'rise': 1000.0}
-# The double ridges: the point of each nearest the eye (bearing, distance m), the angle of its line to the line of
-# sight (degrees), its height (m), its crests' half spacing and half width (m), and its half length (m).
-RIDGES = [
-    (-14.0, 2700.0, 78.0, 170.0, 300.0, 290.0, 6500.0),
-    (38.0, 5600.0, 64.0, 140.0, 260.0, 240.0, 7000.0),
-    (-62.0, 8500.0, 40.0, 230.0, 360.0, 330.0, 9000.0),
-    (150.0, 2400.0, 96.0, 150.0, 280.0, 260.0, 5000.0),
-    (-125.0, 3600.0, 70.0, 120.0, 240.0, 230.0, 6000.0),
-    (95.0, 4200.0, 30.0, 110.0, 220.0, 200.0, 5000.0),
-]
-# Lineae: stains without relief (bearing, distance m, angle to the line of sight, half width m).
-LINEAE = [(-35.0, 1800.0, 60.0, 35.0), (10.0, 2300.0, 105.0, 25.0), (60.0, 1600.0, 20.0, 40.0), (-90.0, 2000.0, 85.0, 30.0),
-          (130.0, 1500.0, 50.0, 30.0), (-160.0, 2500.0, 120.0, 45.0), (25.0, 4000.0, 75.0, 60.0), (-5.0, 6000.0, 95.0, 50.0)]
-# Chaos terrain: its middle (bearing, distance m), its radius (m), its plates' size (m) and heights (m).
-CHAOS = {'bearing': 32.0, 'distance': 3900.0, 'radius': 2300.0, 'cell': 330.0, 'heights': (25.0, 95.0), 'matrix': 12.0}
-HIGHEST = 330.0            # m: nothing in the height field stands higher (the march stops above it)
-BAND = (-1.2, 9.0)         # degrees of elevation the ground is marched in; below it the basin's floor
+# The ground. The mosaic's pixel (m), its latitude (its x pixels are cos(latitude) of that across the ground), and
+# where in it the eye stands (column, row).
+PIXEL = 9.0
+LATITUDE = 9.14
+EYE_AT = (2041.0, 1056.0)
+IMAGE_SUN = 5.0            # degrees north of east the mosaic's sun stands (its brightness spectrum's axis; shadows fall west)
+TAN_INCIDENCE = 0.8        # its sun's slant, as photoclinometry takes it: sets the relief's height (plates up to ~230 m)
+RELIEF_REACH = 5000.0      # m: relief longer than this is filtered out (the brightness's slow drifts are albedo)
+CONTRAST = 0.8             # the image's light and shade, softened for the scene's higher sun (the image's sun is lower)
+LIGHT_SCALE = 6            # pixels: finer, the image's light and shade; coarser, the relief's under the scene's sun
+ICE = np.array([0.74, 0.72, 0.68])      # albedo (linear RGB): Europa's frost, beige-white (natural colour, not Galileo's stretch)
+STAIN = np.array([0.50, 0.37, 0.27])    # the reddish-brown of the matrix and lineae
+BASIN = {'flat': 160.0, 'rise': 520.0}  # the refrozen hollow about the eye: level to `flat` m, the chaos's own relief by `rise`
+MICRO = [(7.0, 0.55), (3.1, 0.26), (1.4, 0.12), (0.62, 0.05), (0.27, 0.022)]   # frost under the image's pixels: (wavelength, amplitude) m
+MICRO_REACH = 3000.0       # m: past this the frost is under a pixel
+REACH = 90e3               # m: the march stops here, or once nothing farther could stand over what it has drawn
+SUB = 2                    # rays across each 8k column
+LOWEST = -35.0             # degrees: the march starts where the ground is this far below level; below, the hollow's floor
+HIGHEST_DRAWN = 30.0       # degrees: the ground is drawn up to here (the hill toward the sun reaches 15)
+
+
+def download(name):
+    """The source's file, fetched once into SOURCE_DIR and checked against its SHA-256."""
+    source = SOURCES[name]
+    path = os.path.join(SOURCE_DIR, source['file'])
+    if not os.path.exists(path):
+        os.makedirs(SOURCE_DIR, exist_ok=True)
+        print(f'downloading {source["url"]}' + (' (one member, by its byte range)' if 'member' in source else ''))
+        headers = {'User-Agent': USER_AGENT}
+        if 'member' in source:
+            offset, size = source['member']
+            headers['Range'] = f'bytes={offset}-{offset + 30 + 1024 + size - 1}'
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(source['url'], headers=headers), timeout=600) as response:
+                    data = response.read()
+                break
+            except urllib.error.HTTPError as error:
+                if error.code != 429 or attempt == 4:
+                    raise
+                time.sleep(30 * (attempt + 1))   # Wikimedia asks clients to back off
+        if 'member' in source:
+            if data[:4] != b'PK\x03\x04':
+                raise SystemExit(f'{name}: no zip member at its offset (has the archive changed?)')
+            method, = struct.unpack('<H', data[8:10])
+            name_length, extra_length = struct.unpack('<HH', data[26:30])
+            body = data[30 + name_length + extra_length:][:source['member'][1]]
+            data = zlib.decompress(body, -15) if method == 8 else body
+        with open(path + '.part', 'wb') as file:
+            file.write(data)
+        os.replace(path + '.part', path)
+    with open(path, 'rb') as file:
+        digest = hashlib.sha256(file.read()).hexdigest()
+    if digest != source['sha256']:
+        raise SystemExit(f'{path}: SHA-256 {digest}, not {source["sha256"]}: delete it to fetch it again')
+    return path
 
 
 def direction(azimuth, elevation):
@@ -105,138 +166,26 @@ def direction(azimuth, elevation):
     return np.array([math.cos(elevation) * math.cos(phi), math.sin(elevation), math.cos(elevation) * math.sin(phi)])
 
 
-def ground_point(bearing, distance):
-    """Where on the ground (x, z, metres) lies a point `distance` m off at `bearing` degrees right of ahead."""
-    toward = direction(AHEAD + bearing, 0.0)
-    return toward[0] * distance, toward[2] * distance
-
-
 def smoothstep(edge0, edge1, value):
     t = np.clip((value - edge0) / (edge1 - edge0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
 
 
-rng = np.random.default_rng(SEED)
-PERMUTATION = rng.permutation(1024).astype(np.int64)
+def blur(image, radius):
+    """Three box passes each way (near enough a Gaussian of σ ≈ radius), edges held."""
+    image = image.astype(np.float64)
+    for _ in range(3):
+        for axis in (0, 1):
+            pad = [(0, 0)] * image.ndim
+            pad[axis] = (radius + 1, radius)
+            summed = np.cumsum(np.pad(image, pad, mode='edge'), axis=axis)
+            upper = np.take(summed, np.arange(2 * radius + 1, summed.shape[axis]), axis=axis)
+            lower = np.take(summed, np.arange(0, summed.shape[axis] - 2 * radius - 1), axis=axis)
+            image = (upper - lower) / (2 * radius + 1)
+    return image.astype(np.float32)
 
 
-def lattice(ix, iz, salt=0):
-    """A value from 0 to 1 for each integer lattice point."""
-    return PERMUTATION[(PERMUTATION[(ix + salt * 59) & 1023] + iz * 7 + salt * 131) & 1023] / 1023.0
-
-
-def value_noise(x, z, salt=0):
-    ix, iz = np.floor(x), np.floor(z)
-    fx, fz = x - ix, z - iz
-    ix, iz = ix.astype(np.int64), iz.astype(np.int64)
-    ux, uz = fx * fx * (3 - 2 * fx), fz * fz * (3 - 2 * fz)
-    a, b = lattice(ix, iz, salt), lattice(ix + 1, iz, salt)
-    c, d = lattice(ix, iz + 1, salt), lattice(ix + 1, iz + 1, salt)
-    return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uz
-
-
-def fbm(x, z, octaves, salt=0):
-    total, amplitude, scale = 0.0, 0.5, 1.0
-    for octave in range(octaves):
-        total = total + amplitude * value_noise(x * scale + octave * 17.1, z * scale - octave * 9.3, salt + octave)
-        amplitude *= 0.5
-        scale *= 2.03
-    return total
-
-
-def line_frame(bearing, distance, angle):
-    """A line on the ground through the point at (bearing, distance), at `angle` degrees to the line of sight there:
-    its point, its direction and its normal (unit, x and z)."""
-    x0, z0 = ground_point(bearing, distance)
-    sight = math.atan2(z0, x0)
-    heading = sight + math.radians(angle)
-    return (x0, z0), (math.cos(heading), math.sin(heading)), (-math.sin(heading), math.cos(heading))
-
-
-RIDGE_LINES = [(line_frame(bearing, distance, angle), height, spacing, width, length, index)
-               for index, (bearing, distance, angle, height, spacing, width, length) in enumerate(RIDGES)]
-LINEA_LINES = [(line_frame(bearing, distance, angle), width, index) for index, (bearing, distance, angle, width) in enumerate(LINEAE)]
-CHAOS_CENTRE = ground_point(CHAOS['bearing'], CHAOS['distance'])
-RIM_PHASES = rng.uniform(0, 2 * math.pi, 4)
-
-
-def terrain(x, z, with_stain=False):
-    """The ground's height (m) at (x, z), and with `with_stain` its stain (0 ice to 1 the lineae's brown) and
-    whiteness (the chaos plates' fresher ice)."""
-    distance = np.hypot(x, z)
-    angle = np.arctan2(z, x)
-    rim = BASIN['rim'] + BASIN['wobble'] * (0.5 * np.sin(3 * angle + RIM_PHASES[0]) + 0.3 * np.sin(5 * angle + RIM_PHASES[1])
-                                            + 0.2 * np.sin(8 * angle + RIM_PHASES[2]))
-    upland = smoothstep(rim, rim + BASIN['rise'], distance)
-    height = BASIN['height'] * upland
-    height = height + upland * (55.0 * (fbm(x / 900.0, z / 900.0, 3, 1) - 0.4) + 7.0 * (fbm(x / 140.0, z / 140.0, 2, 2) - 0.5))
-    stain = np.zeros_like(x) if with_stain else None
-    for (origin, along_unit, across_unit), ridge_height, spacing, width, half_length, index in RIDGE_LINES:
-        dx, dz = x - origin[0], z - origin[1]
-        across = dx * across_unit[0] + dz * across_unit[1]
-        along = dx * along_unit[0] + dz * along_unit[1]
-        across = across + 140.0 * np.sin(along / 1900.0 + index) + 50.0 * np.sin(along / 610.0 + 2.0 * index)
-        reach = spacing + width * 1.6
-        near = np.abs(across) < reach + 200.0
-        if not near.any():
-            continue
-        crest = np.clip(1.0 - np.abs(np.abs(across) - spacing) / width, 0.0, 1.0) ** 1.5
-        trough = np.clip(1.0 - np.abs(across) / spacing, 0.0, 1.0) ** 2
-        ends = smoothstep(half_length, half_length * 0.7, np.abs(along))
-        rise = ridge_height * (0.72 + 0.5 * value_noise(along / 1100.0, index * 3.1, 5 + index)) * ends
-        profile = crest + 0.35 * trough * (1.0 - crest)
-        height = height + rise * profile * (0.35 + 0.65 * upland)
-        if with_stain:
-            flank = smoothstep(spacing + width * 2.2, spacing + width * 0.9, np.abs(across)) * (1.0 - 0.6 * crest) * ends
-            stain = np.maximum(stain, 0.85 * flank)
-    chaos_dx, chaos_dz = x - CHAOS_CENTRE[0], z - CHAOS_CENTRE[1]
-    inside = smoothstep(CHAOS['radius'], CHAOS['radius'] * 0.65, np.hypot(chaos_dx, chaos_dz) + 300.0 * (value_noise(x / 800.0, z / 800.0, 9) - 0.5))
-    whiteness = np.zeros_like(x) if with_stain else None
-    where = inside > 0
-    if where.any():
-        cell = CHAOS['cell']
-        px, pz = x[where] / cell, z[where] / cell
-        cx, cz = np.floor(px).astype(np.int64), np.floor(pz).astype(np.int64)
-        first = np.full(px.shape, 1e9)
-        second = np.full(px.shape, 1e9)
-        nearest_x, nearest_z = np.zeros(px.shape, np.int64), np.zeros(px.shape, np.int64)
-        for ox in (-1, 0, 1):
-            for oz in (-1, 0, 1):
-                gx, gz = cx + ox, cz + oz
-                sx = gx + 0.15 + 0.7 * lattice(gx, gz, 21)
-                sz = gz + 0.15 + 0.7 * lattice(gx, gz, 22)
-                gap = np.hypot(px - sx, pz - sz)
-                closer = gap < first
-                second = np.where(closer, first, np.minimum(second, gap))
-                nearest_x = np.where(closer, gx, nearest_x)
-                nearest_z = np.where(closer, gz, nearest_z)
-                first = np.where(closer, gap, first)
-        low, high = CHAOS['heights']
-        top = low + (high - low) * lattice(nearest_x, nearest_z, 23) ** 1.5
-        tilt_x = 0.25 * (lattice(nearest_x, nearest_z, 24) - 0.5) * cell
-        tilt_z = 0.25 * (lattice(nearest_x, nearest_z, 25) - 0.5) * cell
-        plate = top + tilt_x * (px - nearest_x - 0.5) + tilt_z * (pz - nearest_z - 0.5)
-        edge = (second - first) * cell
-        standing = smoothstep(18.0, 70.0, edge)
-        matrix = CHAOS['matrix'] * (0.6 + 0.8 * value_noise(px * 3.0, pz * 3.0, 26))
-        chaos_height = matrix + (plate - matrix) * standing
-        share = inside[where]
-        height[where] = height[where] + share * chaos_height
-        if with_stain:
-            stain[where] = np.maximum(stain[where], share * 0.75 * (1.0 - standing))
-            whiteness[where] = share * standing
-    if with_stain:
-        for (origin, along_unit, across_unit), width, index in LINEA_LINES:
-            dx, dz = x - origin[0], z - origin[1]
-            along = dx * along_unit[0] + dz * along_unit[1]
-            across = dx * across_unit[0] + dz * across_unit[1] + 90.0 * np.sin(along / 1300.0 + index * 1.7)
-            stain = np.maximum(stain, 0.7 * smoothstep(width, width * 0.3, np.abs(across)))
-        stain = np.clip(stain * (0.75 + 0.5 * fbm(x / 300.0, z / 300.0, 2, 30)), 0.0, 1.0)
-        return height, stain, whiteness
-    return height
-
-
-# The sun's disc is a tenth of a degree across, under a 2k pixel: it is set in the middle of one (SUN_PLACE), so the
+# The Sun. Its disc is a tenth of a degree across, under a 2k pixel: it is set in the middle of one (SUN_PLACE), so the
 # 2k panorama holds it in that pixel alone and tools/sky-probe.mjs measures all its light as the sun's.
 SUN_PLACE = ((round(SUN['azimuth'] / 360 * WIDTH / DOWN - 0.5) + 0.5) * 360 / (WIDTH / DOWN),
              90 - (round((90 - SUN['elevation']) / 180 * HEIGHT / DOWN - 0.5) + 0.5) * 180 / (HEIGHT / DOWN))
@@ -244,145 +193,328 @@ SUN_DIRECTION = direction(*SUN_PLACE)
 SUN_LIGHT = np.array(SUN['colour']) * SUN['irradiance']
 
 
-def march(dx, dz, tan_elevation):
-    """Each ray's distance (horizontal, m) to the ground, or inf where it meets none: from the eye EYE m up, the
-    ground falling away by the moon's curvature, stepping by what the gap allows (no slope is steeper than 1.6)."""
-    count = dx.size
-    hit = np.full(count, np.inf)
-    t = np.full(count, 250.0)
-    previous = t.copy()
+# ---------------------------------------------------------------------------------------------------------------
+# The ground: Conamara Chaos.
+
+def load_ground():
+    """The mosaic, its gaps filled; its relief (m); its brightness over its mean; its albedo's tint (0 frost to 1 stain)."""
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    data = np.array(Image.open(download('conamara')), np.float32)
+    valid = np.isfinite(data) & (data > -1e30)
+    rows, columns = data.shape
+    # The seams between frames (a few pixels): normalised convolution.
+    filled = np.where(valid, data, 0)
+    for radius in (2, 4, 8):
+        weight = blur(valid.astype(np.float32), radius)
+        hole = ~valid & (weight > 0.35)
+        filled = np.where(hole, blur(filled, radius) / np.maximum(weight, 1e-6), filled)
+        valid |= hole
+    # Round the frames: each column's run of data reflected, back and forth, over the rest of the column.
+    has = valid.any(0)
+    first = np.where(has, valid.argmax(0), 0)
+    last = np.where(has, rows - 1 - valid[::-1].argmax(0), rows - 1)
+    span = np.maximum(last - first, 1)
+    offset = np.mod(np.arange(rows)[:, None] - first[None, :], 2 * span[None, :])
+    source = first[None, :] + np.where(offset > span[None, :], 2 * span[None, :] - offset, offset)
+    filled = np.where(valid, filled, filled[source, np.arange(columns)[None, :]])
+    filled = np.where(has[None, :], filled, np.median(filled))
+    local = blur(filled, 110)                     # a kilometre's mean: what its shading averages to
+    heights = relief(filled / local)
+    # Its light and shade: the image's own below LIGHT_SCALE pixels (its sun is the scene's), and above it the relief's
+    # under the scene's sun, shadows and all (the image's is too faint for the relief photoclinometry makes of it).
+    near = blur(filled, LIGHT_SCALE)
+    brightness = (filled / near) ** CONTRAST * np.sqrt(near / np.median(filled)) * lighting(blur(heights, LIGHT_SCALE // 2))
+    albedo = blur(filled, 12) / np.median(local)  # a hundred metres' mean: the albedo, its shading averaged out
+    stain = smoothstep(1.04, 0.7, albedo)
+    return heights, brightness.astype(np.float32), stain.astype(np.float32)
+
+
+def lighting(heights):
+    """The relief's light under the scene's sun over level ground's (Lambert's), and its shadows: the sun stands
+    IMAGE_SUN north of the mosaic's east, so near enough along its rows, and a pixel is in shadow where any east of it
+    on its row stands over the line to the sun."""
+    across = PIXEL * math.cos(math.radians(LATITUDE))
+    rise = SUN_DIRECTION[1]
+    level = math.sqrt(1 - rise * rise)
+    toward = np.array([level * math.cos(math.radians(IMAGE_SUN)), level * math.sin(math.radians(IMAGE_SUN)), rise])  # east, north, up
+    east = np.gradient(heights, axis=1) / across
+    north = -np.gradient(heights, axis=0) / PIXEL
+    lambert = np.clip((-east * toward[0] - north * toward[1] + toward[2]) / np.sqrt(1 + east * east + north * north), 0, None) / rise
+    climb = heights - np.arange(heights.shape[1])[None, :] * across * rise / level   # the height less the sun's line's
+    beyond = np.maximum.accumulate(climb[:, ::-1], axis=1)[:, ::-1]
+    beyond = np.concatenate([beyond[:, 1:], np.full((heights.shape[0], 1), -np.inf)], axis=1)
+    lit = smoothstep(4.0, -2.0, beyond - climb)
+    return lambert * (0.06 + 0.94 * lit)
+
+
+def relief(shading):
+    """Photoclinometry: under a low sun from +x a face's brightness over its surroundings' is 1 − tan(i)·(its slope
+    toward the sun), so each pixel gives a slope; integrated along x in Fourier space (least squares, with a little
+    smoothness across, which holds the rows together), relief longer than RELIEF_REACH filtered out."""
+    rows, columns = shading.shape
+    slope = (1.0 - shading) / TAN_INCIDENCE
+    along = np.fft.rfftfreq(columns)[None, :] * 2 * np.pi
+    across = np.fft.fftfreq(rows)[:, None] * 2 * np.pi
+    spectrum = np.fft.rfft2(slope)
+    denominator = along ** 2 + 0.15 * across ** 2
+    denominator[0, 0] = 1.0
+    heights = spectrum * (-1j * along) / denominator * PIXEL
+    cut = 2 * np.pi * PIXEL / RELIEF_REACH
+    squared = along ** 2 + across ** 2
+    heights *= squared / (squared + cut ** 2)
+    heights[0, 0] = 0
+    return np.fft.irfft2(heights, s=(rows, columns)).astype(np.float32)
+
+
+class Ground:
+    """The ground about the eye: its height (m, the eye's ground at 0) and radiance at (x, z), panorama metres."""
+
+    def __init__(self):
+        self.heights, self.brightness, self.stain = load_ground()
+        self.rows, self.columns = self.heights.shape
+        # The image's east and north on the ground: its sun (IMAGE_SUN north of east) on the scene's.
+        sun = math.atan2(SUN_DIRECTION[2], SUN_DIRECTION[0])
+        east = sun + math.radians(IMAGE_SUN)
+        north = east - math.pi / 2       # turning right is clockwise from above: north is a right angle left of east
+        self.east = (math.cos(east), math.sin(east))
+        self.north = (math.cos(north), math.sin(north))
+        self.across = PIXEL * math.cos(math.radians(LATITUDE))
+        level = self.sample(self.heights, *self._pixel(np.zeros(1), np.zeros(1)), cubic=True)[0]
+        self.heights -= level
+        self.highest = float(self.heights.max()) + 2.0
+
+    def _pixel(self, x, z):
+        column = EYE_AT[0] + (x * self.east[0] + z * self.east[1]) / self.across
+        row = EYE_AT[1] - (x * self.north[0] + z * self.north[1]) / PIXEL
+        return column, row
+
+    def _mirror(self, index, size):
+        index = np.mod(index, 2 * size)
+        return np.where(index >= size, 2 * size - 1 - index, index)
+
+    def sample(self, grid, column, row, cubic=False):
+        """`grid` at fractional pixels, mirrored past its edges: bilinear, or a cubic B-spline (smooth to its slope)."""
+        base_column, base_row = np.floor(column), np.floor(row)
+        fc, fr = column - base_column, row - base_row
+        base_column, base_row = base_column.astype(np.int64), base_row.astype(np.int64)
+        if not cubic:
+            c0, c1 = self._mirror(base_column, self.columns), self._mirror(base_column + 1, self.columns)
+            r0, r1 = self._mirror(base_row, self.rows), self._mirror(base_row + 1, self.rows)
+            top = grid[r0, c0] * (1 - fc) + grid[r0, c1] * fc
+            bottom = grid[r1, c0] * (1 - fc) + grid[r1, c1] * fc
+            return top * (1 - fr) + bottom * fr
+
+        def weights(f):
+            return ((1 - f) ** 3 / 6, (3 * f ** 3 - 6 * f ** 2 + 4) / 6, (-3 * f ** 3 + 3 * f ** 2 + 3 * f + 1) / 6, f ** 3 / 6)
+        column_weights, row_weights = weights(fc), weights(fr)
+        total = 0.0
+        for j in range(4):
+            r = self._mirror(base_row + j - 1, self.rows)
+            line = 0.0
+            for i in range(4):
+                line = line + grid[r, self._mirror(base_column + i - 1, self.columns)] * column_weights[i]
+            total = total + line * row_weights[j]
+        return total
+
+    def height(self, x, z, distance):
+        """The ground's height: the chaos's relief, level in the hollow about the eye, and the frost on it near."""
+        column, row = self._pixel(x, z)
+        height = self.sample(self.heights, column, row, cubic=True)
+        height = height * smoothstep(BASIN['flat'], BASIN['rise'], np.hypot(x, z))
+        near = distance < MICRO_REACH
+        if near.any():
+            height[near] += self.frost(x[near], z[near], distance[near])
+        return height
+
+    def frost(self, x, z, distance, gradient=False):
+        """The frost's fractal relief (m), each octave fading out as it falls under a pixel; with `gradient`, its slope
+        toward the sun instead."""
+        total = np.zeros_like(x)
+        pixel = distance * 2 * math.pi / (WIDTH * SUB)
+        for octave, (wavelength, amplitude) in enumerate(MICRO):
+            fade = np.clip(wavelength / np.maximum(pixel, 1e-6) / 3.0 - 1.0, 0.0, 1.0)
+            if not fade.any():
+                continue
+            if gradient:
+                step = wavelength * 0.15
+                value = (noise(x + SUN_DIRECTION[0] * step, z + SUN_DIRECTION[2] * step, wavelength, octave)
+                         - noise(x - SUN_DIRECTION[0] * step, z - SUN_DIRECTION[2] * step, wavelength, octave)) / (2 * step)
+            else:
+                value = noise(x, z, wavelength, octave)
+            total += amplitude * fade * value
+        return total
+
+    def radiance(self, x, z, distance):
+        """The ground's radiance: the image's light and shade under the scene's sun, tinted by its albedo, and the frost's."""
+        column, row = self._pixel(x, z)
+        brightness = self.sample(self.brightness, column, row)
+        stain = self.sample(self.stain, column, row)
+        albedo = ICE[None, :] * (1 - stain[:, None]) + STAIN[None, :] * stain[:, None]
+        # Fresh frost about the eye (the hollow refrozen): its shading lightened toward level ice.
+        hollow = smoothstep(BASIN['flat'] * 1.2, BASIN['flat'] * 0.5, np.hypot(x, z))
+        brightness = brightness + (1.0 - brightness) * 0.6 * hollow
+        horizontal = math.hypot(SUN_DIRECTION[0], SUN_DIRECTION[2])
+        frost = np.ones_like(x)
+        near = distance < MICRO_REACH
+        if near.any():
+            slope = self.frost(x[near], z[near], distance[near], gradient=True) / horizontal
+            frost[near] = np.clip(1.0 + slope * horizontal / SUN_DIRECTION[1], 0.15, 2.2)
+        light = brightness * frost
+        return albedo * light[:, None] * SUN_LIGHT[None, :] * SUN_DIRECTION[1] / math.pi
+
+
+def noise(x, z, wavelength, salt):
+    """Smooth value noise from −1 to 1 at `wavelength` m, its lattice turned so octaves do not line up."""
+    angle = 0.7 + salt * 1.3
+    u = (x * math.cos(angle) - z * math.sin(angle)) / wavelength + salt * 17.3
+    v = (x * math.sin(angle) + z * math.cos(angle)) / wavelength - salt * 9.1
+    iu, iv = np.floor(u), np.floor(v)
+    fu, fv = u - iu, v - iv
+    iu, iv = iu.astype(np.int64), iv.astype(np.int64)
+    fu, fv = fu * fu * (3 - 2 * fu), fv * fv * (3 - 2 * fv)
+
+    def lattice(a, b):
+        return LATTICE[(PERMUTATION[(a + salt * 59) & 1023] + b * 7 + salt * 131) & 1023]
+    top = lattice(iu, iv) + (lattice(iu + 1, iv) - lattice(iu, iv)) * fu
+    bottom = lattice(iu, iv + 1) + (lattice(iu + 1, iv + 1) - lattice(iu, iv + 1)) * fu
+    return top + (bottom - top) * fv
+
+
+PERMUTATION = np.random.default_rng(SEED).permutation(1024).astype(np.int64)   # the noise's hash
+LATTICE = np.random.default_rng(SEED + 2).uniform(-1, 1, 1024)                 # and its values
+
+
+def render_ground(ground, top_row, bottom_row):
+    """The ground over rows top_row..bottom_row of the 8k: (colour sums, coverage), marched a column at a time.
+
+    Each of SUB rays across a column steps outward from where the ground lies LOWEST degrees down; each step's ground
+    is at an elevation (its height less the eye's and the moon's curvature) and covers the rows between it and the
+    highest drawn so far, each by the share of it that span covers, so the column fills from the bottom up with the
+    nearest ground first and every row's colour is the mean of what lies in it."""
+    rows = bottom_row - top_row
+    colour = np.zeros((rows * WIDTH, 3), np.float64)
+    cover = np.zeros(rows * WIDTH, np.float64)
+    count = WIDTH * SUB
+    column = (np.arange(count) + 0.5) / SUB                     # fractional 8k columns
+    phi = 2 * math.pi * (column / WIDTH - 0.5)
+    dx, dz = np.cos(phi), np.sin(phi)
+    pixel_column = np.floor(column).astype(np.int64)
+
+    def row_of(elevation):
+        return (math.pi / 2 - elevation) / math.pi * HEIGHT
+
+    t = np.full(count, EYE / math.tan(math.radians(-LOWEST)))
+    highest = np.full(count, row_of(math.radians(LOWEST)))      # the row (fractional) the column is filled up to
     active = np.arange(count)
-    for _ in range(4000):
-        if active.size == 0:
-            break
-        ta = t[active]
-        ray_height = EYE + ta * tan_elevation[active] + ta * ta / (2 * MOON_RADIUS)
-        ground = terrain(dx[active] * ta, dz[active] * ta)
-        under = ray_height <= ground
-        if under.any():
-            lower, upper = previous[active[under]], ta[under]
-            ray_dx, ray_dz, ray_tan = dx[active[under]], dz[active[under]], tan_elevation[active[under]]
-            for _ in range(10):
-                middle = 0.5 * (lower + upper)
-                below = EYE + middle * ray_tan + middle * middle / (2 * MOON_RADIUS) <= terrain(ray_dx * middle, ray_dz * middle)
-                upper = np.where(below, middle, upper)
-                lower = np.where(below, lower, middle)
-            hit[active[under]] = upper
-        gap = ray_height - ground
-        rising = tan_elevation[active] + ta / MOON_RADIUS > 0
-        gone = (rising & (ray_height > HIGHEST)) | (ta > 90e3)
-        keep = ~under & ~gone
-        step = np.clip(gap / 1.6, 1.5, 15.0 + 0.02 * ta)
-        previous[active] = ta
-        t[active] = ta + step
-        active = active[keep]
-    return hit
-
-
-def shade(x, z, t):
-    """The ground's radiance at (x, z), seen from `t` m off: its albedo lit by the sun (where no ground stands
-    between) and by the sunlit ground about it."""
-    eps = np.maximum(1.0, 0.0015 * t)
-    height, stain, whiteness = terrain(x, z, with_stain=True)
-    slope_x = (terrain(x + eps, z) - terrain(x - eps, z)) / (2 * eps)
-    slope_z = (terrain(x, z + eps) - terrain(x, z - eps)) / (2 * eps)
-    normal = np.stack([-slope_x, np.ones_like(x), -slope_z], -1)
-    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
-    sunlit = np.clip(normal @ SUN_DIRECTION, 0.0, None)
-    # Shadows: march toward the sun until clear of everything.
-    lit = np.ones_like(x)
-    candidates = np.flatnonzero(sunlit > 0)
-    s = np.full(candidates.size, 2.0)
-    base_height = height[candidates] + 0.3
-    horizontal = math.hypot(SUN_DIRECTION[0], SUN_DIRECTION[2])
-    rise = SUN_DIRECTION[1] / horizontal
-    sx, sz = SUN_DIRECTION[0] / horizontal, SUN_DIRECTION[2] / horizontal
-    active = np.arange(candidates.size)
-    for _ in range(400):
-        if active.size == 0:
-            break
-        along = s[active]
-        index = candidates[active]
-        ray_height = base_height[active] + along * rise
-        ground = terrain(x[index] + sx * along, z[index] + sz * along)
-        blocked = ground > ray_height
-        lit[index[blocked]] = 0.0
-        done = blocked | (ray_height > HIGHEST)
-        s[active] = along + np.clip((ray_height - ground) / 1.6, 1.0, 40.0)
+    started = time.time()
+    steps = 0
+    while active.size:
+        steps += 1
+        distance = t[active]
+        x, z = dx[active] * distance, dz[active] * distance
+        height = ground.height(x, z, distance)
+        elevation = np.arctan2(height - EYE - distance * distance / (2 * MOON_RADIUS), distance)
+        row = row_of(elevation)
+        seen = row < highest[active]
+        if seen.any():
+            index = active[seen]
+            upper, lower = row[seen], highest[index]
+            radiance = ground.radiance(x[seen], z[seen], distance[seen])
+            first = np.floor(upper).astype(np.int64)
+            last = np.ceil(lower).astype(np.int64) - 1
+            spans = last - first + 1
+            which = np.repeat(np.arange(index.size), spans)
+            offsets = np.arange(which.size) - np.repeat(np.cumsum(spans) - spans, spans)
+            pixel_row = first[which] + offsets
+            share = np.minimum(lower[which], pixel_row + 1) - np.maximum(upper[which], pixel_row)
+            inside = (pixel_row >= top_row) & (pixel_row < bottom_row) & (share > 0)
+            flat = (pixel_row[inside] - top_row) * WIDTH + pixel_column[index][which[inside]]
+            weight = share[inside] / SUB
+            np.add.at(cover, flat, weight)
+            for channel in range(3):
+                np.add.at(colour[:, channel], flat, radiance[which[inside], channel] * weight)
+            highest[index] = upper
+        # Done: past REACH, or the drawn edge stands over anything the ground beyond could raise.
+        reach = t[active]
+        ceiling = np.arctan2(ground.highest - EYE - reach * reach / (2 * MOON_RADIUS), reach)
+        done = (reach > REACH) | (row_of(ceiling) > highest[active])
+        t[active] = reach + np.maximum(0.25, reach * 0.0012)
         active = active[~done]
-    albedo = ICE * (1 - stain[:, None]) + STAIN * stain[:, None]
-    albedo = albedo * (0.94 + 0.12 * fbm(x / 60.0, z / 60.0, 2, 40))[:, None]
-    albedo = albedo + (ICE * 1.04 - albedo) * (0.5 * whiteness)[:, None]
-    # The sunlit ice about a face lights it from below: its radiance times the share of the face's view that is ground.
-    ground_radiance = ICE.mean() * SUN_LIGHT * SUN_DIRECTION[1] / math.pi
-    light = SUN_LIGHT[None, :] * (sunlit * lit)[:, None] / math.pi + ground_radiance[None, :] * (0.5 * (1.0 - normal[:, 1]))[:, None]
-    return albedo * light
+        if steps % 1000 == 0:
+            print(f'  ground: step {steps}, {active.size} rays marching ({time.time() - started:.0f} s)')
+    print(f'ground: {steps} steps ({time.time() - started:.0f} s)')
+    return colour.reshape(rows, WIDTH, 3), cover.reshape(rows, WIDTH)
 
 
-def floor_radiance(x, z):
-    """The basin's refrozen floor, below BAND (the scene's water hides it): level ice in the sun."""
-    albedo = PLAIN[None, :] * (0.9 + 0.2 * fbm(x / 40.0, z / 40.0, 2, 50))[:, None]
-    return albedo * SUN_LIGHT[None, :] * SUN_DIRECTION[1] / math.pi
+# ---------------------------------------------------------------------------------------------------------------
+# Jupiter.
 
-
-# Jupiter's frame.
 J_CENTRE = direction(AHEAD + JUPITER['bearing'], JUPITER['elevation'])
-J_SINE = math.sin(math.radians(JUPITER['radius']))
 _up = np.array([0.0, 1.0, 0.0]) - J_CENTRE * J_CENTRE[1]
 _up /= np.linalg.norm(_up)
-_right = np.cross(_up, J_CENTRE)   # toward the right as the eye looks at it
-_right /= np.linalg.norm(_right)
+_left = np.cross(_up, J_CENTRE)
+_left /= np.linalg.norm(_left)
 _tilt = math.radians(JUPITER['tilt'])
-J_AXIS = math.cos(_tilt) * _up + math.sin(_tilt) * _right
-J_PRIME = -J_CENTRE - np.dot(-J_CENTRE, J_AXIS) * J_AXIS   # longitude 0: the meridian facing the eye
+J_AXIS = math.cos(_tilt) * _up + math.sin(_tilt) * _left
+J_PRIME = -J_CENTRE - np.dot(-J_CENTRE, J_AXIS) * J_AXIS   # the meridian facing the eye
 J_PRIME /= np.linalg.norm(J_PRIME)
-J_EAST = np.cross(J_AXIS, J_PRIME)
-BAND_LATITUDES = np.array([band[0] for band in BANDS], float)
-BAND_COLOURS = np.array([band[1] for band in BANDS], float)
+J_EAST = np.cross(J_AXIS, J_PRIME)                         # toward the eye's right across the disc
+J_EQUATOR = math.sin(math.radians(JUPITER['radius']))      # its radii, at a distance of 1
+J_POLE = J_EQUATOR * math.sin(math.radians(JUPITER['polar'])) / math.sin(math.radians(JUPITER['radius']))
 
 
-def jupiter(directions, pixel_angle):
-    """Jupiter's radiance along each direction and how much of the pixel it covers (0 to 1)."""
-    cosine = directions @ J_CENTRE
-    angle = np.arccos(np.clip(cosine, -1.0, 1.0))
-    radius = math.radians(JUPITER['radius'])
-    cover = np.clip((radius - angle) / pixel_angle + 0.5, 0.0, 1.0)
+def load_jupiter():
+    """Cassini's map in linear light, its mean scaled to Jupiter's albedo."""
+    from PIL import Image
+    picture = np.asarray(Image.open(download('jupiter')).convert('RGB'), np.float32) / 255.0
+    linear = np.where(picture <= 0.04045, picture / 12.92, ((picture + 0.055) / 1.055) ** 2.4)
+    return linear * (JUPITER['albedo'] / linear.mean())
+
+
+def jupiter(directions, jupiter_map):
+    """Jupiter's radiance along each direction, and whether the ray meets it."""
+    # In Jupiter's frame (east, axis, toward the eye), its axis squeezed so the spheroid is a sphere of J_EQUATOR.
+    squeeze = J_EQUATOR / J_POLE
+    frame = np.stack([J_EAST, J_AXIS * squeeze, J_PRIME])
+    origin = frame @ (-J_CENTRE)
+    ray = directions @ frame.T
+    a = (ray * ray).sum(-1)
+    b = ray @ origin
+    c = origin @ origin - J_EQUATOR ** 2
+    disc = b * b - a * c
+    hit = disc > 0
     radiance = np.zeros(directions.shape)
-    on = np.flatnonzero(cover > 0)
-    if on.size == 0:
-        return radiance, cover
-    d = directions[on]
-    # The ray's nearest point to the centre when it misses by a hair (the limb's pixels): taken onto the sphere.
-    b = d @ J_CENTRE
-    disc = np.maximum(b * b - (1.0 - J_SINE * J_SINE), 0.0)
-    point = d * (b - np.sqrt(disc))[:, None]
-    normal = point - J_CENTRE
-    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
-    latitude = np.degrees(np.arcsin(np.clip(normal @ J_AXIS, -1, 1)))
-    longitude = np.degrees(np.arctan2(normal @ J_EAST, normal @ J_PRIME)) + JUPITER['longitude']
-    # The bands, their edges stirred into eddies and festoons, and streaked along the jets.
-    wobble = 1.6 * (fbm(longitude / 9.0, latitude / 2.2, 4, 60) - 0.5) + 0.6 * (fbm(longitude / 2.5, latitude / 0.8, 3, 61) - 0.5)
-    stirred = latitude + wobble * (1.0 - smoothstep(55, 75, np.abs(latitude)))
-    colour = np.stack([np.interp(stirred, BAND_LATITUDES, BAND_COLOURS[:, channel]) for channel in range(3)], -1)
-    streaks = 1.0 + 0.10 * (fbm(longitude / 3.0, latitude * 1.6, 3, 62) - 0.5) + 0.05 * (value_noise(longitude / 0.7, latitude * 4.0, 63) - 0.5)
-    colour = colour * streaks[:, None]
-    # White ovals along the southern temperate belt, and the Great Red Spot in its hollow.
-    spot_latitude, spot_longitude = JUPITER['spot']
-    spot = ((longitude - spot_longitude) / SPOT['size'][0]) ** 2 + ((latitude - spot_latitude) / SPOT['size'][1]) ** 2
-    hollow = smoothstep(2.6, 1.3, spot) * (1.0 - smoothstep(1.0, 0.75, spot))
-    colour = colour * (1 - 0.25 * hollow[:, None]) + 0.25 * hollow[:, None] * np.array([0.86, 0.80, 0.70])
-    red = smoothstep(1.0, 0.55, spot) * (0.85 + 0.3 * value_noise(longitude / 1.5, latitude / 1.5, 64))
-    colour = colour + (np.array(SPOT['colour']) - colour) * red[:, None]
-    for oval_longitude in (-35.0, -10.0, 60.0):
-        oval = ((longitude - oval_longitude) / 3.0) ** 2 + ((latitude + 33.5) / 1.6) ** 2
-        colour = colour + (np.array([0.88, 0.85, 0.78]) - colour) * smoothstep(1.0, 0.4, oval)[:, None]
-    # Lit as a cloud deck is (Minnaert's law, k 0.85): softly darkened to the limb and the terminator.
+    if not hit.any():
+        return radiance, hit
+    t = (-b[hit] - np.sqrt(disc[hit])) / a[hit]
+    point = origin[None, :] + ray[hit] * t[:, None]          # on the sphere, in squeezed coordinates
+    # The spheroid's normal, back in the panorama's frame (planetographic: the normal's own latitude).
+    east, axial, toward = point[:, 0], point[:, 1] / squeeze, point[:, 2]
+    normal_local = np.stack([east, axial * squeeze * squeeze, toward], -1)
+    normal_local /= np.linalg.norm(normal_local, axis=-1, keepdims=True)
+    normal = normal_local[:, 0:1] * J_EAST + normal_local[:, 1:2] * J_AXIS + normal_local[:, 2:3] * J_PRIME
+    latitude = np.arcsin(np.clip(normal_local[:, 1], -1, 1))
+    longitude = np.arctan2(normal_local[:, 0], normal_local[:, 2])        # east of the meridian facing the eye
+    rows, columns = jupiter_map.shape[:2]
+    u = (JUPITER['meridian'] / 360.0 + longitude / (2 * math.pi)) % 1.0 * (columns - 1)
+    v = (0.5 - latitude / math.pi) * (rows - 1)
+    u0, v0 = np.floor(u).astype(np.int64), np.clip(np.floor(v).astype(np.int64), 0, rows - 2)
+    fu, fv = (u - u0)[:, None], np.clip(v - v0, 0, 1)[:, None]
+    u1 = (u0 + 1) % columns
+    colour = ((jupiter_map[v0, u0] * (1 - fu) + jupiter_map[v0, u1] * fu) * (1 - fv)
+              + (jupiter_map[v0 + 1, u0] * (1 - fu) + jupiter_map[v0 + 1, u1] * fu) * fv)
+    # Lit as a cloud deck is (Minnaert's law): darkened to the limb and softly to the terminator.
     incidence = normal @ SUN_DIRECTION
-    emergence = np.clip(-(normal * d).sum(-1), 0.05, 1.0)
-    lit = np.clip(incidence, 0, None) ** 0.85 * emergence ** -0.15 * smoothstep(-0.03, 0.06, incidence)
-    radiance[on] = colour * lit[:, None] * SUN_LIGHT / math.pi
-    return radiance, cover
+    emergence = np.clip(-(normal * directions[hit]).sum(-1), 0.02, 1.0)
+    k = JUPITER['minnaert']
+    lit = np.clip(incidence, 0, None) ** k * emergence ** (k - 1) * smoothstep(-0.02, 0.05, incidence)
+    radiance[hit] = colour * lit[:, None] * SUN_LIGHT / math.pi
+    return radiance, hit
 
+
+# ---------------------------------------------------------------------------------------------------------------
+# The sky.
 
 def milky_way(directions):
     pole = direction(AHEAD + MILKY_WAY['pole'][0], MILKY_WAY['pole'][1])
@@ -392,11 +524,20 @@ def milky_way(directions):
     other = np.cross(pole, reference)
     longitude = np.degrees(np.arctan2(directions @ other, directions @ reference))
     band = np.exp(-(latitude / MILKY_WAY['width']) ** 2)
-    clouds = fbm(longitude / 6.0, latitude / 3.0, 4, 70)
-    lanes = smoothstep(0.55, 0.75, fbm(longitude / 4.0, latitude / 1.6, 3, 71)) * np.exp(-(latitude / 3.5) ** 2)
+    clouds = 0.5 + 0.5 * fbm(longitude / 6.0, latitude / 3.0, 4, 70)
+    lanes = smoothstep(0.1, 0.5, fbm(longitude / 4.0, latitude / 1.6, 3, 71)) * np.exp(-(latitude / 3.5) ** 2)
     brightness = band * (0.35 + 1.3 * clouds) * (1.0 - 0.75 * lanes) * (1.0 + 1.5 * np.exp(-((longitude - 20.0) / 35.0) ** 2))
-    tint = np.array([1.0, 0.95, 0.88])
-    return MILKY_WAY['radiance'] * brightness[:, None] * tint
+    return MILKY_WAY['radiance'] * brightness[:, None] * np.array([1.0, 0.95, 0.88])
+
+
+def fbm(u, v, octaves, salt):
+    """Fractal value noise, −1 to 1-ish, over unit wavelengths of u and v."""
+    total, amplitude, scale = 0.0, 0.5, 1.0
+    for octave in range(octaves):
+        total = total + amplitude * noise(u * scale, v * scale, 1.0, salt + octave)
+        amplitude *= 0.5
+        scale *= 2.03
+    return total
 
 
 def sun_glare(directions):
@@ -430,106 +571,88 @@ def pixel_directions(rows, columns, width, height):
 
 
 def pixel_solid_angle(row, width, height):
-    return (2 * math.pi / width) * (math.pi / height) * math.cos(math.pi / 2 - (row + 0.5) / height * math.pi)
+    return (2 * math.pi / width) * (math.pi / height) * np.cos(math.pi / 2 - (row + 0.5) / height * math.pi)
 
 
-def render():
-    """The 8k panorama, row block by row block: the ground in BAND, the floor below it, and above the sky."""
+def render_sky():
+    """The sky alone, the whole 8k: the Milky Way, the sun's glare and disc, the stars, and Jupiter."""
     image = np.zeros((HEIGHT, WIDTH, 3), np.float32)
-    pixel_angle = 2 * math.pi / WIDTH
+    # The stars, each its light over its own pixel's solid angle: one 8k pixel, crisp in the strip.
     star_directions, star_light = star_field()
-    # The stars and the sun's disc, splatted onto a layer of their own: each its light over its pixels' solid angle.
-    points = np.zeros((HEIGHT, WIDTH, 3), np.float32)
     elevation = np.arcsin(np.clip(star_directions[:, 1], -1, 1))
-    u = (np.arctan2(star_directions[:, 2], star_directions[:, 0]) / (2 * math.pi) + 0.5) * WIDTH - 0.5
-    v = (math.pi / 2 - elevation) / math.pi * HEIGHT - 0.5
-    for index in range(len(u)):
-        column0, row0 = math.floor(u[index]), math.floor(v[index])
-        fu, fv = u[index] - column0, v[index] - row0
-        for oc, orow, weight in ((0, 0, (1 - fu) * (1 - fv)), (1, 0, fu * (1 - fv)), (0, 1, (1 - fu) * fv), (1, 1, fu * fv)):
-            row = min(max(row0 + orow, 0), HEIGHT - 1)
-            points[row, (column0 + oc) % WIDTH] += star_light[index] * weight / pixel_solid_angle(row, WIDTH, HEIGHT)
+    column = np.floor((np.arctan2(star_directions[:, 2], star_directions[:, 0]) / (2 * math.pi) + 0.5) * WIDTH).astype(np.int64) % WIDTH
+    row = np.clip(np.floor((math.pi / 2 - elevation) / math.pi * HEIGHT).astype(np.int64), 0, HEIGHT - 1)
+    points = np.zeros((HEIGHT, WIDTH, 3), np.float32)
+    np.add.at(points, (row, column), (star_light / pixel_solid_angle(row, WIDTH, HEIGHT)[:, None]).astype(np.float32))
     # The sun's disc, 16 x 16 samples a pixel about it.
     sun_u = (math.atan2(SUN_DIRECTION[2], SUN_DIRECTION[0]) / (2 * math.pi) + 0.5) * WIDTH
     sun_v = (math.pi / 2 - math.asin(SUN_DIRECTION[1])) / math.pi * HEIGHT
     sun_radius = math.radians(SUN['radius'])
     disc_radiance = np.array(SUN['colour']) * SUN['irradiance'] / (math.pi * sun_radius ** 2)
-    for row in range(int(sun_v) - 4, int(sun_v) + 5):
-        for column in range(int(sun_u) - 4, int(sun_u) + 5):
-            offsets = (np.arange(16) + 0.5) / 16
-            sub_rows, sub_columns = np.meshgrid(row + offsets - 0.5, column + offsets - 0.5, indexing='ij')
+    offsets = (np.arange(16) + 0.5) / 16
+    for sun_row in range(int(sun_v) - 4, int(sun_v) + 5):
+        for sun_column in range(int(sun_u) - 4, int(sun_u) + 5):
+            sub_rows, sub_columns = np.meshgrid(sun_row + offsets - 0.5, sun_column + offsets - 0.5, indexing='ij')
             sub = pixel_directions(sub_rows.ravel(), sub_columns.ravel(), WIDTH, HEIGHT)
             inside = np.arccos(np.clip(sub @ SUN_DIRECTION, -1, 1)) < sun_radius
-            points[row, column % WIDTH] += disc_radiance * inside.mean()
-    band_top = int(math.floor((90 - BAND[1]) / 180 * HEIGHT))
-    band_bottom = int(math.ceil((90 - BAND[0]) / 180 * HEIGHT))
+            points[sun_row, sun_column % WIDTH] = 0
+            points[sun_row, sun_column % WIDTH] += disc_radiance * inside.mean()
     columns = np.arange(WIDTH)
     for start in range(0, HEIGHT, 128):
         rows = np.arange(start, min(start + 128, HEIGHT))
         grid_rows, grid_columns = np.meshgrid(rows, columns, indexing='ij')
         directions = pixel_directions(grid_rows.ravel().astype(float), grid_columns.ravel().astype(float), WIDTH, HEIGHT)
         sky = milky_way(directions) + sun_glare(directions) + points[rows].reshape(-1, 3)
-        radiance, cover = jupiter(directions, pixel_angle)
-        sky = sky * (1 - cover[:, None]) + radiance * cover[:, None]
         image[rows] = sky.reshape(len(rows), WIDTH, 3)
-    # Below the band, the floor (hidden by the scene's water).
-    rows = np.arange(band_bottom, HEIGHT)
+    # Jupiter, 4 x 4 rays a pixel over the pixels about its disc: its limb anti-aliased, its map's detail averaged.
+    jupiter_map = load_jupiter()
+    reach = math.radians(JUPITER['radius'] + 0.5)
+    centre_row = (math.pi / 2 - math.asin(J_CENTRE[1])) / math.pi * HEIGHT
+    centre_column = (math.atan2(J_CENTRE[2], J_CENTRE[0]) / (2 * math.pi) + 0.5) * WIDTH
+    half = int(math.ceil(reach / (math.pi / HEIGHT) / math.cos(math.asin(J_CENTRE[1]) + reach))) + 2
+    rows = np.arange(int(centre_row) - half, int(centre_row) + half)
+    columns = np.arange(int(centre_column) - half, int(centre_column) + half)
     grid_rows, grid_columns = np.meshgrid(rows, columns, indexing='ij')
-    directions = pixel_directions(grid_rows.ravel().astype(float), grid_columns.ravel().astype(float), WIDTH, HEIGHT)
-    reach = EYE / np.maximum(-directions[:, 1], 1e-3)
-    image[rows] = floor_radiance(directions[:, 0] * reach, directions[:, 2] * reach).reshape(len(rows), WIDTH, 3)
-    # The band: one ray a pixel, then four more at the ground's edges.
-    rows = np.arange(band_top, band_bottom)
-    started = time.time()
-    centre = trace(rows[:, None] + np.zeros((1, WIDTH)), np.zeros((len(rows), 1)) + columns[None, :])
-    distance, colour = centre
-    hits = np.isfinite(distance)
-    near = np.where(hits, distance, 1e9)
-    edges = np.zeros_like(hits)
-    for axis in (0, 1):
-        for shift in (-1, 1):
-            other_hits = np.roll(hits, shift, axis)
-            other = np.roll(near, shift, axis)
-            edges |= (other_hits != hits) | (hits & other_hits & (np.abs(other - near) > 0.08 * np.minimum(other, near)))
-    edges[0, :] = edges[-1, :] = False
-    sky = image[rows]
-    composite = np.where(hits[..., None], colour, sky)
-    edge_rows, edge_columns = np.nonzero(edges)
-    print(f'ground: {hits.sum()} of {hits.size} pixels, {edges.sum()} at its edges ({time.time() - started:.0f} s)')
-    if edge_rows.size:
-        total = np.zeros((edge_rows.size, 3))
-        for offset_row, offset_column in ((-0.375, -0.125), (-0.125, 0.375), (0.125, -0.375), (0.375, 0.125)):
-            sub_distance, sub_colour = trace(edge_rows + rows[0] + offset_row, edge_columns + offset_column)
-            total += np.where(np.isfinite(sub_distance)[:, None], sub_colour, sky[edge_rows, edge_columns])
-        composite[edge_rows, edge_columns] = (composite[edge_rows, edge_columns] + total) / 5
-    image[rows] = composite
-    print(f'band done ({time.time() - started:.0f} s)')
+    total = np.zeros(grid_rows.shape + (3,))
+    covered = np.zeros(grid_rows.shape)
+    for sub_row in range(4):
+        for sub_column in range(4):
+            directions = pixel_directions(grid_rows.ravel() + (sub_row + 0.5) / 4 - 0.5,
+                                          grid_columns.ravel() + (sub_column + 0.5) / 4 - 0.5, WIDTH, HEIGHT)
+            radiance, hit = jupiter(directions, jupiter_map)
+            total += radiance.reshape(total.shape) / 16
+            covered += hit.reshape(covered.shape) / 16
+    wrapped = columns % WIDTH
+    behind = image[rows[:, None], wrapped[None, :]]
+    image[rows[:, None], wrapped[None, :]] = behind * (1 - covered[..., None]) + total
     return image
 
 
-def trace(rows, columns):
-    """The ground's distance and radiance for each pixel position (fractional rows and columns of the 8k)."""
-    shape = np.shape(rows)
-    rows, columns = np.ravel(rows).astype(float), np.ravel(columns).astype(float)
-    directions = pixel_directions(rows, columns, WIDTH, HEIGHT)
-    horizontal = np.hypot(directions[:, 0], directions[:, 2])
-    dx, dz = directions[:, 0] / horizontal, directions[:, 2] / horizontal
-    tan_elevation = directions[:, 1] / horizontal
-    distance = np.full(rows.size, np.inf)
-    colour = np.zeros((rows.size, 3))
-    # Rays that reach the basin's floor before its rim need no march.
-    floor = EYE / np.maximum(-tan_elevation, 1e-9)
-    on_floor = (tan_elevation < 0) & (floor < BASIN['rim'] - BASIN['wobble'] - 50)
-    distance[on_floor] = floor[on_floor]
-    colour[on_floor] = floor_radiance(dx[on_floor] * floor[on_floor], dz[on_floor] * floor[on_floor])
-    rest = np.flatnonzero(~on_floor)
-    for chunk in np.array_split(rest, max(1, rest.size // 400000)):
-        hit = march(dx[chunk], dz[chunk], tan_elevation[chunk])
-        found = np.isfinite(hit)
-        distance[chunk] = hit
-        index = chunk[found]
-        colour[index] = shade(dx[index] * hit[found], dz[index] * hit[found], hit[found])
-    return distance.reshape(shape), colour.reshape(shape + (3,))
+def render():
+    """The 8k panorama: the sky, and over it the ground from LOWEST degrees up, and below that the hollow's floor."""
+    started = time.time()
+    image = render_sky()
+    print(f'sky ({time.time() - started:.0f} s)')
+    ground = Ground()
+    print(f'ground loaded ({time.time() - started:.0f} s)')
+    top_row = int(math.floor((90 - HIGHEST_DRAWN) / 180 * HEIGHT))
+    bottom_row = int(math.ceil((90 - LOWEST) / 180 * HEIGHT)) + 1
+    colour, cover = render_ground(ground, top_row, bottom_row)
+    if cover[0].any():
+        raise SystemExit(f'the ground reaches {HIGHEST_DRAWN} degrees up, past the rows drawn: raise HIGHEST_DRAWN')
+    band = image[top_row:bottom_row]
+    image[top_row:bottom_row] = (colour + band * np.clip(1 - cover, 0, 1)[..., None]).astype(np.float32)
+    # Below: the floor about the eye, level, seen straight.
+    rows = np.arange(bottom_row, HEIGHT)
+    columns = np.arange(WIDTH)
+    grid_rows, grid_columns = np.meshgrid(rows, columns, indexing='ij')
+    directions = pixel_directions(grid_rows.ravel().astype(float), grid_columns.ravel().astype(float), WIDTH, HEIGHT)
+    reach = EYE / np.maximum(-directions[:, 1], 1e-3)
+    distance = reach * np.hypot(directions[:, 0], directions[:, 2])
+    floor = ground.radiance(directions[:, 0] * reach, directions[:, 2] * reach, distance)
+    image[rows] = floor.reshape(len(rows), WIDTH, 3).astype(np.float32)
+    print(f'panorama ({time.time() - started:.0f} s)')
+    return image
 
 
 def write_hdr(path, image):
@@ -581,14 +704,14 @@ def encode_run_length(line):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--preview', help='write a tone-mapped PNG of the 2k panorama here')
-    parser.add_argument('--draft', action='store_true', help='render the 2k alone, one ray a pixel, for a quick look (writes only the preview)')
+    parser.add_argument('--draft', action='store_true', help='render the 2k alone, one ray a column, for a quick look (writes only the preview)')
     arguments = parser.parse_args()
     if arguments.draft and not arguments.preview:
         parser.error('--draft writes only the preview: give --preview=file.png')
     started = time.time()
     if arguments.draft:
-        global WIDTH, HEIGHT, DOWN
-        WIDTH, HEIGHT, DOWN = 2048, 1024, 1
+        global WIDTH, HEIGHT, DOWN, SUB
+        WIDTH, HEIGHT, DOWN, SUB = 2048, 1024, 1, 1
     image = render()
     if arguments.draft:
         preview(image, arguments.preview)
