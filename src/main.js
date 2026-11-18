@@ -314,7 +314,8 @@ import { PLACES, placeShore, waterForPlace, placeAirless } from './places.js';
 import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour, skyBackdrop } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
-import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
+import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime, placeFlightTime } from './rock.js';
+import { GRAVITY, EARTH_GRAVITY, setGravity } from './gravity.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
 import { SplashSystem, MIRROR_LAYER, SAND_ALBEDO } from './splash.js';
@@ -493,7 +494,12 @@ const CEILING_TOLERANCE = 0.007;
 // the pace). A hard toss (null) is the real hard throw: let go fast on the
 // low arc, it goes in about twice as fast (src/rock.js THROW_STRENGTH). A
 // skip's strength is its speed (src/rock.js SKIP_THROW). The normal toss is
-// the throw the splash is tuned to (CLAUDE.md's reference throw).
+// the throw the splash is tuned to (CLAUDE.md's reference throw). Those are
+// Earth's flights: under a place's own gravity (src/gravity.js, Europa's) a
+// throw is let go as fast as it is on Earth (the arm is the same) and lands
+// at the tap the higher way round, a hard toss the lower (src/rock.js
+// placeFlightTime): a toss on Europa climbs ten metres and takes eight
+// seconds, a skip skims as fast and as low as ever.
 const ARC = {
   toss: { soft: 1.18, normal: 1.0, hard: null },
   lob: { soft: 1.3, normal: 1.5, hard: 1.7 },
@@ -814,6 +820,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // even a failed sky must not leave an unhandled rain rejection behind.
   const rainDownload = WEATHERS[weatherName].rain
     ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
+  setGravity(PLACES[firstPlace].gravity ?? EARTH_GRAVITY);   // the place's (src/gravity.js), before anything falls
   // The sky (src/sky.js Starting): its maps now, its photo on its way while
   // the pond is built and its programs warmed up (warmUp), awaited after them
   // (awaitSky); a failure is reported then, or before the warm-up if it came
@@ -2153,9 +2160,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** A throw's velocity from `hand` to `target` at strength `powerName` and manner `mannerName` for a stone of `radius` (ARC; src/rock.js throwFlightTime), with its flight time. */
   function throwVelocity(hand, target, powerName, radius, mannerName = manner) {
     const multiplier = (ARC[mannerName] ?? ARC.toss)[powerName];
-    const flightTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
+    const earthTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
+    // Under another gravity (src/gravity.js: Europa's) as fast as on Earth, the higher way to the tap, a hard toss the lower.
+    const flightTime = placeFlightTime(hand, target, earthTime, multiplier === null);
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
-    velocity.y += 0.5 * 9.81 * flightTime;
+    velocity.y += 0.5 * GRAVITY * flightTime;
     return { velocity, flightTime };
   }
 
@@ -2185,14 +2194,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /**
    * A thrown thing's velocity (the header), for what measureThing says it
-   * is: a river stone's as throwVelocity says, as it always was; anything
+   * is: a river stone's as throwVelocity says, as it always was (under
+   * Earth's gravity: under another, aimed as the rest are); anything
    * else's as src/rock.js aimThrow finds it, no faster than it can be thrown
    * and aimed for the air's drag. With the flight time and, but for a river
    * stone, its path and where it comes down.
    */
   function thingVelocity(hand, target, powerName, measured, flight = null, mannerName = manner) {
     const { velocity, flightTime } = throwVelocity(hand, target, powerName, measured.radius, mannerName);
-    if (measured.thing.key === DEFAULT_THING) return { velocity, flightTime, path: null, landing: target };
+    // Under another gravity (src/gravity.js) a stone flies for seconds, and the air's drag, nothing in under one, takes it
+    // a hand short: it is aimed for it as anything else is.
+    if (measured.thing.key === DEFAULT_THING && GRAVITY === EARTH_GRAVITY) return { velocity, flightTime, path: null, landing: target };
     return aimThrow(hand, target, flightTime, measured, flight);
   }
 
@@ -2424,7 +2436,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const t = flightTime * i / 24;
       if (path) { arcPoints.set(path[Math.round((i / 24) * (path.length - 1))].toArray(), i * 3); continue; }
       arcPoints[i * 3] = hand.x + velocity.x * t;
-      arcPoints[i * 3 + 1] = hand.y + velocity.y * t - 0.5 * 9.81 * t * t;
+      arcPoints[i * 3 + 1] = hand.y + velocity.y * t - 0.5 * GRAVITY * t * t;
       arcPoints[i * 3 + 2] = hand.z + velocity.z * t;
     }
     arcGeometry.attributes.position.needsUpdate = true;
@@ -3412,7 +3424,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const geometryChanges = poolChanges || koiPond !== Boolean(next.koi) || lagoon !== Boolean(next.tropics) || mallHere !== Boolean(next.mall);
     const nextIce = next.defaultWater === 'frozen' && iceName === 'none' ? iceThickness : iceName;
     const iceChanges = nextIce !== iceName;
-    if (geometryChanges || iceChanges) clearPond();
+    // A change of gravity (src/gravity.js) clears the pond too, so nothing thrown or ringing lives under two.
+    const gravityChanges = (next.gravity ?? EARTH_GRAVITY) !== GRAVITY;
+    setGravity(next.gravity ?? EARTH_GRAVITY);
+    if (geometryChanges || iceChanges || gravityChanges) clearPond();
     placeName = place;
     pooled = Boolean(next.pool);
     koiPond = Boolean(next.koi);
@@ -3464,6 +3479,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setIce(ice);
   }
   function warmUp() {
+    // Under Earth's gravity whatever the place's (src/gravity.js): its throws are the same throws, and their stone is in
+    // the water, its cavity open and its jet up at the moments drawn (WARM_UP), where Europa's would still be in the air.
+    // Gravity is a uniform, so the programs are the place's; the place's is back after.
+    const placeGravity = GRAVITY;
+    setGravity(EARTH_GRAVITY);
+    try {
+      warmUpUnderEarth();
+    } finally {
+      setGravity(placeGravity);
+    }
+  }
+  function warmUpUnderEarth() {
     const started = performance.now();
     const programsBefore = renderer.info.programs?.length ?? 0;
     // Frozen at the start (WARM_UP): its throws (warmUpScene) go into open water first, so the crown's programs are built

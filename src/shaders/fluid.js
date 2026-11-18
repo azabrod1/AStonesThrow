@@ -320,7 +320,8 @@ void main() {
 // and that share of its glints is spread with them, the rest a point at a
 // place of its own within PUFF_GLINT_REACH of its centre (puffHash).
 export const SPRAY_VERTEX = /* glsl */`
-#define SPRAY_GRAVITY 9.81
+uniform float uGravity;          // the place's (src/gravity.js)
+#define SPRAY_GRAVITY uGravity
 #define SPRAY_COAST ${COAST.toFixed(4)}
 #define PUFF_SPREAD 0.8          // a puff's drops spread at this share of their burst's kick (two of its spread along an axis)
 #define PUFF_MOST_SPREAD 0.02    // m: and no further than this, a bound on the fill a puff costs

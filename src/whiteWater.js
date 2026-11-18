@@ -37,6 +37,7 @@ import * as THREE from 'three';
 import { WHITE_WATER_VERTEX, WHITE_WATER_FRAGMENT } from './shaders/whiteWater.js';
 import { seededRandom } from './spray.js';
 import { withRandom } from './withRandom.js';
+import { gravityUniform } from './gravity.js';
 
 export const WHITE_WATER_CAPACITY = 256;
 const STRIDE = 12;            // floats a slot: origin and birth, velocity and life, diameters, τ and seed
@@ -84,6 +85,7 @@ export class WhiteWater {
       uniforms: {
         ...gale,
         uTime: { value: 0 },
+        uGravity: gravityUniform,   // the place's (src/gravity.js)
         uWalls: { value: new THREE.Vector4(-FAR, FAR, -FAR, FAR) },
         uOpacity: { value: OPACITY },
         uSunDir: { value: lighting.sunDirection },

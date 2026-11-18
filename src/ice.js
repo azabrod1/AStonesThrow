@@ -196,8 +196,8 @@ import { roundLipReach } from './cavity.js';
 import { ICE_SHADOW, ICE_SHADOW_UNIFORMS } from './iceShadow.js';
 import { passBy } from './collide.js';
 import { basinBounds } from './basin.js';
+import { GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
 const containCorner = new THREE.Vector3();   // contain's, kept between calls
 const edgeWeight = new THREE.Vector3();      // tipAtEdge's

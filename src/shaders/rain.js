@@ -355,7 +355,7 @@ export const SPLASH = {
   shine: [0.35, 1.0],   // a splash's own brightness, of the rain's opacity
   fade: [0.4, 1.0],     // px: a capsule fades out as its true width falls through these
   timePower: 0.5,       // a splash's times scale with the drop's size to this power (its lengths with the size itself)
-  gravity: 9.81,
+  gravity: 9.81,        // Earth's wherever it rains: rain falls only through an air (src/gravity.js EARTH_GRAVITY)
 };
 const splashDefines = `
 #define SPLASH_CROWN_LIFE ${SPLASH.crown.life}

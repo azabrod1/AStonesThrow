@@ -88,6 +88,9 @@
 // pebble's fan torn in one frame or a handful of stones thrown at once write
 // about as many sprites a second as the ring holds for their flights, and the
 // CPU about as many a frame (a few thousand on High), whatever the throw.
+// Under a weaker gravity than Earth's (src/gravity.js: Europa's) a flight
+// is as many times longer (MOST_LIFE too), and CROWD_RATE as many times
+// lower, so the ring still holds them.
 //
 // The sprites live in a ring of SPRAY_CAPACITY slots allocated once; the
 // preset sets how much of it is used (setBudget's ring: a smaller one once
@@ -110,14 +113,15 @@
 // while one of them flies; mirrorBounds gives it a box round every flight,
 // reckoned at birth.
 import * as THREE from 'three';
+import { GRAVITY, EARTH_GRAVITY, gravityUniform } from './gravity.js';
 
 export const SPRAY_CAPACITY = 65536;
 export const SPRAY_STRIDE = 16;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2, the wind's drift at birth (x, z) and the burst's kick
 const STRIDE = SPRAY_STRIDE;
-const GRAVITY = 9.81;
 export const SPRAY_LEAST_RADIUS = 0.00005;
 export const SPRAY_MOST_RADIUS = 0.001;  // larger fragments are the CPU's drops
-const MOST_LIFE = 4;                     // s: no sprite flies longer
+const MOST_LIFE = 4;                     // s: no sprite flies longer under Earth's gravity; under a weaker one (src/gravity.js) as many times longer as a flight is
+const mostLife = () => MOST_LIFE * (EARTH_GRAVITY / GRAVITY);
 const AIR = { density: 1.2, viscosity: 1.5e-5 };   // kg/m³ and m²/s (kinematic)
 const WATER_DENSITY = 1000;
 export const COAST = 1.4;                // τ2's share across the water (the header; tools/spray-probe.mjs)
@@ -242,7 +246,14 @@ export function terminalSpeed(radius) {
   }
   return 0.5 * (low + high);
 }
-const TERMINAL_SPEEDS = Float64Array.from({ length: RADIUS_STEPS }, (_, index) => terminalSpeed(index * RADIUS_STEP));
+// The terminal speeds by radius under each gravity met (src/gravity.js: a place's), Earth's at once.
+const TERMINAL_SPEEDS = new Map();
+const terminalSpeeds = () => {
+  let table = TERMINAL_SPEEDS.get(GRAVITY);
+  if (!table) TERMINAL_SPEEDS.set(GRAVITY, table = Float64Array.from({ length: RADIUS_STEPS }, (_, index) => terminalSpeed(index * RADIUS_STEP)));
+  return table;
+};
+terminalSpeeds();
 
 /** How far a drop slows from each speed to rest by drag alone (m), by radius and speed: the midpoint rule on v / a(v). */
 const STOPPING = (() => {
@@ -260,7 +271,8 @@ const STOPPING = (() => {
 /** A drop's terminal speed (m/s) for its radius, from the table. */
 function tabulatedTerminal(radius) {
   const place = Math.min(Math.max(radius / RADIUS_STEP, 0), RADIUS_STEPS - 1.001), index = place | 0;
-  return TERMINAL_SPEEDS[index] + (TERMINAL_SPEEDS[index + 1] - TERMINAL_SPEEDS[index]) * (place - index);
+  const speeds = terminalSpeeds();
+  return speeds[index] + (speeds[index + 1] - speeds[index]) * (place - index);
 }
 
 /** How far a drop of `radius` slows from `speed` to rest by drag alone (m), from the table. */
@@ -355,7 +367,7 @@ function linearLanding(height, rise, tau) {
  */
 export function landingBound(height, rise, flight) {
   const { fastTau, fastTime, slowTau } = flight;
-  if (fastTime <= 0) return Math.min(linearLanding(height, rise, slowTau), MOST_LIFE);
+  if (fastTime <= 0) return Math.min(linearLanding(height, rise, slowTau), mostLife());
   const fast = linearLanding(height, rise, fastTau);
   if (fast <= fastTime) return fast;
   const apex = lastApex;
@@ -364,7 +376,7 @@ export function landingBound(height, rise, flight) {
   if (middleHeight <= 0) { lastApex = apex; return fastTime; }
   const slow = linearLanding(middleHeight, -fastFall + (rise + fastFall) * decay, slowTau);
   lastApex = Math.max(apex, lastApex);
-  return Math.min(fastTime + slow, MOST_LIFE);
+  return Math.min(fastTime + slow, mostLife());
 }
 
 /** One draw of a standard normal (Box–Muller, one of the pair). */
@@ -392,7 +404,7 @@ export class SpraySystem {
    * @param capacity the ring's slots (SPRAY_CAPACITY); setBudget uses part of it
    * The spray's four materials (the fluid passes' depth and optics, the
    * mirror's colour and distance) are the splash's (src/splash.js), built
-   * on SPRAY_VERTEX with `uniforms` (its clock and the wind's drift) among
+   * on SPRAY_VERTEX with `uniforms` (its clock and gravity) among
    * theirs; attach them with setMaterials.
    */
   constructor({ capacity = SPRAY_CAPACITY } = {}) {
@@ -430,7 +442,7 @@ export class SpraySystem {
     geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 4, 12));
     geometry.instanceCount = 0;
     this.geometry = geometry;
-    this.uniforms = { uTime: { value: 0 } };
+    this.uniforms = { uTime: { value: 0 }, uGravity: gravityUniform };   // the splash's clock; the place's gravity (src/gravity.js)
     this.mesh = new THREE.Mesh(geometry);
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
@@ -501,7 +513,7 @@ export class SpraySystem {
       this.recentTime = time;
     }
     const uncrowded = this.density(sizeFactor, radius);
-    const crowding = Math.min((CROWD_RATE * CROWD_SECONDS * this.budgetRing) / Math.max(this.recent + drops * uncrowded, 1), 1);
+    const crowding = Math.min((CROWD_RATE * (GRAVITY / EARTH_GRAVITY) * CROWD_SECONDS * this.budgetRing) / Math.max(this.recent + drops * uncrowded, 1), 1);
     const density = uncrowded * crowding;
     const wanted = drops * density;
     const sprites = Math.floor(wanted) + (random() < wanted - Math.floor(wanted) ? 1 : 0);

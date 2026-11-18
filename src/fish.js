@@ -113,6 +113,7 @@
 // fish must not see, or they would start the session elsewhere.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
+import { GRAVITY } from './gravity.js';
 
 // The kinds. length: [least, most] (m, nose to tail); depth: [shallowest,
 // deepest] (m) the kind keeps; cruise: its cruising speed in body lengths a
@@ -175,7 +176,6 @@ export const FISH_BY_PLACE = {
   europa: [{ species: 'lantern', count: 6, range: { x: 0, z: -1.4, reach: 1.7 } }],   // Europa's ocean: ice lanterns, each alone, about the bay's middle (the header)
 };
 
-const GRAVITY = 9.81;
 const ANTICIPATE = 0.5;        // s: a thing coming down sooner than this frightens the fish under where it will land
 const ALARM = { least: 0.5, perRadius: 11, impact: 1.25, moving: 0.35 };   // m and m per m of the thing's radius: how far a thing frightens (times the kind's shy)
 const FRIGHT = { seconds: [0.7, 1.4], wary: [3, 6], spread: 0.7, dive: 0.5, passOn: [0.08, 0.22], passReach: 1.5 };   // s; rad of scatter; how far down it dives; how its group takes fright

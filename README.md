@@ -1299,6 +1299,13 @@ The curated locations include:
   and the Weather and Wind pages grey their choices out and say why. The
   choices are kept, still remembered on the device, and come back at the next
   place with air; no rain, snow or gale program is built for it.
+  Its gravity is its own, 1.315 m/s², a seventh of Earth's
+  (`PLACES.europa.gravity`, `src/gravity.js`): the throw is let go as fast
+  as on Earth and goes the high way to the tap (`placeFlightTime` in
+  `src/rock.js`), so a medium toss climbs ten metres and comes down eight
+  seconds later nearly straight; the hole pinches 2.7 times later, the drops
+  hang longer and the rings run slower (`tools/gravity-probe.mjs`). The drag
+  on what flies is still Earth's air's.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never
@@ -1849,8 +1856,8 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
   `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`, `tools/bird-probe.mjs`,
   `tools/europa-life-probe.mjs`,
-  `tools/garden-probe.mjs`, `tools/tropics-probe.mjs` and
-  `tools/visitor-probe.mjs`;
+  `tools/garden-probe.mjs`, `tools/tropics-probe.mjs`,
+  `tools/gravity-probe.mjs` and `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
@@ -2189,6 +2196,12 @@ farther out, so it rises into the view rather than filling its corner.
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
   ```
+- `node tools/gravity-probe.mjs` checks a place's own gravity
+  (`src/gravity.js`) against theory under Europa's: the throw's flight and
+  landing, the cavity at the same Froude number (the same hole, 2.73 times
+  slower), the drops' flights and terminal speeds, the rings' dispersion and
+  the shaders that take `uGravity`, and the Europa jet's cost; and that back
+  under Earth's every number is what it was.
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [horizontalFraction]`
   checks the slender-jet solver (`src/slenderJet.js`) against the textbook:
   Rayleigh–Plateau's growth rate, Taylor–Culick's retraction speed, the drop

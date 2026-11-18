@@ -77,7 +77,7 @@ export const VISITOR_WATER = /* glsl */`
 #define VISITOR_CONTACTS ${VISITOR_CONTACTS}
 #define VISITOR_RINGS ${VISITOR_RINGS}
 #define VISITOR_RING_SLOPE_LEAST ${VISITOR_RING_SLOPE_LEAST}
-#define VISITOR_GRAVITY 9.81
+#define VISITOR_GRAVITY 9.81   // Earth's: the visitor is Loch Ness's alone (src/gravity.js)
 #define VISITOR_RING_SIZE 0.4      // m: a breach's or a dive's impulse, about a body's girth
 #define CONTACT_RIPPLE 0.32        // m: the ripples' wavelength where the body breaks the surface
 #define CONTACT_RIPPLE_REACH 1.4   // m: how far out they die by e

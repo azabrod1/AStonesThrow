@@ -267,7 +267,7 @@ if (throws.length > 0 && preImpact > 0) {
 // One app frame per step, at the page's time scale, so that in slow motion the
 // first frame after the impact is at most one slow frame (1/600 s at 0.1) late.
 const flightStep = await page.evaluate(() => Math.max(window.__pond.timeScale ?? 1, 0.01) / 60);
-while (throws.length > 0 && !(await page.evaluate(() => window.__pond.hasImpacted())) && flight < 3) {
+while (throws.length > 0 && !(await page.evaluate(() => window.__pond.hasImpacted())) && flight < preImpact + 3) {   // past a --preimpact (a throw on Europa flies 8 s)
   await page.evaluate((seconds) => window.__pond.advance(seconds), flightStep);
   flight += flightStep;
 }

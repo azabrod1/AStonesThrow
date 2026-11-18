@@ -126,8 +126,8 @@ import * as THREE from 'three';
 import { seededRandom, sprayDrops } from './spray.js';
 import { SHEATH } from './streamSheath.js';
 import { FAN_GRID } from './sprayFan.js';
+import { GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
 const SURFACE_TENSION = 0.072;
 const BAR = 1e5;
