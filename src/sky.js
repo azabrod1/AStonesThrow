@@ -449,7 +449,10 @@ const SKIES = {
   // reddish-brown. Airless, its sky has almost no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter
   // stands up to 17° high, so its horizon strip reaches 30° (`stripAbove`), the whole of the level view's sky sharp.
   // tools/europa-sky.py puts its sun SUN_AZIMUTH right of its ahead: change both. Its 8k is that tool's (`builtBy`).
-  europa: { ownPlace: false, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30, hours: { day: { file: 'europa', label: 'Day' } } },
+  // Its black sky lights nothing: the light that fills a shadow, lights a splash's sides and greys a frosted mirror
+  // is its sunlit ice's, as on the Moon its regolith's (`iceShine`, added to the ambient as a share of its sun: the
+  // ice's albedo, 0.65, times its sun's sine, 0.42, over the quarter of a thing's view the ice fills, about).
+  europa: { ownPlace: false, iceShine: 0.07, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30, hours: { day: { file: 'europa', label: 'Day' } } },
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
@@ -1129,6 +1132,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       clear.sun.set(0, 0, 0);
     }
     clear.sky.fromArray(measurement.skyRadiance).multiplyScalar(scale);
+    // An airless sky's light (`iceShine`): what lights a thing's sides is its sunlit ice, not its black sky.
+    if (place.iceShine) clear.sky.addScaledVector(clear.sun, place.iceShine);
     if (entry.air) clear.air.fromArray(entry.air.horizon).multiplyScalar(scale);
     else clear.air.set(0, 0, 0);
     clear.airDensity = entry.air ? 1 / entry.air.distance : 0;

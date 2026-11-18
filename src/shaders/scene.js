@@ -101,6 +101,10 @@ vec3 snowShade(vec2 point) {
 //     bare black ice between is a mirror, the sun a small hard glint in it
 //     (a sheen spread evenly over the ice reads as a blur). It is flat:
 //     frozen, it has no ripples.
+// A place may give its ice an old crust instead (uIceCrust, src/places.js
+// iceCrust: Europa's): the snow ice's threshold lowered (ICE_CRUST_REACH),
+// so frost covers nearly all of it, rough and white, the bare ice left in
+// dark leads, and its frost a little warm, stained along long bands (ICE_CRUST_LINEA).
 //
 // Wet (the flood round a hole and the splash's drops, src/ice.js; the rain's
 // film), the ice is darker, its white ice greyed, and smooth: a mirror. Once
@@ -126,6 +130,7 @@ uniform float uIceFar;         // the cap of the mask's distances (m)
 uniform float uIceGlaze;       // the mask's B where it was once wet and is dry (src/ice.js FLOOD.glaze)
 uniform float uIceWet;         // how wet the rain has made it (src/main.js WEATHERS)
 uniform vec4 uIcePool;         // a frozen pool's corner (x, z) and side (m), w 1; w 0 over a lake
+uniform vec4 uIceCrust;        // a place's old crust (src/places.js iceCrust): its stain's colour and how far frost covers it, 0 to 1
 #define ICE_INDEX 1.31
 #define ICE_CRACK_JAG 0.0005           // m: a crack's own roughness, finer than its points (ICE_CRACK_FRAGMENT)
 `;
@@ -150,6 +155,9 @@ ${ICE_UNIFORMS}
 #define ICE_FROST_LEVELS 320.0         // the sky cube's texels a radian, about (CUBE_SIZE in src/sky.js, 512, over π/2)...
 #define ICE_FROST_COARSEST 4.5         // ...blurred no further than this level (coarser, its faces' seams show)...
 #define ICE_FROST_SKY 2.5              // ...and no brighter than this times the sky's mean (iceSurface: the sun is the sheen's)
+#define ICE_CRUST_REACH 0.44           // how far a crust (uIceCrust.w 1) lowers the snow ice's threshold: frost nearly all over
+#define ICE_CRUST_LINEA 0.3            // m: the width of its stained bands, about (iceSurface)...
+#define ICE_CRUST_CAST 0.12            // ...and the share of their stain all its frost takes
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
 
@@ -264,7 +272,7 @@ IceLook iceLook(vec2 worldXZ, float footprint) {
   // streaks along the wind that blew it (ICE_SNOW_STREAK); drifted against a pool's walls.
   vec2 snow = iceFbm(mat2(0.8, -0.6, 0.6, 0.8) * worldXZ * vec2(1.0, ICE_SNOW_STREAK), 0.7, footprint * ICE_SNOW_STREAK);
   float drift = 0.07 * (1.0 - smoothstep(0.0, 8.0 * ICE_RIM, fromWall));
-  float threshold = mix(0.69, 0.56, thickShare) - drift;
+  float threshold = mix(0.69, 0.56, thickShare) - drift - ICE_CRUST_REACH * uIceCrust.w;
   float soft = 0.004 + 0.5 * snow.y * footprint;
   float covered = smoothstep(threshold - soft, threshold + soft, snow.x);
   float white = covered * (0.35 + 0.55 * smoothstep(threshold, threshold + 0.1, snow.x));
@@ -1944,6 +1952,12 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float shaded = dot(light, vec3(0.2126, 0.7152, 0.0722)) / max(dot(sunLight + skyLight, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
   under *= shaded;
   vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
+  // An old crust's frost (uIceCrust) is stained along long bands, as Europa's lineae are (a ridged noise's crests, stretched).
+  // The frost itself a little warm with it (Europa's natural colour is beige-white, its blue-grey the false colour's).
+  vec2 lineaAt = mat2(0.6, 0.8, -0.8, 0.6) * vWorld.xz * vec2(0.06, 0.16) / ICE_CRUST_LINEA + 17.0;
+  float linea = 1.0 - abs(2.0 * valueNoise(lineaAt + 0.8 * valueNoise(vWorld.xz * 0.4 + 5.0)) - 1.0);
+  float stain = ICE_CRUST_CAST + (1.0 - ICE_CRUST_CAST) * smoothstep(0.86, 0.96, linea) * (0.5 + 0.5 * valueNoise(vWorld.xz * 7.0));
+  scattered *= mix(vec3(1.0), uIceCrust.rgb, uIceCrust.w * stain);
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
   float sineInside = clamp(length(v.xz) / ICE_INDEX, 0.0, 0.99);

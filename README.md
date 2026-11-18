@@ -1266,8 +1266,11 @@ The curated locations include:
   the 8k. Airless, its sky has almost no mean, so the dome's cap is a share
   of its sun instead (`sunCap`, `radianceCap` in `src/sky.js`). The beach is
   frost cracked into plates (`SHORE_LOOKS.frost`), the water the ocean under
-  the ice, blue-black (`WATER_CLARITIES.europa`); it starts Frozen and at the
-  level view, so Jupiter stands over the ice and in it. No fish and no birds
+  the ice, a deep blue in the sun alone (`WATER_CLARITIES.europa`); it starts
+  Frozen and at the level view, so Jupiter stands over the ice and in it. Its
+  ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
+  `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
+  bands, Jupiter mirrored only in the bare leads between. No fish and no birds
   yet.
 
 The Time of day page has named buttons as well as the slider. Selecting a

@@ -22,7 +22,8 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // lake's shore in frost under a computed airless sky (src/sky.js `europa`, tools/europa-sky.py), its own
 // ocean under a refrozen skin of ice, starting frozen. A place may have its own water (`water`, a key of
 // WATER_CLARITIES, whatever clarity is chosen, and its card, `waterCard`),
-// its own ground (`shore`, in place of its sky's), its own start
+// its own ground (`shore`, in place of its sky's), its own ice (`iceCrust`: an old frosted crust's stain colour and
+// reach, src/ice.js setCrust; a lake's black ice otherwise), its own start
 // (`defaultWater`, `defaultView`), and, at Loch Ness, something far out now
 // and then (`visitor`: src/lochVisitor.js). src/main.js applyPlace puts a
 // place in force once its sky has come.
@@ -52,8 +53,10 @@ export const PLACES = {
   mall: { sky: 'mall', pool: false, reeds: false, shoreKind: 'mall', mall: true, water: 'mall', waterCard: { image: 'assets/sky/thumbs/mall.jpg', name: 'Pool water', note: 'Still over its blue bed: a mirror for the monuments' } },
   // Europa: the lake's shore and bed under Europa's sky, its beach frost (`shore`, src/pondFloor.js SHORE_LOOKS), its
   // water the ocean under the ice (WATER_CLARITIES.europa), frozen at first (`defaultWater`) and seen from water level,
-  // Jupiter low ahead over the ice and in it (`defaultView`). No fish but glowing ice lanterns (src/fish.js), no birds over an airless moon.
-  europa: { sky: 'europa', pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
+  // Jupiter low ahead over the ice and in it (`defaultView`), its ice an old crust (`iceCrust`): frost nearly all over,
+  // as bright as Europa's (albedo about 0.65), stained reddish-brown along bands as its lineae are, Jupiter mirrored only
+  // in the bare leads between. No fish but glowing ice lanterns (src/fish.js), no birds over an airless moon.
+  europa: { sky: 'europa', pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', iceCrust: [0.72, 0.52, 0.40, 1], waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
 export const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);

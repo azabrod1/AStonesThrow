@@ -668,9 +668,10 @@ const WATER_CLARITIES = {
   // absorbs as e^(−0.015 λ), steeply toward the blue), so little light gets past a few metres down and a thing a
   // metre under is a shadow; its deep water is near black, a little brown.
   peat: { absorb: [0.65, 1.05, 2.2], extinction: [1.3, 1.7, 2.9], color: [0.0105, 0.0072, 0.0034] },
-  // Europa's ocean, welling up under its ice: salt water kilometres deep, which no light has ever reached but what
-  // comes through the hole just made: blue-black, the bed fading a metre or two down (the ocean has none in reach).
-  europa: { absorb: [0.45, 0.12, 0.08], extinction: [1.5, 1.0, 0.9], color: [0.005, 0.020, 0.034] },
+  // Europa's ocean, welling up under its ice: salt water kilometres deep, the bed fading a metre or two down (the ocean
+  // has none in reach). Clean brine, it scatters back what the sun puts in as an open ocean's does, a deep blue; with no
+  // sky to add its light that is about two thirds of the clear lake's (a darker colour would leave a splash on black).
+  europa: { absorb: [0.45, 0.12, 0.08], extinction: [1.5, 1.0, 0.9], color: [0.007, 0.050, 0.085] },
   clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
   lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
   pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
@@ -981,6 +982,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
+    ice.setCrust(PLACES[placeName].iceCrust);   // frozen, its ice's look: Europa's old frosted crust, else black ice
     applyWaterColor();
   }
   /** The deep water's radiance: the clarity's, lit by the hour's light (the sky's level, src/sky.js). */

@@ -528,6 +528,7 @@ export class IceSheet {
       uIceThickness: { value: 0 },
       uIceFar: { value: MASK.holeFar },   // the cap a hole's distance's bytes span (fillMask)
       uIcePool: { value: new THREE.Vector4() },   // the pool's square (corner x, z, side) and 1 over a frozen pool, else 0 (setPool)
+      uIceCrust: { value: new THREE.Vector4() },   // a place's old crust: its stain's colour and frost's reach (setCrust)
       uIceGlaze: { value: FLOOD.glaze },   // B's least once wet (fillMask)
       uIceWet: { value: 0 },   // how wet the rain has made it: src/main.js shares the weather's object
       uSnow: { value: 0 },     // the snow lying on it (SNOW_COVER in src/shaders/scene.js): src/main.js shares the weather's object
@@ -585,6 +586,11 @@ export class IceSheet {
     if (square) this.uniforms.uIcePool.value.set(square.minX, square.minZ, square.size, 1);
     else this.uniforms.uIcePool.value.set(0, 0, 0, 0);
     this.clear();
+  }
+
+  /** The place's old crust (src/places.js iceCrust: [r, g, b, reach], its stain's colour and how far frost covers it), or none: a lake's black ice. */
+  setCrust(crust = null) {
+    this.uniforms.uIceCrust.value.set(...(crust ?? [1, 1, 1, 0]));
   }
 
   /** Whole again: no hole, no crack, dry. */
