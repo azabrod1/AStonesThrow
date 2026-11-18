@@ -57,13 +57,13 @@ export const PLACES = {
   // own still water over its blue-coated bed (since 2026).
   mall: { sky: 'mall', pool: false, reeds: false, shoreKind: 'mall', mall: true, water: 'mall', waterCard: { image: 'assets/sky/thumbs/mall.jpg', name: 'Pool water', note: 'Still over its blue bed: a mirror for the monuments' } },
   // Europa: the lake's shore and bed under Europa's sky, its beach frost (`shore`, src/pondFloor.js SHORE_LOOKS), its
-  // water the ocean under the ice (WATER_CLARITIES.europa), frozen at first (`defaultWater`) and seen from water level,
-  // Jupiter low ahead over the ice and in it (`defaultView`), its ice an old crust (`iceCrust`): frost nearly all over,
+  // water the ocean under the ice (WATER_CLARITIES.europa), open at first, a body of water among the ice (Frozen covers it
+  // with the crust), seen from water level, Jupiter low ahead over the ice and mirrored in the water (`defaultView`); its ice an old crust (`iceCrust`): frost nearly all over,
   // as bright as Europa's (albedo about 0.65), stained reddish-brown along bands as its lineae are, Jupiter mirrored only
   // in the bare leads between. No fish but glowing ice lanterns (src/fish.js); no birds, weather or wind over an airless
   // moon (its sky's `airless`, placeAirless), but a vent's plume and a probe crossing its sky (src/europaScenery.js). Its own gravity
   // (`gravity`, m/s²: src/gravity.js), a seventh of Earth's: what is thrown climbs higher and falls slower.
-  europa: { sky: 'europa', gravity: 1.315, pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', defaultView: 'level', iceCrust: [0.72, 0.52, 0.40, 1], waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
+  europa: { sky: 'europa', gravity: 1.315, pool: false, reeds: false, water: 'europa', defaultView: 'level', iceCrust: [0.72, 0.52, 0.40, 1], waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
 /** Whether a place has no air (its sky's `airless`: Europa): clear and calm there, whatever the Weather and Wind settings say. */
 export const placeAirless = (place) => skyAirless(PLACES[place]?.sky);

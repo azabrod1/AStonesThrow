@@ -8,9 +8,9 @@
 //     frequency antennas (17.6 m) along the wings' top edges and its short
 //     very-high-frequency ones under them, and the 8.5 m magnetometer boom.
 //     Its arrays face the sun (+z of its model turned to the sun), and about
-//     that line it is turned so its wings lie halfway between level and
-//     across the level view's way to it (src/europaScenery.js SCENERY_EYE:
-//     near broadside, not end on), then
+//     that line it is turned so its wings lie along the level line across
+//     the level view's way to it (src/europaScenery.js SCENERY_EYE), as near
+//     as facing the sun allows: near broadside and near level, then
 //     rolled by the pose's `roll`: their cells dark blue under
 //     glass with a hard glint where the sun's mirror image falls, their backs
 //     pale. Lit by the sun, and from below by the sunlit ice (no air: no
@@ -298,12 +298,11 @@ function makeView({ lighting, haze, mirrorLayer }) {
   function orient(mesh, roll) {
     toSun.copy(lighting.sunDirection).normalize();
     seen.set(mesh.position.x - SCENERY_EYE.x, mesh.position.y - SCENERY_EYE.y, mesh.position.z - SCENERY_EYE.z).normalize();
-    // Broadside to the eye, eased halfway to level (both across the sun's line, so their mean is too): as NASA's view has it.
-    across.crossVectors(toSun, seen).normalize();
-    upward.set(0, 1, 0).cross(toSun).normalize();
-    if (across.dot(upward) < 0) across.negate();
-    across.add(upward);
-    if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
+    // Its wings along the level line across the eye's way to it, laid into the plane square to the sun (so its arrays
+    // still face it): as near broadside and as near level as facing the sun allows, as NASA's view has it.
+    across.set(0, 1, 0).cross(seen);
+    across.addScaledVector(toSun, -across.dot(toSun));
+    if (across.lengthSq() < 1e-6) across.set(0, 1, 0).cross(toSun);
     across.normalize();
     upward.crossVectors(toSun, across);
     basis.makeBasis(across, upward, toSun);

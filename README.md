@@ -1292,7 +1292,8 @@ The curated locations include:
   of its sun instead (`sunCap`, `radianceCap` in `src/sky.js`). The beach is
   frost cracked into plates (`SHORE_LOOKS.frost`), the water the ocean under
   the ice, a deep blue in the sun alone (`WATER_CLARITIES.europa`); it starts
-  Frozen and at the level view, so Jupiter stands over the ice and in it. Its
+  open, a body of water among the ice, at the level view, so Jupiter stands
+  over the ice and is mirrored in the water. Frozen, its
   ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
   `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
   bands, blue where the frost is thin and in the bare leads between (where
