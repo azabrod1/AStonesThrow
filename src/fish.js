@@ -26,12 +26,15 @@
 //     bright, unmuted (fishMarkings mutes only the wild fish of cool water).
 //   - The Pool: none, chlorinated.
 //   - Europa, the ocean under Jupiter's ice moon: no fish, but a few ice
-//     lanterns (`lantern`), an imagined medusa, each alone: a pulsing bell
-//     trailing tentacles, drifting slower than any koi, that makes its own
+//     lanterns (`lantern`), an imagined medusa, each alone, on no plan of
+//     Earth's: a pulsing spindle of three twisted lobes, comb rows on its
+//     spiral ridges breaking its light into colours, three red eyes, three
+//     braided veils and six coiled tentacles with lures trailing (src/
+//     fishMeshes.js MEDUSA), drifting slower than any koi, that makes its own
 //     light (`glows`), as the animals of Earth's dark deep sea do: blue-green
 //     (about 480 nm, what sea water carries farthest: Widder 2010). It flashes
-//     when something comes down on it, a ring of light round its margin (the
-//     deep-sea Atolla's "burglar alarm"), then dims while it is wary, as such
+//     when something comes down on it, a wave of light down its spirals (as
+//     the deep-sea Atolla's "burglar alarm" runs round its margin), then dims while it is wary, as such
 //     animals go dark after a flash so as not to be found (`glow`, drawn by
 //     src/fishMeshes.js as a medusa: `form`). They keep to the bay's
 //     middle (`range`: under the thin ice there, where what seeps through it
@@ -152,8 +155,8 @@ export const FISH_SPECIES = {
   // The Polynesian lagoon's reef fish (PLACES `lagoon`): bright, unmuted (fishMarkings mutes only the wild fish of cool water).
   sergeant: { name: 'Sergeant major', length: [0.12, 0.18], depth: [0.1, 3], cruise: 1.0, burst: 5, turn: 3.0, shy: 0.9, eats: true, company: 'school', shape: { depth: 0.46, width: 0.13, tail: 0.24, fork: 0.35, snout: 0.6, peak: 0.36, dorsal: [0.25, 0.7, 0.12], anal: [0.55, 0.73, 0.1], pectoral: 0.13, pelvic: 0.09, scales: 34 }, pattern: 'sergeant' },
   yellowTang: { name: 'Yellow tang', length: [0.12, 0.18], depth: [0.1, 3], cruise: 0.7, burst: 4, turn: 2.6, shy: 0.8, eats: true, company: 'shoal', shape: { depth: 0.66, width: 0.1, tail: 0.22, fork: 0.05, snout: 0.85, peak: 0.42, dorsal: [0.2, 0.78, 0.24], anal: [0.48, 0.78, 0.2], pectoral: 0.12, pelvic: 0.08, scales: 70 }, pattern: 'yellowTang' },
-  // Europa's ice lantern (the header): no fish but drawn as one is, its bell (shape.width across, a share of its length) and its
-  // tentacles trailing behind (shape.depth the band they hang through, for the bed: KEEL), src/fishMeshes.js medusa.
+  // Europa's ice lantern (the header): no fish but drawn as one is, its body (shape.width across, a share of its length) and its
+  // veils and tentacles trailing behind (shape.depth the band they hang through, for the bed: KEEL), src/fishMeshes.js medusa.
   lantern: { name: 'Ice lantern', form: 'medusa', glows: true, lured: true, upper: 2.5, length: [0.5, 0.75], depth: [0.2, 3], cruise: 0.15, burst: 0.8, turn: 0.6, shy: 0.8, eats: false, company: 'alone', stride: 0.3, pulse: [0.35, 1.1], cStart: 3, shape: { depth: 0.5, width: 0.36, tail: 0.3 }, pattern: 'lantern' },
   blueTang: { name: 'Blue tang', length: [0.18, 0.26], depth: [0.1, 3], cruise: 0.65, burst: 4.5, turn: 2.4, shy: 0.8, eats: true, company: 'alone', shape: { depth: 0.52, width: 0.11, tail: 0.24, fork: 0.15, snout: 0.7, peak: 0.4, dorsal: [0.22, 0.78, 0.13], anal: [0.5, 0.78, 0.11], pectoral: 0.13, pelvic: 0.08, scales: 70 }, pattern: 'blueTang' },
 };
