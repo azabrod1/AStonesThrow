@@ -186,7 +186,7 @@ for (const [label, where, frozen, night] of flyingRuns) {
   check(visits >= 8 && seen > 0.2 && seen < 0.9, `${place}: they come and go: ${visits} visits in ten minutes, one in view ${(seen * 100).toFixed(0)}% of the time`);
   check(inside === 0, `${place}: every visit begins and ends out of the frame, beyond its sides (${inside} inside)`);
   // Each visit its own path: no two come in at the same place, and more than one way of going about where its birds
-  // have more than one (the songbirds only cross, tree row to tree row).
+  // have more than one (the songbirds cross, tree row to tree row, or hop in over one side and back).
   const sameEntry = entries.some((entry, index) => entries.slice(index + 1).some((other) => Math.hypot(entry.x - other.x, entry.y - other.y, entry.z - other.z) < 0.5 && Math.abs(Math.sin(entry.heading - other.heading)) < 0.05));
   const ways = new Set(groups.flatMap((group) => Object.keys(group.styles ?? {}))).size;
   check(!sameEntry && styles.size >= Math.min(2, ways), `${place}: every visit a path of its own (${[...styles].join(', ')})`);
@@ -265,16 +265,23 @@ for (const [label, where, frozen, night] of flyingRuns) {
   if (!groups.some((group) => group.habit === 'visit')) continue;
   const { frames } = run(where, 600, 1 / 60, { frozen, view: PHONE_FRAME, conditions: night ? NIGHT : DAY });
   let nearest = Infinity, steepestBank = 0, inside = 0;
+  // A hop turns back a short way inside the frame's edge (src/birds.js layVisit): on the phone's narrower frame too,
+  // each comes into it, never turning back beyond its side unseen.
+  const hops = [];
   frames.forEach((frame, index) => frame.birds.forEach((bird, which) => {
     const before = index ? frames[index - 1].birds[which] : bird;
     if (bird.shown !== before.shown && Math.abs(bearingOf(bird.shown ? bird : before)) < THREE.MathUtils.degToRad(PHONE_FRAME + 15)) inside++;
     if (!bird.shown) return;
+    if (bird.style === 'hop' && (!index || !before.shown)) hops[which] = (hops[which] ?? []).concat([{ seen: false }]);
+    if (bird.style === 'hop' && Math.abs(bearingOf(bird)) < THREE.MathUtils.degToRad(PHONE_FRAME)) hops[which].at(-1).seen = true;
     nearest = Math.min(nearest, Math.hypot(bird.x - EYE.x, bird.z - EYE.z));
     steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
   }));
   const phone = inFrameShare(where, frozen, night, PHONE_FRAME, PHONE_FRAME), wide = inFrameShare(where, frozen, night, WIDE_FRAME, null);
   check(inside === 0 && nearest > THROW_REACH && steepestBank <= THREE.MathUtils.degToRad(35) + 1e-9, `${label}, upright phone: every visit begins and ends beyond the frame's sides (${inside} inside), nearest ${nearest.toFixed(1)} m, banked at most ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
   check(phone > 0.8 * wide && phone < 1.5 * wide, `${label}, upright phone: a bird in its frame ${(phone * 100).toFixed(0)}% of the time, a wide screen's ${(wide * 100).toFixed(0)}%`);
+  const hopVisits = hops.flat().filter(Boolean);
+  if (hopVisits.length) check(hopVisits.every((hop) => hop.seen), `${label}, upright phone: every hop comes into its frame (${hopVisits.filter((hop) => hop.seen).length} of ${hopVisits.length})`);
 }
 {
   // Laid out as it always was for a frame as wide as a 16:9 screen's or wider.

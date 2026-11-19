@@ -649,14 +649,16 @@ the skies in South Africa):
 | Swiss Alps | two ravens, high over the water against the snow and sky |
 | Wooded lake (Radków) | a pair of mute swans now and then |
 | Polynesian lagoon | great frigatebirds soaring |
-| Reflecting Pool (Washington, D.C.) | a blue jay and a northern cardinal crossing between the elms |
+| Reflecting Pool (Washington, D.C.) | a blue jay and a northern cardinal, crossing between the elms or flitting in over one side and back |
 
 The flying birds come and go: now and then one (or a flock) comes into
 the view from beyond a side of the frame, goes about over the water and
 leaves, and is away a while before it comes again. Each visit is a path of
 its own, drawn from the bird's seed and the visit's number: across from one
 side to the other, wandering nearer and farther; in, round in a wide turn
-and back out; or, for the eagles and frigatebirds, round and round in a
+and back out; for the songbirds, a short way in over one side of the view,
+round in a U and back out the same side (a hop, crossing nothing); or, for
+the eagles and frigatebirds, round and round in a
 thermal, rising, and off (all of it, its circles and its way in and out,
 kept as far from the eye as the rest of a visit is laid). The path is a smooth spline flown at the bird's
 speed, laid out so that no turn on it needs more than 28° of bank, so it
