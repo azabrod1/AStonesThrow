@@ -279,6 +279,10 @@
 // the weather (WEATHERS: the sky's cloud and haze, src/sky.js, the rain,
 // src/rain.js, the snow, src/snow.js, a storm's lightning,
 // src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather);
+// at a place with no air (Europa: src/places.js placeAirless) the weather is
+// held clear and the wind calm, whatever ?weather, ?windStrength or the
+// choices remembered say, and those choices are kept for the next place with
+// air (weatherChoice, windChoice; holdAir);
 // ?fish=off (or none, the harness's --fish=none) leaves every water without
 // fish (the Effects setting; setFish), and ?birds=off (or none) every place
 // without birds (the same setting; setBirds: src/birds.js, drawn by
@@ -306,11 +310,15 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { PLACES, placeShore, waterForPlace } from './places.js';
+import { PLACES, placeShore, waterForPlace, placeAirless } from './places.js';
 import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour, skyBackdrop } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
-import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, setShoreGlow, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
+import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime, placeFlightTime } from './rock.js';
+import { GRAVITY, EARTH_GRAVITY, setGravity } from './gravity.js';
+import { AIR_DENSITY, EARTH_AIR, setAirDensity } from './air.js';
+import { Boiling } from './boiling.js';
+import { createBoilingVapour } from './boilingVapour.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
 import { SplashSystem, MIRROR_LAYER, SAND_ALBEDO } from './splash.js';
@@ -343,6 +351,8 @@ import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './f
 import { createFishView } from './fishMeshes.js';
 import { BirdPopulation } from './birds.js';
 import { createBirdViews } from './birdViews.js';
+import { EuropaScenery } from './europaScenery.js';
+import { createEuropaSceneryView } from './europaSceneryMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
 import { compileOnly } from './precompile.js';
@@ -487,7 +497,12 @@ const CEILING_TOLERANCE = 0.007;
 // the pace). A hard toss (null) is the real hard throw: let go fast on the
 // low arc, it goes in about twice as fast (src/rock.js THROW_STRENGTH). A
 // skip's strength is its speed (src/rock.js SKIP_THROW). The normal toss is
-// the throw the splash is tuned to (CLAUDE.md's reference throw).
+// the throw the splash is tuned to (CLAUDE.md's reference throw). Those are
+// Earth's flights: under a place's own gravity (src/gravity.js, Europa's) a
+// throw is let go as fast as it is on Earth (the arm is the same) and lands
+// at the tap the higher way round, a hard toss the lower (src/rock.js
+// placeFlightTime): a toss on Europa climbs ten metres and takes eight
+// seconds, a skip skims as fast and as low as ever.
 const ARC = {
   toss: { soft: 1.18, normal: 1.0, hard: null },
   lob: { soft: 1.3, normal: 1.5, hard: 1.7 },
@@ -622,6 +637,13 @@ const SKY_ASSETS_STORAGE_KEY = 'stone-pond-sky-assets';
 // is nearly as bright as the light in it: its droplets scatter, they hardly
 // absorb. It comes in still air (`wind`: calm, as a gale comes with a storm),
 // damp (the deck dries slowly, a little wet).
+// Where there is no air (an airless place: Europa, src/places.js
+// placeAirless) there is no weather: the Weather setting's choice is kept
+// (weatherChoice, still remembered on this device) but clear is in force, and
+// the wind is AIRLESS_WIND, the gentlest the water has (its ripples glassy:
+// src/ambientWaves.js WIND_STRENGTHS), whatever the Wind setting says; going
+// on to a place with air brings both choices back (holdAir).
+const AIRLESS_WIND = 'calm';
 const FOG_LAYER = 60;   // metres: a radiation fog's depth (50 to 100 m in the morning over a lake)
 const SNOW_AIR = { freezing: true, drying: 0.05 };
 const MILD_AIR = { freezing: false, drying: 1 };
@@ -668,6 +690,10 @@ const WATER_CLARITIES = {
   // absorbs as e^(−0.015 λ), steeply toward the blue), so little light gets past a few metres down and a thing a
   // metre under is a shadow; its deep water is near black, a little brown.
   peat: { absorb: [0.65, 1.05, 2.2], extinction: [1.3, 1.7, 2.9], color: [0.0105, 0.0072, 0.0034] },
+  // Europa's ocean, welling up under its ice: salt water kilometres deep, the bed fading a metre or two down (the ocean
+  // has none in reach). Clean brine, it scatters back what the sun puts in as an open ocean's does, a deep blue; with no
+  // sky to add its light that is about two thirds of the clear lake's (a darker colour would leave a splash on black).
+  europa: { absorb: [0.45, 0.12, 0.08], extinction: [1.5, 1.0, 0.9], color: [0.007, 0.050, 0.085] },
   clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
   lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
   pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
@@ -680,7 +706,7 @@ const DEFAULT_WATER = 'lake';
 // there is, the lake's of the clarity last chosen or the pool's.
 const WATER_CHOICES = ['clear', 'lake', 'pond', 'murky', 'frozen'];
 const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
-const PLACE_ALIASES = { tropical: 'lagoon', alpine: 'swiss', meadow: 'lakeside', open: 'lakeside', dc: 'mall', washington: 'mall', 'reflecting-pool': 'mall' };
+const PLACE_ALIASES = { tropical: 'lagoon', alpine: 'swiss', meadow: 'lakeside', open: 'lakeside', dc: 'mall', washington: 'mall', 'reflecting-pool': 'mall', jupiter: 'europa' };
 const DEFAULT_PLACE = 'lakeside';
 /**
  * Settings remembered before the Pool was a place and the ice a water,
@@ -772,15 +798,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   migrateStoredSettings();
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 
-  // The weather: the page's ?weather, else the last choice here, else clear;
-  // applied once the pond is built (applyWeather, after the warm-up).
+  // The weather chosen: the page's ?weather, else the last choice here, else
+  // clear; in force once the pond is built (applyWeather, after the warm-up),
+  // but at an airless place, where clear is (weatherName, below).
   const storedWeather = storedChoice(WEATHER_STORAGE_KEY);
   const requestedWeather = pageParameters.get('weather');
-  let weatherName = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
-  // Start network work before awaiting the sky. Settle failures immediately:
-  // even a failed sky must not leave an unhandled rain rejection behind.
-  const rainDownload = WEATHERS[weatherName].rain
-    ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
+  let weatherChoice = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
 
   // The place (PLACES): ?sky (or the old ?water=pool), else the place last
   // chosen here; its sky's hour ?time, else the one nearest the time of day
@@ -794,6 +817,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   };
   const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? (pageParameters.get('water') === 'pool' ? 'pool' : null) ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
   let placeName = firstPlace;
+  // The weather in force: the choice, but clear where there is no air (AIRLESS_WIND, above).
+  let weatherName = placeAirless(firstPlace) ? 'clear' : weatherChoice;
+  // Start network work before awaiting the sky. Settle failures immediately:
+  // even a failed sky must not leave an unhandled rain rejection behind.
+  const rainDownload = WEATHERS[weatherName].rain
+    ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
+  setGravity(PLACES[firstPlace].gravity ?? EARTH_GRAVITY);   // the place's (src/gravity.js), before anything falls
+  setAirDensity(placeAirless(firstPlace) ? 0 : EARTH_AIR);   // and its air (src/air.js): none at an airless place
   // The sky (src/sky.js Starting): its maps now, its photo on its way while
   // the pond is built and its programs warmed up (warmUp), awaited after them
   // (awaitSky); a failure is reported then, or before the warm-up if it came
@@ -939,8 +970,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   applyWind(windName);
   // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale, or a fog's calm, overrides only while it lasts.
   let windChoice = windName;
-  // A storm brings its gale, unless the page's ?windStrength says otherwise.
-  if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
+  // A storm brings its gale, unless the page's ?windStrength says otherwise; an airless place its calm, whatever it says.
+  if (placeAirless(placeName)) applyWind(AIRLESS_WIND);
+  else if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
   // The water (WATER_CHOICES): the page's ?water, else the last choice here,
   // else Lake. Entering Swiss Alps defaults to Frozen, but a saved water
   // choice in that same place survives reload. Page water/ice parameters
@@ -976,8 +1008,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     waterName = waterForPlace(placeName, lakeClarity);
     // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's, the loch's and the lakes' do not.
     splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
+    // No air to drag under at an airless place (src/air.js): no foam, specks or bubbles (src/splash.js setAirless).
+    splash.setAirless(AIR_DENSITY === 0);
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
+    ice.setCrust(PLACES[placeName].iceCrust);   // frozen, its ice's look: Europa's old frosted crust, else black ice
+    // In vacuum (src/air.js) open water boils, and the ice is a crust with its lead, open whenever it is whole.
+    ice.setVacuum(AIR_DENSITY === 0 ? PLACES[placeName].lead ?? null : null);
     applyWaterColor();
   }
   /** The deep water's radiance: the clarity's, lit by the hour's light (the sky's level, src/sky.js). */
@@ -999,6 +1036,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The ice (the header): Frozen water's, as chosen above.
   let birdsFrozen = null;   // whether the birds were last laid out for frozen water (applyBirds; null before they are)
   let iceName = frozenAtStart ? iceThickness : 'none';
+  const boiling = new Boiling();   // open water in vacuum (src/boiling.js), stepped with the physics (simulate)
   /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
   function applyIce(name = iceName) {
     iceName = name;
@@ -1177,10 +1215,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const birdView = createBirdViews({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
   sceneMain.add(birdView.above, birdView.mirror);
   sceneUnder.add(birdView.below);   // what of a standing bird is in the water (the heron's legs)
-  /** Every bird posed at `time` (src/birds.js showAt), and drawn so. */
+  // And Europa's scenery in their place (src/europaScenery.js, drawn by src/europaSceneryMeshes.js): no bird has air to
+  // fly in there, so with the birds on it has its plume and a probe crossing its sky instead, on the birds' seed.
+  const europaScenery = new EuropaScenery({ seed: Number(birdSeed) });
+  const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
+  sceneMain.add(europaSceneryView.above, europaSceneryView.mirror);
+  // The frost the vapour of open water boiling in vacuum condenses into, over it (src/boilingVapour.js), posed a frame.
+  const vapour = createBoilingVapour(lighting);
+  sceneMain.add(vapour.group);
+  /** Every bird posed at `time` (src/birds.js showAt), and drawn so; and Europa's scenery (src/europaScenery.js). */
   function poseBirds(time) {
     birds.showAt(time);
     birdView.update(camera);
+    europaScenery.showAt(time);
+    europaSceneryView.update();
   }
   /** The place's birds, as they start at `time` (the caller draws the mirror image whole again, with them or without). */
   function applyBirds(time) {
@@ -1190,6 +1238,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     birds.setConditions({ solarElevation: lighting.solarElevation, sunDirection });
     birds.showAt(time);
     birdView.show(birds, camera);
+    europaScenery.setPlace(birdsOn ? placeName : 'none');
+    europaScenery.reset(time);
+    europaScenery.showAt(time);
+    europaSceneryView.show(europaScenery);
   }
   applyBirds(0);
   sceneMain.environment = environment.envTexture;
@@ -1453,7 +1505,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // Only what reaches into the region is drawn (src/mirrorRegion.js): the lagoon's palms, a shore's boulders, the birds.
       const frustum = frustumOfRegion(mirrorCamera, region, reflectionTarget.width, reflectionTarget.height, regionFrustum);
       tropics.keepToRegion(frustum);
-      keepMeshesToRegion(frustum, [boulders.mirror, birdView.mirror], regionHidden);
+      keepMeshesToRegion(frustum, [boulders.mirror, birdView.mirror, europaSceneryView.mirror], regionHidden);
     }
     // three.js makes a target's whole mip chain after each render() into it: drawn whole, only after the last of them
     // here; a region's, none, its levels then remade over the region alone (refreshMipsInRegion).
@@ -1537,7 +1589,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A bird not as the mirror last drew it, where the mirror's camera (placed by now) sees it: its bounds, into
     // birdBox. Asked once a frame drawn, which takes each bird as drawn so (src/birdViews.js mirrorChanges): one
     // flying, every frame; a heron standing still, not.
-    const birdsMoving = !skip.mirror && birdView.mirrorChanges(birdBox.makeEmpty(), mirrorFrustum) > 0;
+    const birdsMoving = !skip.mirror && birdView.mirrorChanges(birdBox.makeEmpty(), mirrorFrustum) + europaSceneryView.mirrorChanges(birdBox, mirrorFrustum) > 0;
     if (viewChanged) {
       drawMirror(null, objects);
       viewChanged = false;
@@ -1653,12 +1705,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /**
    * The weather by name (WEATHERS): the sky's cloud and haze at once, the
    * deck's wet, the snow and its air at once, and the rain, which falls
-   * once its ring's table has come.
+   * once its ring's table has come. The sky is given the choice
+   * (weatherChoice): an airless one keeps it and holds clear (src/sky.js
+   * setWeather), so the next sky with air loads under it at once.
    */
   function applyWeather(name) {
     weatherName = name;
     const weather = WEATHERS[name];
-    environment.setWeather(weather);
+    environment.setWeather(WEATHERS[weatherChoice]);
     if (!weather.lightning) environment.setFlash(1);
     wetDeck.value = weather.wet;
     wetIce.value = weather.air?.freezing ? 0 : weather.wet;
@@ -1707,6 +1761,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
+    ice.setGlow(environment.glow ?? 0);   // Europa's night ice glows (src/sky.js `glow`), and its frost beach
+    setShoreGlow(environment.glow ?? 0);
     applySunLights();
     splash.updateLighting();
     viewChanged = true;
@@ -2118,9 +2174,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** A throw's velocity from `hand` to `target` at strength `powerName` and manner `mannerName` for a stone of `radius` (ARC; src/rock.js throwFlightTime), with its flight time. */
   function throwVelocity(hand, target, powerName, radius, mannerName = manner) {
     const multiplier = (ARC[mannerName] ?? ARC.toss)[powerName];
-    const flightTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
+    const earthTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
+    // Under another gravity (src/gravity.js: Europa's) as fast as on Earth, the higher way to the tap, a hard toss the lower.
+    const flightTime = placeFlightTime(hand, target, earthTime, multiplier === null);
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
-    velocity.y += 0.5 * 9.81 * flightTime;
+    velocity.y += 0.5 * GRAVITY * flightTime;
     return { velocity, flightTime };
   }
 
@@ -2150,14 +2208,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /**
    * A thrown thing's velocity (the header), for what measureThing says it
-   * is: a river stone's as throwVelocity says, as it always was; anything
+   * is: a river stone's as throwVelocity says, as it always was (under
+   * Earth's gravity: under another, aimed as the rest are); anything
    * else's as src/rock.js aimThrow finds it, no faster than it can be thrown
    * and aimed for the air's drag. With the flight time and, but for a river
    * stone, its path and where it comes down.
    */
   function thingVelocity(hand, target, powerName, measured, flight = null, mannerName = manner) {
     const { velocity, flightTime } = throwVelocity(hand, target, powerName, measured.radius, mannerName);
-    if (measured.thing.key === DEFAULT_THING) return { velocity, flightTime, path: null, landing: target };
+    // Under another gravity (src/gravity.js) a stone flies for seconds, and the air's drag, nothing in under one, takes it
+    // a hand short: it is aimed for it as anything else is.
+    if (measured.thing.key === DEFAULT_THING && GRAVITY === EARTH_GRAVITY) return { velocity, flightTime, path: null, landing: target };
     return aimThrow(hand, target, flightTime, measured, flight);
   }
 
@@ -2389,7 +2450,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const t = flightTime * i / 24;
       if (path) { arcPoints.set(path[Math.round((i / 24) * (path.length - 1))].toArray(), i * 3); continue; }
       arcPoints[i * 3] = hand.x + velocity.x * t;
-      arcPoints[i * 3 + 1] = hand.y + velocity.y * t - 0.5 * 9.81 * t * t;
+      arcPoints[i * 3 + 1] = hand.y + velocity.y * t - 0.5 * GRAVITY * t * t;
       arcPoints[i * 3 + 2] = hand.z + velocity.z * t;
     }
     arcGeometry.attributes.position.needsUpdate = true;
@@ -2812,6 +2873,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // The ice's clock (src/ice.js setTime): a hole floods the ice round it once its cavity has closed; the wet
       // freezes; holes skin over. (What it lets go was made things at the end of the step before.)
       ice.setTime(stepsTime);
+      // Open water in vacuum boils (src/boiling.js: Europa's lead, a new hole, or thawed, all of it).
+      boiling.step(stepsTime, PHYSICS_STEP, { water, ice });
       // What lies on the ice, and whether its weight breaks it (src/ice.js weigh: that thing goes in this step).
       ice.weigh(stepping);
       for (const rock of stepping) {
@@ -2875,6 +2938,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     visitor.showAt(end);   // whatever is out on the loch, posed at the frame's time (src/lochVisitor.js)
     poseBirds(end);   // the birds, posed at the frame's time (src/birds.js) and drawn so (src/birdViews.js)
+    vapour.update(ice, water, end);   // the vapour over open water boiling in vacuum (src/boilingVapour.js)
     cannon.drawAt(end);   // the stream in the air as it is now (src/waterCannon.js: its parcels' closed-form flight)
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
@@ -3117,14 +3181,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
     belowBackground.render(renderer, mainTarget);
     // A stone in its hole's air is cut at the hole's floor for an eye above the water (src/rock.js); from below, whole.
     for (const rock of rocks) rock.cutBelowAtSurface(true);
+    fishView.holdLights(true);   // a medusa's light writes no depth: drawn after the surface, over it (src/fishMeshes.js)
     if (!skip.floor) renderer.render(sceneUnder, camera);
+    fishView.holdLights(false);
     for (const rock of rocks) rock.cutBelowAtSurface(false);
     const hidden = hiddenFromBelow();
     const wasVisible = hidden.map((object) => object.visible);
@@ -3135,6 +3201,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const mesh of splash.cavityGroup.children) mesh.material = surface.cavityMaterial;
     surface.fromBelow(false);
     hidden.forEach((object, index) => { object.visible = wasVisible[index]; });
+    if (!skip.floor) fishView.drawLights(renderer, camera);
   }
 
   // ?paused=1 starts with the clock stopped, so the harness's frames start
@@ -3336,6 +3403,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     water.clear();
     pool.dry();
     ice.clear();   // whole again
+    boiling.reset();
     splash.reset(renderer);
     cannon.reset();
     rings.reset();
@@ -3345,22 +3413,41 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishes.resetClock();
     visitor.reset(0);   // nothing out on the loch; the first sighting from the start of its stream
     birds.reset(0);   // a heron back where it stands...
+    europaScenery.reset(0);
     poseBirds(0);     // ...and drawn there: the next frame may come before the next step
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
   }
 
+  /**
+   * Into an airless place or out of one (AIRLESS_WIND): there clear and calm, the choices kept; back under air the
+   * Weather setting's choice again, and its wind (a storm's gale, a fog's calm) or the Wind setting's.
+   */
+  function holdAir() {
+    const airless = placeAirless(placeName);
+    const weather = airless ? 'clear' : weatherChoice;
+    const wind = airless ? AIRLESS_WIND : WEATHERS[weather].wind ?? windChoice;
+    if (wind !== windName) blowWind(wind);
+    if (weather !== weatherName) applyWeather(weather).catch((error) => console.warn('The rain could not be loaded.', error));
+  }
+
   /** Commit all place-dependent state once, after its sky has arrived. */
   function applyPlace(place) {
     const next = PLACES[place];
+    const airChanges = placeAirless(place) !== placeAirless(placeName);
     const standing = glide ? glide.name : viewName();
     const poolChanges = pooled !== Boolean(next.pool);
     const viewsChange = poolChanges || mallHere !== Boolean(next.mall);   // the pool's and the Reflecting Pool's views are their own
     const geometryChanges = poolChanges || koiPond !== Boolean(next.koi) || lagoon !== Boolean(next.tropics) || mallHere !== Boolean(next.mall);
     const nextIce = next.defaultWater === 'frozen' && iceName === 'none' ? iceThickness : iceName;
     const iceChanges = nextIce !== iceName;
-    if (geometryChanges || iceChanges) clearPond();
+    // A change of gravity (src/gravity.js) clears the pond too, so nothing thrown or ringing lives under two.
+    const gravityChanges = (next.gravity ?? EARTH_GRAVITY) !== GRAVITY;
+    setGravity(next.gravity ?? EARTH_GRAVITY);
+    // And of air (src/air.js): nothing in flight lives under two either.
+    setAirDensity(placeAirless(place) ? 0 : EARTH_AIR);
+    if (geometryChanges || iceChanges || gravityChanges || airChanges) clearPond();
     placeName = place;
     pooled = Boolean(next.pool);
     koiPond = Boolean(next.koi);
@@ -3384,6 +3471,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     visitor.reset(stepsTime);
     applyFish();
     applyBirds(stepsTime);
+    if (airChanges) holdAir();   // only an airless place's coming or going changes the weather and the wind in force
     // Into the pool or the Reflecting Pool or out of it, the eye on the same view of the new kind (their views are their
     // own); to another shore on the lake's water (the Koi pond's, the lagoon's), kept where it may stand there, its turn
     // and zoom kept.
@@ -3411,6 +3499,28 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setIce(ice);
   }
   function warmUp() {
+    // Under Earth's gravity whatever the place's (src/gravity.js): its throws are the same throws, and their stone is in
+    // the water, its cavity open and its jet up at the moments drawn (WARM_UP), where Europa's would still be in the air.
+    // Gravity is a uniform, so the programs are the place's; the place's is back after.
+    // Its air too (src/air.js): a throw into air drags its bubbles and foam under, so their programs are drawn. And its
+    // ice is a lake's, not a moon's crust with its lead (src/ice.js setVacuum): Frozen at the start (Europa opens so),
+    // the breaker breaks the thin sheet, where a crust would hold and the lead would take it, so the first break at a
+    // frozen place later builds nothing. The ice made whole again after, its lead open (setVacuum), as applyIce left it.
+    const placeGravity = GRAVITY, placeAir = AIR_DENSITY, placeLead = ice.lead;
+    setGravity(EARTH_GRAVITY);
+    setAirDensity(EARTH_AIR);
+    splash.setAirless(false);
+    ice.setVacuum(null);
+    try {
+      warmUpUnderEarth();
+    } finally {
+      setGravity(placeGravity);
+      setAirDensity(placeAir);
+      splash.setAirless(placeAir === 0);
+      ice.setVacuum(placeLead);
+    }
+  }
+  function warmUpUnderEarth() {
     const started = performance.now();
     const programsBefore = renderer.info.programs?.length ?? 0;
     // Frozen at the start (WARM_UP): its throws (warmUpScene) go into open water first, so the crown's programs are built
@@ -3499,8 +3609,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program
       iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
     }
-    const fishWarmUp = everything || fishOn ? fishView.warmUp() : null;   // the fish's one program, whatever lives here (none in the Pool)
+    // The fish's programs, whatever lives here (none in the Pool), and a medusa's (Europa's ice lanterns, src/fishMeshes.js) where they live.
+    const fishWarmUp = everything || fishOn ? fishView.warmUp({ medusas: everything || fishView.medusas }) : null;
     const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' five programs (a model's above, mirror and below the water; a picture's above and mirror), whatever flies here
+    const lifeWarmUp = everything || (birdsOn && placeName === 'europa') ? europaSceneryView.warmUp() : null;   // Europa's scenery: three programs (the probe's above and mirror, the plume's)
+    const vapourWarmUp = everything || placeAirless(placeName) ? vapour.warmUp() : null;   // the vapour over open water in vacuum: one program (src/boilingVapour.js)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
     buildPreview(everything ? 'pizza' : thingName);
@@ -3509,6 +3622,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     render();
     fishWarmUp?.done();
     birdWarmUp?.done();
+    lifeWarmUp?.done();
+    vapourWarmUp?.done();
     if (everything) {
       buildPreview(DEFAULT_THING);
       if (preview.mesh) programKeepers.push(preview.mesh.material);
@@ -3596,6 +3711,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The page resolves only after the user explicitly chooses to continue.
     // No input or frame loop runs while the choice is pending.
     await onRainError(message);
+    weatherChoice = 'clear';
     await applyWeather('clear');
     try { window.localStorage.setItem(WEATHER_STORAGE_KEY, 'clear'); } catch { /* storage may be disabled */ }
   }
@@ -3666,14 +3782,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get skipping() { return skipping; },
     /** Trace each stone (the header; ?trace=1, the T key) from its next step on; off takes the traces away. */
     setTrace(on) { setTracing(on); },
-    /** The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy, gale), remembered on this device. */
+    /**
+     * The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy, gale), remembered on this device; at an
+     * airless place only remembered, the calm kept (AIRLESS_WIND), and blown at the next place with air.
+     */
     setWind(name) {
       if (!Object.hasOwn(WIND_STRENGTHS, name)) return;
       windChoice = name;
-      blowWind(name);
+      if (!placeAirless(placeName)) blowWind(name);
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
+    /** The wind in force (calm at an airless place); `windChoice` the Wind setting's own. */
     get wind() { return windName; },
+    get windChoice() { return windChoice; },
+    /** Whether the place shown has no air (src/places.js placeAirless: Europa): its weather held clear, its wind calm. */
+    get airless() { return placeAirless(placeName); },
     /** The sounds on or off (src/sound.js), remembered on this device. */
     setSound(on) {
       sound.setEnabled(on);
@@ -3701,6 +3824,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get birdsOn() { return birdsOn; },
     /** The birds (src/birds.js), as they are posed now: each one's kind, habit, mode and pose; and the draw calls they take. */
     get birds() { return { drawCalls: birdView.drawCalls, birds: birds.report() }; },
+    /** Bursts of open water boiling in vacuum since the pond was last cleared (src/boiling.js). */
+    get boiling() { return boiling.bursts; },
+    /** Europa's scenery (src/europaScenery.js), as posed now, and the draw calls it takes. */
+    get europaScenery() { return { drawCalls: europaSceneryView.drawCalls, ...europaScenery.report() }; },
     /** Puts the place's heron up now, as a splash at (x, z) beside it would (tools/bird-probe.mjs). */
     startleBirds(x, z) { birds.startle(stepsTime, x, z); },
     /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */
@@ -3840,16 +3967,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * light-snow, heavy-snow, blizzard, fog), remembered on this device. The sky
      * clouds over and the snow falls at once; the rain falls once its ring's
      * table has come (the first time, about 0.6 MB). Resolves when it falls.
+     * At an airless place (Europa) the choice is only kept and remembered,
+     * clear held in force (holdAir); it comes at the next place with air.
      */
     setWeather(name) {
       if (!Object.hasOwn(WEATHERS, name)) return Promise.resolve(weatherName);
       try { window.localStorage.setItem(WEATHER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      weatherChoice = name;
+      if (placeAirless(placeName)) {
+        environment.setWeather(WEATHERS[name]);   // kept by the airless sky, held clear (src/sky.js)
+        return Promise.resolve(weatherName);
+      }
       // A storm's or a blizzard's gale, or a fog's calm, while it lasts, then the Wind setting's own choice again (WEATHERS).
       if (WEATHERS[name].wind) blowWind(WEATHERS[name].wind);
       else if (WEATHERS[weatherName].wind) blowWind(windChoice);
       return applyWeather(name).then(() => weatherName);
     },
+    /** The weather in force (clear at an airless place); `weatherChoice` the Weather setting's own. */
     get weather() { return weatherName; },
+    get weatherChoice() { return weatherChoice; },
     /** Whether rain is falling (its ring's table has come). */
     get raining() { return rain.on; },
     /** Whether snow is falling. */

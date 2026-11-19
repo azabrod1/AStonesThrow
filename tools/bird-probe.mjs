@@ -114,13 +114,14 @@ function run(place, seconds, frame, { things = () => [], splashes = [], conditio
   return { birds, frames };
 }
 
-// Who lives where: some at every place but the Pool (its view looks down into the water, at no sky).
+// Who lives where: some at every place but the Pool (its view looks down into the water, at no sky) and Europa (no air).
+const BIRDLESS = ['pool', 'europa'];
 for (const place of Object.keys(PLACES)) {
   const birds = new BirdPopulation();
   birds.setPlace(place);
   const expected = (BIRDS_BY_PLACE[place] ?? []).reduce((sum, group) => sum + group.count, 0);
   const atNight = (BIRDS_AT_NIGHT[place] ?? []).reduce((sum, group) => sum + group.count, 0);
-  check((place === 'pool' ? expected === 0 : expected > 0) && birds.birds.length === expected + atNight, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
+  check((BIRDLESS.includes(place) ? expected === 0 : expected > 0) && birds.birds.length === expected + atNight, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
 }
 {
   const none = new BirdPopulation(); none.setPlace('none');

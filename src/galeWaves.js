@@ -109,6 +109,7 @@ import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { GALE_EVALUATE_FRAGMENT, GALE_FOAM_FRAGMENT, FFT_PASS_FRAGMENT } from './shaders/spectral.js';
 import { runInverseFft } from './spectralWater.js';
 import { latticeIndex, mipAxisFactor } from './ambientWaves.js';
+import { EARTH_GRAVITY } from './gravity.js';
 
 export const GALE = {
   texels: 128,           // per side
@@ -124,7 +125,7 @@ export const GALE = {
 // The gale's strength under each of the Wind control's strengths
 // (WIND_STRENGTHS in src/ambientWaves.js): only a gale raises its waves.
 export const GALE_STRENGTHS = { calm: 0, breeze: 0, windy: 0, gale: 1 };
-const GRAVITY = 9.81;
+const GRAVITY = EARTH_GRAVITY;   // Earth's, wherever it blows: a gale is wind's, and only an air brings one (src/gravity.js)
 const SURFACE_TENSION_OVER_DENSITY = 7.2e-5;
 const HEIGHT_TEXTURE_UNITS = 1000;     // the textures hold millimetres
 export const CPU_DROPPED_VARIANCE = 0.003;   // the share of the height's variance the CPU's sum leaves out

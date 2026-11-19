@@ -352,6 +352,7 @@
 // a frozen pool's ice), it falls again; up a step it cannot climb (a frozen
 // pool's wall, from the ice) it is turned back off it, at its own bounce,
 // along whichever axis of its move rose (the pool's walls are square).
+import { AIR_DENSITY } from './air.js';
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, DRAWN_DEPTH, sinkStep, underWater } from './cavity.js';
@@ -362,11 +363,11 @@ import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 import { receiveIceShadows } from './iceShadow.js';
 import { passBy, forgetPasses } from './collide.js';
 import { withRandom } from './withRandom.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
 
-const GRAVITY = 9.81;
 // s: the step everything thrown moves by (src/main.js steps the world by it, whatever the frame rate, so a throw goes
 // as it went whatever the device; the probes step by it too).
 export const PHYSICS_STEP = 1 / 240;
@@ -498,7 +499,6 @@ export function setAir({ freezing = false, drying = 1 } = {}) {
 }
 const KNOCK_NOTHING = 1e-9;   // m: a knock that moves a thing less than this, without changing its speed, is nothing (Rock.knock)
 const WHITE = new THREE.Color(1, 1, 1);
-const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag (flown in
 // PHYSICS_STEP, as the thing will fly), a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
 // coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,
@@ -756,13 +756,14 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   // No faster than its own mass lets it go (a pie's filling, a pizza's toppings and all).
   const fastest = measured.thing.fastestFor(measured.mass);
   const throwTo = (point, time) => { const throwing = point.clone().sub(hand).divideScalar(time); throwing.y += 0.5 * GRAVITY * time; return throwing; };
+  const slower = EARTH_GRAVITY / GRAVITY;   // a flight at the same speeds is this many times as long under the place's gravity (src/gravity.js): 1 on Earth
   let aim = target.clone();
   let time = flightTime;
   if (throwTo(aim, time).length() > fastest) {
     // The flight time nearest the strength's at which `point` is reached no faster than `fastest`, or null.
     const slowEnough = (point) => {
       let best = null;
-      for (let trying = AIM.times[0]; trying <= AIM.times[1]; trying += AIM.times[2]) {
+      for (let trying = AIM.times[0] * slower; trying <= AIM.times[1] * slower; trying += AIM.times[2] * slower) {
         if (throwTo(point, trying).length() <= fastest && (best === null || Math.abs(trying - flightTime) < Math.abs(best - flightTime))) best = trying;
       }
       return best;
@@ -794,7 +795,7 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
     position.copy(hand);
     moving.copy(throwing);
     flight?.reset(position, moving);
-    for (let step = 0; step < 3 / seconds && (position.y > 0 || moving.y > 0); step++) {
+    for (let step = 0; step < Math.max(3, 1.5 * time) / seconds && (position.y > 0 || moving.y > 0); step++) {   // 3 s on Earth, longer than any flight there (AIM.times)
       path?.push(position.clone());
       previous.copy(position);
       if (flight) flight.step(seconds, position, moving);
@@ -974,16 +975,17 @@ export const THROW_STRENGTH = { soft: 1.3, hardSpeed: 12, fullRadius: 0.04, hard
 
 /**
  * The flight time (s) of a throw let go at `speed` from `hand` that comes
- * down at `target`, on the lower (flatter, shorter) of its two arcs, or null
- * if that speed cannot reach it. With u = T², the release speed squared is
+ * down at `target`, on the lower (flatter, shorter) of its two arcs (`high`:
+ * the higher, longer), or null if that speed cannot reach it, under
+ * `gravity` (the place's). With u = T², the release speed squared is
  * D²/u + g·Δy + g²·u/4 (D the distance, Δy the target's height over the hand).
  */
-export function lowArcTime(hand, target, speed) {
+export function lowArcTime(hand, target, speed, gravity = GRAVITY, high = false) {
   const distanceSquared = hand.distanceToSquared(target);
-  const sum = speed * speed - GRAVITY * (target.y - hand.y);
-  const discriminant = sum * sum - GRAVITY * GRAVITY * distanceSquared;
+  const sum = speed * speed - gravity * (target.y - hand.y);
+  const discriminant = sum * sum - gravity * gravity * distanceSquared;
   if (discriminant < 0) return null;
-  return Math.sqrt((2 * (sum - Math.sqrt(discriminant))) / (GRAVITY * GRAVITY));
+  return Math.sqrt((2 * (high ? sum + Math.sqrt(discriminant) : sum - Math.sqrt(discriminant))) / (gravity * gravity));
 }
 
 /** An ordinary throw's flight time (s) from `hand` to `target` at strength `power`, for a stone of `radius` (THROW_STRENGTH). */
@@ -991,8 +993,26 @@ export function throwFlightTime(hand, target, power, radius) {
   const normal = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0);
   if (power === 'soft') return normal * THROW_STRENGTH.soft;
   if (power !== 'hard') return normal;
-  const flat = lowArcTime(hand, target, THROW_STRENGTH.hardSpeed * Math.min(1, THROW_STRENGTH.fullRadius / radius));
+  const flat = lowArcTime(hand, target, THROW_STRENGTH.hardSpeed * Math.min(1, THROW_STRENGTH.fullRadius / radius), EARTH_GRAVITY);
   return Math.min(flat ?? Infinity, THROW_STRENGTH.hardLeast * normal);
+}
+
+/**
+ * The flight time (s) under the place's gravity (src/gravity.js) of a throw
+ * from `hand` to `target` that flies there in `earthTime` under Earth's
+ * (throwFlightTime): the thrower's arm is the same, so it is let go as fast
+ * (D²/T² + g·Δy + g²·T²/4, lowArcTime's), on the higher of the two arcs that
+ * reach the tap at that speed, or the lower if `low` (a hard throw's, fast
+ * and flat). Under Europa's gravity the medium toss to the reference tap goes
+ * up 10 m and comes down 8 s later, nearly straight down, at the speed it was
+ * let go; its lower arc would skim in at 16° under level. Earth's: `earthTime`.
+ */
+export function placeFlightTime(hand, target, earthTime, low = false) {
+  if (GRAVITY === EARTH_GRAVITY) return earthTime;
+  const distanceSquared = hand.distanceToSquared(target);
+  const speed = Math.sqrt(distanceSquared / earthTime ** 2 + EARTH_GRAVITY * (target.y - hand.y) + (EARTH_GRAVITY * earthTime) ** 2 / 4);
+  // A weaker pull always lets that speed reach; a stronger one may not: then the same arc as on Earth, faster.
+  return lowArcTime(hand, target, speed, GRAVITY, !low) ?? earthTime * Math.sqrt(EARTH_GRAVITY / GRAVITY);
 }
 
 /**

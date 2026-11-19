@@ -632,7 +632,7 @@ behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instan
 
 **Birds** (`src/birds.js`; `src/birdViews.js` has a kind with a model drawn by `src/birdMeshes.js` and
 the rest as pictures by `src/birdSprites.js`). Every place but
-the Pool (whose view looks down into the water) has its own, the ones that
+the Pool (whose view looks down into the water) and Europa (no air) has its own, the ones that
 live where its photograph was taken (Poly Haven's coordinates put most of
 the skies in South Africa):
 
@@ -756,6 +756,23 @@ sphere moved with it. Each bird in view costs 2 draw calls (it and its
 mirror image), the heron 3 (and its legs under the water);
 `tools/bird-probe.mjs` checks every place's birds, where they fly, the
 standing birds' flush and return, the frame rate and the cost.
+
+**Europa's sky** (`src/europaScenery.js`, drawn by
+`src/europaSceneryMeshes.js`), in the birds' place there (the Effects setting's
+birds turn it on and off): nothing flies where there is no air, so a vent on
+the far ice erupts now and then, a faint column of sunlit ice grains
+(licence: vapour is all but invisible, and Europa's plumes are contested),
+and a probe crosses the sky. It is modelled after Europa Clipper as NASA and
+JPL give it: solar arrays 30.5 m tip to tip, five panels a wing, a 3 m
+high-gain dish, the radar's 17.6 m antennas along the wings and an 8.5 m
+magnetometer boom. Its arrays face the sun; about that line it turns to show
+its wings to the eye, as NASA's artist's view of it over Europa does. Lit by the
+sun and from below by the sunlit ice, it crosses in front of Jupiter about
+half a minute into a visit. It takes four minutes to cross, from behind the
+eye's right to behind its left, 300 m off and so about 6° across. That is
+licence too: Clipper's closest passes are some 25 km up at 4.5 km/s. Closed
+form in time and seeded (the birds' seed), out of throw reach, in the mirror;
+`tools/europa-scenery-probe.mjs` checks it.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -1257,6 +1274,79 @@ The curated locations include:
   `src/pondFloor.js`).
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
+- **Europa** (`?sky=europa`; `?sky=jupiter` too): Jupiter's ice moon. No one has
+  photographed its surface from the ground, so its sky is put together from
+  spacecraft images (`tools/europa-sky.py`, numpy, public-domain sources it
+  downloads and checks), in two hours.
+  - **Day:** a black sky without stars (an eye or camera exposed for sunlit
+    ice sees none, as no Apollo photograph of the sunlit Moon shows any).
+    The small, far sun (a tenth of a degree across) is behind the eye's
+    right, Jupiter low ahead and gibbous.
+  - **Night:** the sun is down behind Europa, opposite Jupiter, so Jupiter is
+    full and lights the ice alone, with 0.55% of the sun's light (about
+    5 lux). The ice glows green-blue where it is clean and less along the
+    salty lineae, as Gudipati et al. 2020 found ice under Jupiter's
+    radiation does (the near crust and frost beach too: `glow`, ICE_CRUST_GLOW
+    and `uShoreGlow`). The stars and the Milky Way are out.
+
+  Each hour says its own light (`lux`: Earth's sky formula holds nowhere
+  there). The rest of the sky: Jupiter low
+  ahead as Cassini mapped it (PIA07782) on a globe 12.2° by 11.4°, gibbous in
+  that sun with its belts and Great Red Spot, and ice to a near horizon (2.2
+  km off for an eye 1.5 m up): Conamara Chaos as Galileo imaged it at 9 m a
+  pixel (USGS's controlled mosaic 12ESCHAOS_01), a double ridge and rafted
+  plates, its relief worked out from the image's own shading, marched a
+  column at a time with crags under the image's pixels (ridged noise, up to
+  some 40 m: blades of ice such as Hobley et al. 2018 predict there) and a
+  fractal frost under them. Its frost is a cool white, the matrix and lineae
+  reddish-brown, faces too steep to hold frost bare blue ice (NASA's colour
+  images show the purest ice white and blue), and its shade lit blue by the
+  sunlit ice about it, the only light there is in an airless shadow.
+  Through the usual pipeline (`tools/sky-probe.mjs`, `tools/sky-encode.mjs`),
+  its horizon strip reaching 30° up (`stripAbove`) so Jupiter is drawn from
+  the 8k. Airless, its sky has almost no mean, so the dome's cap is a share
+  of its sun instead (`sunCap`, `radianceCap` in `src/sky.js`). The beach is
+  frost cracked into plates (`SHORE_LOOKS.frost`), the water the ocean under
+  the ice, a deep blue in the sun alone (`WATER_CLARITIES.europa`); it starts
+  Frozen at the level view, with a lead across the middle (`lead`, `openLead`
+  in `src/ice.js`): a crack 3.6 m long the ocean wells up into, Jupiter
+  mirrored in it. Its
+  ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
+  `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
+  bands, blue where the frost is thin and in the bare leads between (where
+  alone Jupiter is mirrored), its shade lit blue, as the far ice's is. It is
+  a moon's crust, kilometres thick at about 100 K, so nothing thrown or set
+  on it breaks or cracks it, whatever the Ice setting's thickness, which only
+  sets how it is drawn (`crust`, `setVacuum` in `src/ice.js`). What comes down
+  on it lands, skids and rests, and the lead is the way into the ocean. No birds (no air): its
+  plume and probe instead (below). With no
+  air it has no weather and no wind (its sky's `airless`, `placeAirless` in
+  `src/places.js`): there the weather is held clear and the wind calm,
+  whatever the Weather and Wind settings, `?weather` or `?windStrength` say,
+  and the Weather and Wind pages grey their choices out and say why. The
+  choices are kept, still remembered on the device, and come back at the next
+  place with air; no rain, snow or gale program is built for it.
+  Its gravity is its own, 1.315 m/s², a seventh of Earth's
+  (`PLACES.europa.gravity`, `src/gravity.js`): the throw is let go as fast
+  as on Earth and goes the high way to the tap (`placeFlightTime` in
+  `src/rock.js`), so a medium toss climbs ten metres and comes down eight
+  seconds later nearly straight; the hole pinches 2.7 times later, the drops
+  hang longer and the rings run slower (`tools/gravity-probe.mjs`).
+  Its air is its own too (`src/air.js`). Europa's atmosphere is a trace of
+  oxygen, about 0.1 µPa at the surface, a trillionth of Earth's, so it counts
+  as none:
+  - Nothing drags on what flies: the stone and the spray fly plain parabolas.
+  - No air tears a big drop apart, and none is dragged under, so a splash
+    leaves no foam and no bubbles.
+  - A drop boils as it flies, and that freezes it in a few hundredths of a
+    second, so it is drawn as a grain of ice and wets nothing where it lands.
+  - Open water boils, since 0.1 µPa is far under water's triple point of
+    611 Pa (`src/boiling.js`). The lead, or the whole pond thawed,
+    fizzes with bursting bubbles, and a faint haze of frost glitters over it
+    (`src/boilingVapour.js`).
+  - The crust is kilometres thick, so nothing thrown breaks it. The lead
+    stays open, fed from below.
+  `tools/gravity-probe.mjs` checks these too.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never
@@ -1305,6 +1395,9 @@ M=--at=38.8893,-77.0464
 node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2026-09-20T10:38:00-04:00 $M
 node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2026-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
 node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2026-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
+# Europa's (computed by tools/europa-sky.py: no time or place to give; its hours share one frame, no north)
+node tools/sky-probe.mjs assets/sky/europa_2k.hdr
+node tools/sky-probe.mjs assets/sky/europa_night_2k.hdr --light=80,11,7   # its light is Jupiter's disc, not the brightest star
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -1804,8 +1897,9 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
   `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`, `tools/bird-probe.mjs`,
-  `tools/garden-probe.mjs`, `tools/tropics-probe.mjs` and
-  `tools/visitor-probe.mjs`;
+  `tools/europa-scenery-probe.mjs`,
+  `tools/garden-probe.mjs`, `tools/tropics-probe.mjs`,
+  `tools/gravity-probe.mjs` and `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
@@ -1987,7 +2081,7 @@ farther out, so it rises into the view rather than filling its corner.
   the first touch), `--trace` (each stone's path drawn as a line),
   `--wind-strength=calm|breeze|windy|gale` (the page's
   own default is calm), `--weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard` (waits for
-  the rain's table before the first frame). With
+  the rain's table before the first frame; held clear at `--sky=europa`). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
   the flight is stepped in slow frames too, so the first frame is at most
@@ -2048,7 +2142,9 @@ farther out, so it rises into the view rather than filling its corner.
   `?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard`
   (`--weather=` for the harness) the weather, `WEATHERS` in `src/main.js`,
   over the one last chosen on the device (a storm or a blizzard brings a
-  gale while it lasts, unless `?windStrength` says otherwise).
+  gale while it lasts, unless `?windStrength` says otherwise); at Europa,
+  which has no air, the weather is held clear and the wind calm whatever
+  either says, the choice kept for the next place.
 - `?view=shore|behind|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
@@ -2077,6 +2173,16 @@ farther out, so it rises into the view rather than filling its corner.
   and `credits.html` from the credits `birds.json` and `models.json`
   record; rerun it after either bird tool (`--check`, in `npm test`, fails
   if either file is not as it would write it).
+- `python3 tools/europa-sky.py [--hour=day|night] [--preview=file.png] [--draft]`
+  computes Europa's sky at an hour (its opening comment and HOURS say how):
+  `assets/sky/europa_2k.hdr` (`europa_night_2k.hdr` at night) and the 8k file
+  its horizon strip is cut from (`europa_8k.hdr`, never committed); then `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify`
+  on it, as for any sky. Its sources (Cassini's Jupiter map, Galileo's
+  Conamara mosaic: one member of USGS's 1.5 GB zip, fetched by byte range)
+  are downloaded once into `tools/.europa-sources/` (gitignored) and checked
+  by SHA-256. About five minutes (`--draft`: a 2k preview in about one);
+  needs numpy and Pillow. Over its black sky the encoder's relative error
+  reads near 100%: it measures nothing there.
 - `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
   Reflecting Pool's skies, one an hour, from its plan,
   `tools/mall-backdrop.json`: it fetches the photographs (cached in
@@ -2096,7 +2202,7 @@ farther out, so it rises into the view rather than filling its corner.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
-  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for the
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for Europa and the
   Reflecting Pool, its `stripAbove`) to 3° below cut from Poly Haven's 8k file (downloaded beside it when missing,
   never committed; `--no-horizon` skips it, and the insets), and a sky's insets
   (`assets/sky/name_insets.jpg`, from `name_insets.hdr` where it is), which the page fetches after
@@ -2132,6 +2238,12 @@ farther out, so it rises into the view rather than filling its corner.
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
   ```
+- `node tools/gravity-probe.mjs` checks a place's own gravity
+  (`src/gravity.js`) against theory under Europa's: the throw's flight and
+  landing, the cavity at the same Froude number (the same hole, 2.73 times
+  slower), the drops' flights and terminal speeds, the rings' dispersion and
+  the shaders that take `uGravity`, and the Europa jet's cost; and that back
+  under Earth's every number is what it was.
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [horizontalFraction]`
   checks the slender-jet solver (`src/slenderJet.js`) against the textbook:
   Rayleigh–Plateau's growth rate, Taylor–Culick's retraction speed, the drop

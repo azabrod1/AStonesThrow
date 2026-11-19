@@ -146,6 +146,8 @@ import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { WaterCannon, nozzle } from '../src/waterCannon.js';
+import { EARTH_GRAVITY, setGravity } from '../src/gravity.js';
+import { PLACES } from '../src/places.js';
 import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
 import { costClock, costSince } from './cost-clock.mjs';
@@ -591,6 +593,31 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   for (let step = 0; step < 480; step++) { splash.time = step * STEP; cannon.step(step * STEP, STEP, []); }
   check(cannon.inAir === 0 && handle.state === 'done' && Math.abs(cannon.landings - 48) <= 1 && !cannon.firing && !cannon.active,
     `a 0.2 s squirt lands its 48 parcels and is done (${cannon.landings} landed, ${cannon.inAir} in the air, ${handle.state}${cannon.active ? ', still active' : ''})`);
+  // With no air (src/splash.js `airless`: Europa) nothing is driven under: a squirt leaves no foam and no white water.
+  const churn = (airless) => {
+    let foam = 0, puffs = 0;
+    const own = new WaterCannon({ water: { ...water, addFoam: () => { foam++; return true; } }, splash: { ...splash, airless, whiteWater: { puff: () => { puffs++; } } } });
+    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
+    for (let step = 0; step < 240; step++) own.step(step * STEP, STEP, []);
+    return { foam, puffs };
+  };
+  const inAir = churn(false), inVacuum = churn(true);
+  check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
+    `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
+  // Under Europa's gravity the fan flies as many times longer, and its ring has room for it (src/waterCannon.js
+  // fanCapacity): over a long burst every landing still throws its moment of the fan.
+  {
+    setGravity(PLACES.europa.gravity);
+    try {
+      const longBurst = new WaterCannon({ water, splash });
+      longBurst.start({ hand: handFor(0.025, thing), x: 0.3, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 4 });
+      for (let step = 0; step < 4 * 240; step++) longBurst.step(step * STEP, STEP, []);
+      check(longBurst.landings > 900 && longBurst.tail.count === longBurst.landings,
+        `under Europa's gravity a 4 s burst's ${longBurst.landings} landings throw ${longBurst.tail.count} moments of its fan (${longBurst.fanInAir} in the air, room for ${longBurst.tail.capacity})`);
+    } finally {
+      setGravity(EARTH_GRAVITY);
+    }
+  }
   console.log(`  a step costs ${(1000 * cost / steps).toFixed(2)} µs`);
   check(cost / steps < STEP_COST_MS, `a cannon step costs ${(1000 * cost / steps).toFixed(2)} µs`);
 }

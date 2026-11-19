@@ -53,7 +53,8 @@ import { GALE_SURFACE } from './gale.js';
 
 export const WHITE_WATER_VERTEX = /* glsl */`
 ${GALE_SURFACE}
-#define WHITE_GRAVITY 9.81
+uniform float uGravity;      // the place's (src/gravity.js)
+#define WHITE_GRAVITY uGravity
 #define WHITE_FRONT 0.8      // the quad stands this share of its radius towards the eye
 #define WHITE_SPIN 5.0       // rad/s: the lumps turn about the core at up to this, either way
 #define WHITE_FLAT 0.7       // its height over its width, seen from the side

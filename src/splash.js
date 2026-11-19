@@ -123,6 +123,17 @@
 // boil's edge into the bursting bubbles, which give way under it. A smooth
 // milk with bubbles over it read as fog with marbles on it, from the bank
 // and close to; froth with structure, holes and ragged edges reads as foam.
+// Where there is no air (setAirless: Europa, src/air.js) there is none to
+// drag under: the hole fills with nothing but the water's own vapour, which
+// condenses as the walls close, so no foam, no specks and no bubbles, and a
+// landing drop takes none down either; and no air tears a big drop in
+// flight (Lumps: the Weber number is the air's), nor slows one: the drops
+// fly plain parabolas, as long as the place's gravity keeps them up. Its drops boil as they
+// fly, and a millimetre drop's boiling takes the heat to freeze it in a few
+// hundredths of a second (its vapour leaves at about 0.7 kg/m²·s at 0 °C,
+// Hertz and Knudsen's rate, each kilogram taking 2.5 MJ), so each is drawn
+// as a grain of ice (uDropFrost in the composite), and comes down on the ice
+// as one, wetting nothing (src/ice.js setVacuum).
 // So a thrown stone leaves white only while its air comes up, and none for
 // long: a 6 cm stone (R = 3 cm) a faint milky ring and a see-through fizz
 // over about its hole's mouth at 0.3 to 0.8 s, its cloud too thin for much
@@ -306,11 +317,13 @@ import { basinBounds, basinDeck } from './basin.js';
 import { PARTICLE_VERTEX, SPRAY_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
+import { AIR_DENSITY, EARTH_AIR } from './air.js';
 
-const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;   // the stone size the tuning constants were set for
 const MAX_CROWNS = 5;            // an older crown tears at once when another arrives
 const MAX_JETS = 4;              // an older jet breaks into drops at once when another starts
+const DROP_MOST_LIFE = 6;             // s: no drop flies longer under Earth's gravity; under a weaker one (src/gravity.js) as many times longer as a flight is
 const LANDING_SPLAT_RADIUS = 0.0016;  // drops bigger than this push a splat into the solver where they land...
 const LANDING_SPLATS = 40;            // ...at most this many a substep, the biggest
 const LANDING_CROWN_RADIUS = 0.0035;   // drops this big throw a crown where they land (and a boil and a kick if not)...
@@ -323,7 +336,6 @@ const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the dr
 // speed; a piece still over the ceiling breaks again when its own Weber number says so. So a lump thrown fast
 // bursts into spray at once, and one lobbed slowly flies whole to its apex and breaks as it falls and speeds up:
 // a big stone's jet sheds centimetre lumps that come apart in the air.
-const AIR_DENSITY = 1.2;
 const WATER_SURFACE_TENSION = 0.072;
 const WATER_DENSITY_LUMPS = 1000;
 // A drop's wobble. A drop just pinched off a ligament or a column is no
@@ -841,6 +853,7 @@ export class SplashSystem {
     this.poolRings = []; // a pool's ring sources, held until their release (stampCavity)
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
     this.salt = false;   // the sea's water (setSalt)
+    this.airless = false;   // no air to drag under (setAirless)
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
@@ -994,6 +1007,7 @@ export class SplashSystem {
       uGlare: { value: null },
       uGlareShare: { value: 0 },
       uRefract: { value: 1.4 },
+      uDropFrost: { value: 0 },   // setAirless
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
       uFluidTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
@@ -1243,7 +1257,7 @@ export class SplashSystem {
     this.jets.push(jet);
 
     // 4. Bubbles follow the stone down its path, in a cloud as wide as the stone.
-    this.plumes.push({
+    if (!this.airless) this.plumes.push({
       x, z, start: this.time, duration: 0.3,
       total: Math.round(THREE.MathUtils.clamp(BUBBLES * sizeFactor ** 2, 30, BUBBLE_CAP)),
       spawned: 0, depth: Math.min(0.55, radius * 7), spread: sizeFactor,
@@ -1641,6 +1655,7 @@ export class SplashSystem {
    * rate for the whole span.
    */
   stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, sustained = false, source }) {
+    if (this.airless) return;   // no air to come up (the header)
     const pieces = 3 + Math.floor(random() * 3);
     const count = pieces + Math.floor(span / FOAM_STAMP_SPACING);
     const share = sustained ? 1 : pieces / count;
@@ -1669,12 +1684,19 @@ export class SplashSystem {
     this.salt = Boolean(salt);
   }
 
+  /** Whether there is no air (the header's Foam: Europa, src/air.js): no foam, specks or bubbles, no drop torn. */
+  setAirless(airless) {
+    this.airless = Boolean(airless);
+    this.compositePass.material.uniforms.uDropFrost.value = this.airless ? 1 : 0;   // its drops freeze as they fly (COMPOSITE_FRAGMENT)
+  }
+
   /**
    * `count` foam specks in rafts over the ring between two radii around (x,
    * z), drifting outward at up to `driftSpeed` m/s, surfacing over `span`
    * seconds from now (src/foamSpecks.js spawnPatch).
    */
   spawnFoamSpecks(x, z, innerRadius, outerRadius, count, driftSpeed, span = 0) {
+    if (this.airless) return;
     this.foamSpecks.spawnPatch(x, z, innerRadius, outerRadius, count, this.time, driftSpeed, span);
   }
 
@@ -1716,6 +1738,7 @@ export class SplashSystem {
   }
 
   spawnBubble(x, y, z, vx, vy, vz, size) {
+    if (this.airless) return;
     if (this.bubbleCount >= this.bubbleCapacity) return;
     const i = this.bubbleCount++;
     this.bubblePositions[i * 3] = x; this.bubblePositions[i * 3 + 1] = y; this.bubblePositions[i * 3 + 2] = z;
@@ -1809,7 +1832,8 @@ export class SplashSystem {
           (pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece) => this.spawnDroplet(pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece, true, piece > DROP_CEILING));
         continue;
       }
-      const drag = Math.min(0.00027 / radius * speed * dt, 0.5);
+      // Its drag is the air's (src/air.js): none in vacuum, where it flies a parabola.
+      const drag = Math.min(0.00027 / radius * speed * dt * (AIR_DENSITY / EARTH_AIR), 0.5);
       vx -= vx * drag; vy -= vy * drag; vz -= vz * drag;
       vy -= GRAVITY * dt;
       let x = this.positions[p] + vx * dt;
@@ -1852,7 +1876,7 @@ export class SplashSystem {
         this.removeDroplet(i);
         continue;
       }
-      if ((y <= 0 && vy < 0) || this.ages[i] > 6) {
+      if ((y <= 0 && vy < 0) || this.ages[i] > DROP_MOST_LIFE * (EARTH_GRAVITY / GRAVITY)) {
         if (y <= 0 && radius > Math.min(LANDING_SPLAT_RADIUS, DROP_RING.least)) landings.push({ x, z, radius, fallSpeed: -vy, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), velocityX: vx, velocityZ: vz, flight: this.ages[i] });
         this.removeDroplet(i);
         continue;
@@ -1889,7 +1913,7 @@ export class SplashSystem {
         landingCrowns++;
       }
       if (hit.radius >= LANDING_CROWN_RADIUS) {
-        water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: LANDING_FOAM * strength, lifetime: LANDING_FOAM_LIFETIME, boil: true, source: 'landing' });
+        if (!this.airless) water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: LANDING_FOAM * strength, lifetime: LANDING_FOAM_LIFETIME, boil: true, source: 'landing' });
         const sprayCount = crowned ? 0 : splashRandom() < LANDING_KICK_CHANCE ? 1 + Math.floor(splashRandom() * LANDING_KICK_MOST) : 0;
         for (let s = 0; s < sprayCount; s++) {
           const angle = splashRandom() * Math.PI * 2;

@@ -43,6 +43,12 @@
 // panoramas, one of them mirrored: a 6° view along the scene's sun direction
 // has the dome's sun core within 0.1° of its centre.
 //
+// --light=azimuth,elevation,window (degrees, the file's frame) looks for the
+// sun within `window` of that direction alone, and takes it as wide as
+// that: for a computed sky whose light is no point, such as Europa's night,
+// lit by Jupiter's full disc 12° across, where the brightest pixel anywhere
+// is a star (the JSON keeps it as lightNear).
+//
 // --png writes a tone-mapped preview at half size (Reinhard on an exposure
 // that puts the horizon median at 0.6), with a red cross on the sun.
 //
@@ -164,25 +170,33 @@ function directionOf(column, row, width, height) {
   return [Math.cos(elevation) * Math.cos(phi), Math.sin(elevation), Math.cos(elevation) * Math.sin(phi)];
 }
 
-export function measureSky({ width, height, pixels }) {
+export function measureSky({ width, height, pixels }, light = null) {
   const pixelSolidAngle = (row) => (2 * Math.PI / width) * (Math.PI / height) * Math.cos(elevationOfRow(row, height));
+  // --light (the header): the light looked for within `window` degrees of (azimuth, elevation) alone.
+  const lightDirection = light ? directionOf(light.azimuth / 360 * width - 0.5, (90 - light.elevation) / 180 * height - 0.5, width, height) : null;
+  const lightCosine = light ? Math.cos(light.window * Math.PI / 180) : -2;
   let maxLuminance = 0;
   let brightestIndex = 0;
   for (let row = 0; row < height / 2; row++) {
     for (let column = 0; column < width; column++) {
       const base = (row * width + column) * 3;
       const luminance = luminanceOf(pixels[base], pixels[base + 1], pixels[base + 2]);
+      if (lightDirection) {
+        const direction = directionOf(column, row, width, height);
+        if (direction[0] * lightDirection[0] + direction[1] * lightDirection[1] + direction[2] * lightDirection[2] < lightCosine) continue;
+      }
       if (luminance > maxLuminance) { maxLuminance = luminance; brightestIndex = row * width + column; }
     }
   }
-  // The sun: pixels above a quarter of the maximum within the window around the brightest.
+  // The sun: pixels above a quarter of the maximum within the window around the brightest (--light's window, if given).
   const brightestDirection = directionOf(brightestIndex % width, Math.floor(brightestIndex / width), width, height);
-  const windowCosine = Math.cos(SUN_WINDOW_DEGREES * Math.PI / 180);
+  const sunWindow = light ? light.window : SUN_WINDOW_DEGREES;
+  const windowCosine = Math.cos(sunWindow * Math.PI / 180);
   const isSun = new Uint8Array(width * height);
   const sunIrradiance = [0, 0, 0];
   const centroid = [0, 0, 0];
   let sunPixels = 0;
-  const windowRows = Math.ceil(SUN_WINDOW_DEGREES / 180 * height) + 1;
+  const windowRows = Math.ceil(sunWindow / 180 * height) + 1;
   const brightestRow = Math.floor(brightestIndex / width);
   for (let row = Math.max(0, brightestRow - windowRows); row <= Math.min(height - 1, brightestRow + windowRows); row++) {
     const solidAngle = pixelSolidAngle(row);
@@ -425,7 +439,10 @@ if (isMain) {
   if (!input) { console.error('usage: node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png] [--taken=ISO time with offset --at=latitude,longitude] [--align=reference_2k.hdr]'); process.exit(1); }
   const measurementPath = (hdrPath) => path.join(path.dirname(hdrPath), `${path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '')}.json`);
   const image = parseRgbe(await readFile(input));
-  const measurement = { source: path.basename(input), ...measureSky(image) };
+  const lightOption = option('light')?.split(',').map(Number);
+  if (lightOption && (lightOption.length !== 3 || !lightOption.every(Number.isFinite))) { console.error('--light needs azimuth,elevation,window (degrees)'); process.exit(1); }
+  const light = lightOption ? { azimuth: lightOption[0], elevation: lightOption[1], window: lightOption[2] } : null;
+  const measurement = { source: path.basename(input), ...measureSky(image, light), ...(light ? { lightNear: lightOption } : {}) };
   const taken = option('taken');
   const at = option('at');
   const alignTo = option('align');

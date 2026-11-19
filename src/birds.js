@@ -97,8 +97,8 @@ import { seededRandom, seededOnce } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiFloorDepthAt } from './pondFloor.js';
 import { plantingFront } from './koiGarden.js';
 import { STEP_LENGTH } from './birdRig.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 const NIGHT_SUN = 4;   // degrees: the true sun this far below the horizon (not the moon that lights a night), no bird is about
 export const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore): where visits are laid out from
 // Where a wading bird may stand (clearOffshore): far enough out that its legs are seen, the Koi pond's drawn planting
@@ -849,7 +849,7 @@ export class BirdPopulation {
         // Coming its way (WARY): off at once, or round again.
         const reach = (bird.mode === 'land' ? WARY.aside : WARY.reach) + (thing.radius ?? 0.05);
         const level = Math.hypot(thing.velocity.x, thing.velocity.z);
-        if (Math.hypot(thing.position.x - here.x, thing.position.z - here.z) - reach > level * WARY.ahead + 0.5 * GRAVITY) continue;   // cannot get there in time
+        if (Math.hypot(thing.position.x - here.x, thing.position.z - here.z) - reach > level * WARY.ahead + 0.5 * EARTH_GRAVITY) continue;   // cannot get there in time
         const samples = course(thing, courseScratch);
         const arrival = arrivalOf(courseScratch, samples, here.x, here.z, here.y, here.y + WARY.tall, reach);
         if (arrival >= (bird.mode === 'land' ? WARY.ahead : WARY.lead)) continue;

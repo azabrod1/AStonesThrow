@@ -71,8 +71,9 @@ import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { sceneryShader } from './boulders.js';
 import { VISITOR_CONTACTS, VISITOR_RINGS, VISITOR_RING_SLOPE_LEAST } from './shaders/visitor.js';
+import { EARTH_GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
+const GRAVITY = EARTH_GRAVITY;   // Earth's: the visitor is Loch Ness's alone (src/gravity.js)
 export const SCHEDULE = {
   seed: 1933,                 // its stream's (the year the road along the loch's north shore opened, and the sightings began)
   first: [20, 45],            // s after arriving: the first sighting

@@ -222,8 +222,8 @@ import { seededRandom, sprayDrops } from './spray.js';
 import { SlenderJet, WATER } from './slenderJet.js';
 import { DROP_CEILING } from './crown.js';
 import SWEEP from '../assets/jet/sweep.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the launch was fitted for
 const ROWS = 200;                  // rings in the grid
 const COLUMNS = 16;                // around the axis
@@ -313,9 +313,24 @@ const SWEEP_SIZES = [...SWEEP.table].sort((first, second) => first.radius - seco
  * ln R between its sizes and clamped past its largest; below the reference
  * stone the column's radii are R·(R / 3 cm)^JET_RADIUS_POWER and the thread
  * and the needle the reference's.
+ *
+ * The sweep was run under Earth's gravity at about one speed (6.3 m/s), so
+ * its sizes stand for Froude numbers V²/(g·R), which set how singular the
+ * collapse is (the header: a jet is thinner the higher it is). Under
+ * another `gravity` (src/gravity.js, the place's) a stone bigger than the
+ * reference takes the gains of the swept size of its own Froude number,
+ * R·g/g_Earth, the reference's at least: on Europa (g/7.46) a 30 cm rock
+ * stands for a 4 cm stone under Earth's, under the reference's 6 cm, so
+ * every stone up to 45 cm across takes the reference's gains. That is past
+ * the sweep: its highest Froude number is the reference's (135), and a
+ * Europa throw's is several hundred (a medium toss's 6 cm stone goes in at
+ * 5.3 m/s, F = 700: tools/gravity-probe.mjs); the gains past it are an
+ * extrapolation, held at the reference's own.
  */
-export function sweepGains(radius) {
+export function sweepGains(radius, gravity = GRAVITY) {
   if (radius <= REFERENCE_RADIUS) return { column: (radius / REFERENCE_RADIUS) ** JET_RADIUS_POWER, thread: 1, needle: 1 };
+  if (gravity !== EARTH_GRAVITY) radius = Math.max(radius * (gravity / EARTH_GRAVITY), REFERENCE_RADIUS);   // the swept size of the same Froude number
+  if (radius <= REFERENCE_RADIUS) return { column: 1, thread: 1, needle: 1 };   // the reference's gains: past the sweep (the header)
   const upper = SWEEP_SIZES.findIndex((size) => size.radius >= radius);
   const pick = ({ column, thread, needle }) => ({ column, thread, needle });
   if (upper < 0) return pick(SWEEP_SIZES[SWEEP_SIZES.length - 1]);
@@ -804,7 +819,7 @@ export class JetColumn {
     const fallX = point.x + direction.x * drift, fallZ = point.z + direction.z * drift;
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 0.9, height: 0.22 * radius * strength });
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
-    water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });
+    if (!splash.airless) water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });   // no air, none (src/splash.js setAirless)
     splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025, FALLBACK_SPECK_SPAN * Math.sqrt(radius / GRAVITY));
   }
 

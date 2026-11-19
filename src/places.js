@@ -1,6 +1,6 @@
 // Shared place data: sky, shore, water and its settings card live together.
 // New places extend this registry rather than adding special cases to the page.
-import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
+import { SKY_NAMES, REED_SKIES, skyShore, skyAirless } from './sky.js';
 
 // The places (the Location setting): a sky (src/sky.js SKIES) and what lies
 // about the water, the lake's bed and shore, or the Pool's tiled pool on its
@@ -18,10 +18,14 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // (src/tropics.js); or the Reflecting Pool (`mall`), a granite-walled basin
 // 618 m long (MALL_POOL), its walls, coping and lawn src/mallPool.js's, its
 // water clipped to the walls, under a backdrop matte-painted from
-// photographs (src/sky.js `mall`, tools/mall-backdrop.py). A place may have its own water (`water`, a key of
+// photographs (src/sky.js `mall`, tools/mall-backdrop.py); or Europa (`europa`), Jupiter's ice moon: the
+// lake's shore in frost under a computed airless sky (src/sky.js `europa`, tools/europa-sky.py), its own
+// ocean under a refrozen skin of ice, starting frozen. A place may have its own water (`water`, a key of
 // WATER_CLARITIES, whatever clarity is chosen, and its card, `waterCard`),
-// its own ground (`shore`, in place of its sky's), its own start
-// (`defaultWater`, `defaultView`), and, at Loch Ness, something far out now
+// its own ground (`shore`, in place of its sky's), its own ice (`iceCrust`: an old frosted crust's stain colour and
+// reach, src/ice.js setCrust; a lake's black ice otherwise), its own start
+// (`defaultWater`, `defaultView`), its own gravity (`gravity`, m/s²; Earth's,
+// 9.81, unless it says: src/gravity.js), and, at Loch Ness, something far out now
 // and then (`visitor`: src/lochVisitor.js). src/main.js applyPlace puts a
 // place in force once its sky has come.
 // Each place's fish are
@@ -31,7 +35,11 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // are its sky's (REED_SKIES) unless it says: the fresh lakes have them,
 // the sea cove, the bare rock shore, the salt flat, the frozen alpine
 // reservoir, Loch Ness and the lagoon none, and the Pool, the Koi pond and
-// the Reflecting Pool have their own grounds.
+// the Reflecting Pool have their own grounds; Europa none.
+// A place under an airless sky (src/sky.js `airless`: Europa's) has no
+// weather and no wind (placeAirless): src/main.js holds its weather clear and
+// its wind calm there, whatever is chosen or asked by the page, and keeps
+// the choices for the next place with air.
 export const PLACES = {
   ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
@@ -48,7 +56,18 @@ export const PLACES = {
   // coping and ground (`mall`, src/mallPool.js) under its own sky, a backdrop of the Mall (src/sky.js `mall`), and its
   // own still water over its blue-coated bed (since 2026).
   mall: { sky: 'mall', pool: false, reeds: false, shoreKind: 'mall', mall: true, water: 'mall', waterCard: { image: 'assets/sky/thumbs/mall.jpg', name: 'Pool water', note: 'Still over its blue bed: a mirror for the monuments' } },
+  // Europa: the lake's shore and bed under Europa's sky, its beach frost (`shore`, src/pondFloor.js SHORE_LOOKS), its
+  // water the ocean under the ice (WATER_CLARITIES.europa), frozen at first (`defaultWater`) but for a lead (`lead`: a crack
+  // the ocean wells up into, boiling in the vacuum, src/ice.js setVacuum, src/boiling.js), seen from water level, Jupiter
+  // low ahead over the ice and mirrored in the lead (`defaultView`); its ice an old crust (`iceCrust`): frost nearly all over,
+  // as bright as Europa's (albedo about 0.65), stained reddish-brown along bands as its lineae are, Jupiter mirrored only
+  // in the bare leads between. No fish but glowing ice lanterns (src/fish.js); no birds, weather or wind over an airless
+  // moon (its sky's `airless`, placeAirless), but a vent's plume and a probe crossing its sky (src/europaScenery.js). Its own gravity
+  // (`gravity`, m/s²: src/gravity.js), a seventh of Earth's: what is thrown climbs higher and falls slower.
+  europa: { sky: 'europa', gravity: 1.315, pool: false, reeds: false, water: 'europa', defaultWater: 'frozen', lead: { x: 0.1, z: -1.25, length: 3.6, width: 1.0, angle: 12, seed: 7 }, defaultView: 'level', iceCrust: [0.72, 0.52, 0.40, 1], waterCard: { image: 'assets/sky/thumbs/europa.jpg', name: 'Europa’s ocean', note: 'Salt water kilometres deep: black under the ice' } },
 };
+/** Whether a place has no air to speak of (its sky's `airless`: Europa's atmosphere is a trillionth of Earth's, src/air.js): clear and calm there, whatever the Weather and Wind settings say. */
+export const placeAirless = (place) => skyAirless(PLACES[place]?.sky);
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
 export const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);
 

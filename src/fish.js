@@ -25,6 +25,24 @@
 //     sergeant majors, a shoal of yellow tang and a blue tang on its own,
 //     bright, unmuted (fishMarkings mutes only the wild fish of cool water).
 //   - The Pool: none, chlorinated.
+//   - Europa, the ocean under Jupiter's ice moon: no fish, but a few ice
+//     lanterns (`lantern`), an imagined medusa, each alone, on no plan of
+//     Earth's: a pulsing spindle of three twisted lobes, comb rows on its
+//     spiral ridges breaking its light into colours, three red eyes, three
+//     braided veils and six coiled tentacles with lures trailing (src/
+//     fishMeshes.js MEDUSA), drifting slower than any koi, that makes its own
+//     light (`glows`), as the animals of Earth's dark deep sea do: blue-green
+//     (about 480 nm, what sea water carries farthest: Widder 2010). It flashes
+//     when something comes down on it, a wave of light down its spirals (as
+//     the deep-sea Atolla's "burglar alarm" runs round its margin), then dims while it is wary, as such
+//     animals go dark after a flash so as not to be found (`glow`, drawn by
+//     src/fishMeshes.js as a medusa: `form`). They keep to the bay's
+//     middle (`range`: under the thin ice there, where what seeps through it
+//     feeds them, as life under ice gathers where its energy comes from) and
+//     to the top of the water, under the ice (`upper`); and a splash draws
+//     them (`lured`): once its fright is past they drift to where it was, to
+//     what it let in from above, and hang about it a while (LURE), so a hole
+//     a stone has just opened shows them glowing in it.
 // A few of each, not many: each is drawn and moves with care.
 //
 // The company a kind keeps (`company`): 'school', a tight school that turns
@@ -91,13 +109,15 @@
 // that step, drawn between their last two (showAt): so a seeded throw is the
 // same with fish, at any frame rate. When the world's clock goes back to
 // zero (src/main.js clearPond: Frozen water, a new place) theirs goes with
-// it (resetClock), each fish kept where it is with its own timers, or they
+// it (resetClock), each fish kept where it is with its own timers (a lure
+// forgotten: its splash is gone with the pond), or they
 // would hang until the world caught up with the old clock. Held (hold), they
 // neither swim nor take fright and their clock keeps still: the warm-up's
 // pass that draws nothing (src/main.js warmUp) throws and steps a world the
 // fish must not see, or they would start the session elsewhere.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
+import { GRAVITY } from './gravity.js';
 
 // The kinds. length: [least, most] (m, nose to tail); depth: [shallowest,
 // deepest] (m) the kind keeps; cruise: its cruising speed in body lengths a
@@ -107,7 +127,14 @@ import { seededRandom } from './spray.js';
 // just over the bed (its `depth`'s deepest is deeper than any bed here), each
 // fish picking a new depth every few seconds (DEPTH);
 // eats, whether it comes to food; company and count (FISH_BY_PLACE says how
-// many). The body's shape and markings are src/fishMeshes.js's: `shape`, in
+// many). A kind with a `form` is no fish: `medusa`, a bell pulsing
+// once a `stride` (body lengths, a fish's STRIDE otherwise) at between
+// `pulse` beats a second (its tail's 0.6 to TAIL_MOST otherwise), whipping
+// round on a fright `cStart` times as fast as it cruises (C_START.turn
+// otherwise); `glows`, its light (`glow`, above); `upper`, how it favours
+// the top of its depths (DEPTH.upper otherwise); `lured`, drawn to a splash
+// (LURE). A place's group may keep to a `range` ({ x, z, reach }, m), where
+// it starts and wanders. The body's shape and markings are src/fishMeshes.js's: `shape`, in
 // shares of its length (its body's depth and width, where it is deepest,
 // how pointed its snout, whether it has barbels (a koi's two pairs), its tail's spread and fork, each fin's span along
 // the body and height, how many scales along it) and `pattern`
@@ -129,6 +156,9 @@ export const FISH_SPECIES = {
   // The Polynesian lagoon's reef fish (PLACES `lagoon`): bright, unmuted (fishMarkings mutes only the wild fish of cool water).
   sergeant: { name: 'Sergeant major', length: [0.12, 0.18], depth: [0.1, 3], cruise: 1.0, burst: 5, turn: 3.0, shy: 0.9, eats: true, company: 'school', shape: { depth: 0.46, width: 0.13, tail: 0.24, fork: 0.35, snout: 0.6, peak: 0.36, dorsal: [0.25, 0.7, 0.12], anal: [0.55, 0.73, 0.1], pectoral: 0.13, pelvic: 0.09, scales: 34 }, pattern: 'sergeant' },
   yellowTang: { name: 'Yellow tang', length: [0.12, 0.18], depth: [0.1, 3], cruise: 0.7, burst: 4, turn: 2.6, shy: 0.8, eats: true, company: 'shoal', shape: { depth: 0.66, width: 0.1, tail: 0.22, fork: 0.05, snout: 0.85, peak: 0.42, dorsal: [0.2, 0.78, 0.24], anal: [0.48, 0.78, 0.2], pectoral: 0.12, pelvic: 0.08, scales: 70 }, pattern: 'yellowTang' },
+  // Europa's ice lantern (the header): no fish but drawn as one is, its body (shape.width across, a share of its length) and its
+  // veils and tentacles trailing behind (shape.depth the band they hang through, for the bed: KEEL), src/fishMeshes.js medusa.
+  lantern: { name: 'Ice lantern', form: 'medusa', glows: true, lured: true, upper: 2.5, length: [0.5, 0.75], depth: [0.2, 3], cruise: 0.15, burst: 0.8, turn: 0.6, shy: 0.8, eats: false, company: 'alone', stride: 0.3, pulse: [0.35, 1.1], cStart: 3, shape: { depth: 0.5, width: 0.36, tail: 0.3 }, pattern: 'lantern' },
   blueTang: { name: 'Blue tang', length: [0.18, 0.26], depth: [0.1, 3], cruise: 0.65, burst: 4.5, turn: 2.4, shy: 0.8, eats: true, company: 'alone', shape: { depth: 0.52, width: 0.11, tail: 0.24, fork: 0.15, snout: 0.7, peak: 0.4, dorsal: [0.22, 0.78, 0.13], anal: [0.5, 0.78, 0.11], pectoral: 0.13, pelvic: 0.08, scales: 70 }, pattern: 'blueTang' },
 };
 
@@ -147,9 +177,9 @@ export const FISH_BY_PLACE = {
   loch: [{ species: 'trout', count: 2 }, { species: 'char', count: 2 }, { species: 'minnow', count: 6 }],   // Loch Ness's brown trout, Arctic char and minnows, shadows in its peat-dark water
   pool: [],
   mall: [],   // the Reflecting Pool holds none: it is filtered city water, drained and cleaned
+  europa: [{ species: 'lantern', count: 6, range: { x: 0, z: -1.4, reach: 1.7 } }],   // Europa's ocean: ice lanterns, each alone, about the bay's middle (the header)
 };
 
-const GRAVITY = 9.81;
 const ANTICIPATE = 0.5;        // s: a thing coming down sooner than this frightens the fish under where it will land
 const ALARM = { least: 0.5, perRadius: 11, impact: 1.25, moving: 0.35 };   // m and m per m of the thing's radius: how far a thing frightens (times the kind's shy)
 const FRIGHT = { seconds: [0.7, 1.4], wary: [3, 6], spread: 0.7, dive: 0.5, passOn: [0.08, 0.22], passReach: 1.5 };   // s; rad of scatter; how far down it dives; how its group takes fright
@@ -245,7 +275,13 @@ export function edibleBites(mass) {
 
 const range = (random, [least, most]) => least + (most - least) * random();
 // What src/fishMeshes.js draws of a fish (showAt).
-const DRAWN = ['x', 'y', 'z', 'heading', 'pitch', 'phase', 'beat', 'bend'];
+const DRAWN = ['x', 'y', 'z', 'heading', 'pitch', 'phase', 'beat', 'bend', 'glow'];
+// A glowing kind's light (`glow`, the header): calm, flashing (fright) and dimmed (wary), and how fast it eases there
+// (a second's share): the flash at once, the dimming and its coming back slow.
+const GLOW = { calm: 0.55, flash: 1, wary: 0.12, rise: 12, fall: 1.5 };
+// A lured kind (`lured`, the header): how long a splash draws it (s), from how far (m), how near it hangs about the
+// spot (m), and how much faster than its cruise it drifts there.
+const LURE = { seconds: 45, sense: 4, reach: 0.35, eager: 1.4 };
 const wrapAngle = (angle) => Math.atan2(Math.sin(angle), Math.cos(angle));
 const clamp = (value, least, most) => Math.min(Math.max(value, least), most);
 const smoothstep = (low, high, value) => { const share = clamp((value - low) / (high - low), 0, 1); return share * share * (3 - 2 * share); };
@@ -322,12 +358,13 @@ export class FishPopulation {
     this.groups = [];
     this.time = 0;
     this.clock = null;   // the world's time they have been stepped to (advance): set by the first
-    for (const { species: speciesName, count } of FISH_BY_PLACE[place] ?? []) {
+    this.lure = null;   // the last splash (startle), which a lured kind drifts to (LURE)
+    for (const { species: speciesName, count, range: keepTo } of FISH_BY_PLACE[place] ?? []) {
       const species = FISH_SPECIES[speciesName];
       const groupCount = species.company === 'alone' ? count : 1;
       for (let index = 0; index < groupCount; index++) {
-        const group = { species, company: COMPANY[species.company], members: [], goal: null, goalUntil: 0, restUntil: 0 };
-        const home = this.placeIn(species, null, Infinity);
+        const group = { species, company: COMPANY[species.company], members: [], goal: null, goalUntil: 0, restUntil: 0, range: keepTo ?? null, lured: false, lureAt: null };
+        const home = keepTo ? this.placeIn(species, keepTo, keepTo.reach) : this.placeIn(species, null, Infinity);
         group.goal = this.placeIn(species, home, GOAL.wander[1]);
         group.goalUntil = range(this.random, GOAL.seconds);
         this.groups.push(group);
@@ -339,12 +376,12 @@ export class FishPopulation {
             species, group, length,
             x: start.x, y: start.y, z: start.z,
             heading: this.random() * Math.PI * 2, pitch: 0, speed: species.cruise * length * range(this.random, [0.4, 0.8]), climb: 0,
-            phase: this.random() * Math.PI * 2, beat: 0, bend: 0,
+            phase: this.random() * Math.PI * 2, beat: 0, bend: 0, glow: species.glows ? GLOW.calm : 0,
             seed: (member + 0.1 + 0.8 * this.random()) / members,   // its markings' (src/fishMeshes.js): a group's spread over them (a pond's koi of every variety)
             fright: 0, cStart: 0, fleeX: 0, fleeZ: 0, wary: 0, pending: null,
             wantX: 0, wantZ: 0,   // where it wants to go, eased (STEADY)
             pace: range(this.random, PACE.rate), paceAt: this.random() * Math.PI * 2,   // its burst and coast (PACE)
-            depthShare: this.random() ** DEPTH.upper, depthUntil: range(this.random, DEPTH.seconds),   // where in its depths it is going (DEPTH)
+            depthShare: this.random() ** (species.upper ?? DEPTH.upper), depthUntil: range(this.random, DEPTH.seconds),   // where in its depths it is going (DEPTH)
             food: null, biteIn: 0, backOff: 0, feedAngle: null, feeding: false,
             // Its spine (SPINE): each point's distance along it (m) and half-thickness, its tail's sweep with it.
             spine: SPINE.map(([along, share]) => [along * length, (share === 'tail' ? Math.max(species.shape.tail * 0.5, 0.06) : share * species.shape.depth * 0.5) * length + CLEAR.sweep * length]),
@@ -573,6 +610,10 @@ export class FishPopulation {
   /** A splash, or anything sudden, at (x, z): every fish within `alarm` (m, times its kind's shy) takes fright. */
   startle(x, y, z, alarm) {
     if (this.held) return;
+    // Where a lured kind drifts once its fright is past (LURE); the same splash foreseen step after step (stepOnce's
+    // thing coming down) is one lure, not a new one each step.
+    const last = this.lure;
+    if (!last || this.time - last.at > 1 || Math.hypot(x - last.x, z - last.z) > LURE.reach) this.lure = { x, z, at: this.time };
     for (const fish of this.fish) {
       const reach = alarm * fish.species.shy;
       const apart = Math.hypot(fish.x - x, fish.z - z, Math.max(Math.abs(fish.y - y) - 0.4, 0));
@@ -637,10 +678,12 @@ export class FishPopulation {
     return this.bites;
   }
 
-  /** Rebase on a reset world clock, keeping the swimmers and their own timers. */
+  /** Rebase on a reset world clock, keeping the swimmers and their own timers; the lure (LURE) is forgotten with the splash it was. */
   resetClock(time = 0) {
     if (this.held) return;
     this.clock = time;
+    this.lure = null;
+    for (const group of this.groups) { group.lured = false; group.lureAt = null; }
     for (const fish of this.fish) {
       const before = (fish.before ??= {});
       for (const key of DRAWN) before[key] = fish[key];
@@ -706,8 +749,16 @@ export class FishPopulation {
     for (const group of this.groups) {
       const lead = group.members[0];
       if (!lead) continue;
-      if (this.time > group.goalUntil || Math.hypot(lead.x - group.goal.x, lead.z - group.goal.z) < GOAL.reach) {
-        group.goal = this.placeIn(group.species, lead, range(random, GOAL.wander), lead.length);
+      // A lured kind (LURE), its fright past, drifts to the last splash within its sense and hangs about it.
+      const lure = this.lure;
+      group.lured = Boolean(group.species.lured && lure && this.time - lure.at < LURE.seconds && lead.fright <= 0 && lead.wary <= 0
+        && (group.lureAt === lure.at || Math.hypot(lead.x - lure.x, lead.z - lure.z) < LURE.sense));
+      if (group.lured && (group.lureAt !== lure.at || this.time > group.goalUntil || Math.hypot(lead.x - group.goal.x, lead.z - group.goal.z) < LURE.reach * 0.5)) {
+        group.lureAt = lure.at;
+        group.goal = this.placeIn(group.species, lure, LURE.reach, lead.length);
+        group.goalUntil = this.time + range(random, GOAL.seconds);
+      } else if (!group.lured && (this.time > group.goalUntil || Math.hypot(lead.x - group.goal.x, lead.z - group.goal.z) < GOAL.reach)) {
+        group.goal = group.range ? this.placeIn(group.species, group.range, group.range.reach, lead.length) : this.placeIn(group.species, lead, range(random, GOAL.wander), lead.length);
         group.goalUntil = this.time + range(random, GOAL.seconds);
       }
       if (this.time > group.restUntil && random() < REST.chance * dt) group.restUntil = this.time + range(random, REST.seconds);
@@ -743,7 +794,7 @@ export class FishPopulation {
     let wantSpeed = species.cruise * length * (resting ? REST.speed : pace);
     // Its own depth, picked anew every so often: rising toward the light, sinking, never long at one level.
     if (this.time > fish.depthUntil) {
-      fish.depthShare = random() ** DEPTH.upper;
+      fish.depthShare = random() ** (species.upper ?? DEPTH.upper);
       fish.depthUntil = this.time + range(random, DEPTH.seconds);
     }
     const ownBand = this.band(species, length, fish.x, fish.z);
@@ -805,6 +856,11 @@ export class FishPopulation {
         goalY = targetY;
       } else {
         // The group's goal, and the company kept.
+        // Lured (LURE): up under the surface (the ice) at the spot, a little faster than it cruises until it is there.
+        if (group.lured) {
+          if (ownBand) goalY = ownBand[0];
+          if (Math.hypot(group.goal.x - fish.x, group.goal.z - fish.z) > LURE.reach && !resting) wantSpeed = species.cruise * length * LURE.eager;
+        }
         const toGoalX = group.goal.x - fish.x, toGoalZ = group.goal.z - fish.z;
         const toGoal = Math.hypot(toGoalX, toGoalZ) || 1;
         wantX += toGoalX / toGoal * company.goal * (resting ? 0.1 : 1);
@@ -907,7 +963,7 @@ export class FishPopulation {
     const settle = Math.min(1, (fish.fright > 0 ? STEADY.fleeing : STEADY.cruising) * dt);
     fish.wantX += (wantX - fish.wantX) * settle;
     fish.wantZ += (wantZ - fish.wantZ) * settle;
-    const turnRate = species.turn * (fish.cStart > 0 ? C_START.turn : fish.fright > 0 ? FLEE_TURN : feeding ? 1.3 : 1);
+    const turnRate = species.turn * (fish.cStart > 0 ? species.cStart ?? C_START.turn : fish.fright > 0 ? FLEE_TURN : feeding ? 1.3 : 1);
     const wasHeading = fish.heading, wasPitch = fish.pitch;
     let turn = 0;
     if (Math.hypot(fish.wantX, fish.wantZ) > 1e-3) {
@@ -947,8 +1003,14 @@ export class FishPopulation {
     this.keepClear(fish, threats);
     // The tail beats once a stride, at least slowly while it hangs still; a flick after a bite or as it bolts.
     // Never faster than TAIL_MOST beats a second: a faster beat would shimmer at the screen's sixty frames, not swim.
-    const frequency = clamp(Math.abs(fish.speed) / (STRIDE * length), 0.6, TAIL_MOST);
+    // A medusa's bell pulses once a stride of its own, between its own beats a second (`stride`, `pulse`).
+    const frequency = clamp(Math.abs(fish.speed) / ((species.stride ?? STRIDE) * length), species.pulse?.[0] ?? 0.6, species.pulse?.[1] ?? TAIL_MOST);
     fish.phase = (fish.phase + 2 * Math.PI * frequency * dt) % (2 * Math.PI * 64);
     fish.beat += ((fish.fright > 0 ? 1 : 0) - fish.beat) * Math.min(1, 2 * dt);
+    // A glowing kind's light (GLOW): a flash while it flees, dim while it is wary after, else calm.
+    if (species.glows) {
+      const glow = fish.fright > 0 ? GLOW.flash : fish.wary > 0 ? GLOW.wary : GLOW.calm;
+      fish.glow += (glow - fish.glow) * Math.min(1, (glow > fish.glow ? GLOW.rise : GLOW.fall) * dt);
+    }
   }
 }

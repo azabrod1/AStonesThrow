@@ -85,7 +85,10 @@
 // capped at RADIANCE_CAP times the mean sky radiance (scaled down to keep
 // its hue). Only a sun low ahead is in the home view's direct sight, where
 // the cap leaves the photo's white disc and its starburst; the others' only
-// in the mirror image and the cube.
+// in the mirror image and the cube. An airless sky has almost no mean (Europa's:
+// black but for its stars, Jupiter and its ice on the skyline), which would cap
+// Jupiter and the sunlit ice to a grey: such a sky names `sunCap`, and its cap is
+// that share of its sun's irradiance (on the dome's scale) instead.
 //
 // Light by the hour. Poly Haven exposes each panorama to be looked at, as an
 // eye adapted to its light would see it: the sunlit hours of a series share
@@ -170,6 +173,14 @@
 // a few octaves of straight-segment noise wide, as bright as the bolt asks
 // against the cloud, and faded where the photo is darker than its sky, where
 // its land stands in front of the bolt.
+//
+// An airless sky (`airless`: Europa's) has no weather: no cloud, haze or fog
+// can stand in it, and its dome's land-versus-sky test, made for a sky lit
+// brighter than its land, would grey Jupiter and the sunlit ice under cloud
+// while its black sky stayed black. Under such a sky the weather set is kept
+// but not applied (setWeather, applyWeather: clear in force), so a sky with
+// air loaded next takes it up again; src/main.js holds its own weather clear
+// there too (src/places.js placeAirless), and its wind calm.
 //
 // Asset requests time out after 30 seconds without progress; the current sky
 // stays until all replacement assets arrive. Initial calibration loads in parallel.
@@ -440,9 +451,32 @@ const SKIES = {
       night: { file: 'mall_night', label: 'Night', clock: '21:30', lit: 6 },
     },
   },
+  // Europa's own (src/places.js PLACES `europa`), no place of its own: no photograph from the ground but a panorama
+  // put together from spacecraft images (tools/europa-sky.py): a black sky with its stars, the far, small sun behind
+  // the eye's right, Cassini's Jupiter 12° across low ahead, gibbous in that sun, and Galileo's Conamara Chaos to a
+  // near horizon, its matrix stained reddish-brown. Airless (`airless`: no weather, Weather above), its sky has almost
+  // no mean, so its cap is its sun's (`sunCap`: Brightness); Jupiter stands up to 17° high, so its horizon strip
+  // reaches 30° (`stripAbove`), the whole of the level view's sky sharp.
+  // tools/europa-sky.py puts its sun SUN_AZIMUTH right of its ahead: change both. Its 8k is that tool's (`builtBy`).
+  // Its black sky lights nothing: the light that fills a shadow, lights a splash's sides and greys a frosted mirror
+  // is its sunlit ice's, as on the Moon its regolith's (`iceShine`, added to the ambient as a share of its sun: the
+  // ice's albedo, 0.65, times its sun's sine, 0.42, over the quarter of a thing's view the ice fills, about).
+  // Its hours (tools/europa-sky.py HOURS) say their own light (`lux`: no formula for Earth's sky holds there): by day its
+  // sun's, 1/27 of Earth's at 5.2 au, 25° up, on level ice; at night Jupiter's, full, 11° up, 0.55% of the sun's.
+  // Its night's ice glows (`glow`: src/shaders/scene.js ICE_CRUST_GLOW; Gudipati et al. 2020); its file is exposed as a
+  // photograph's night is (tools/europa-sky.py NIGHT_EXPOSURE), and darkened here by its `lux` as the eye sees it.
+  europa: {
+    ownPlace: false, airless: true, iceShine: 0.07, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30,
+    hours: {
+      day: { file: 'europa', label: 'Day', lux: 2000 },
+      night: { file: 'europa_night', label: 'Night', lux: 5, glow: 1 },
+    },
+  },
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
+/** Whether a sky has no air (Europa's): no weather may stand in it (Weather, above). */
+export const skyAirless = (name) => Boolean(SKIES[name]?.airless);
 /**
  * A sky's near land (Near land) into `vectors` (nearLandUniforms), turned into the scene as the dome turns the hour's
  * file (`north`, its rotation and mirror: DOME_FRAGMENT's lookup): each stretch's centre (atan(z, x), radians), half
@@ -575,7 +609,8 @@ function adaptedLight(lux) {
  * hour's lux: the Reflecting Pool's floodlit monuments and lamp-lit walks),
  * so its eye keeps its cones and its colours, as a starlit lake's does not.
  */
-function hourLight(measurement, lit = 0) {
+function hourLight(measurement, lit = 0, lux = null) {
+  if (lux !== null) return lux;   // an hour that says its own (`lux`: Europa's, under no sky of Earth's)
   const sunLight = illuminance(measurement.solar?.elevation ?? measurement.sun.elevation);
   return Math.max(lit, lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight);
 }
@@ -743,6 +778,13 @@ export function stripAbove(file) {
 // across north runs past 360 ([350, 370]), never back round ([350, 10]),
 // since the tool and this layout take its width as their difference.
 const INSET_BLOCK = 16;
+/** The dome's cap for the hour whose file is `file` against its measurements (Brightness), in the file's own units. */
+export function radianceCap(file, measurement) {
+  const sunCap = skyOfFile(file)?.sunCap;
+  return sunCap ? sunCap * luminance(measurement.sunIrradiance) : RADIANCE_CAP * luminance(measurement.skyRadiance);
+}
+/** The tool that computes the panorama of the hour whose file is `file` (its sky's `builtBy`), or undefined for a photograph. */
+export const skyBuiltBy = (file) => skyOfFile(file)?.builtBy;
 /** The insets of the hour whose file is `file`: its sky's `insets`, or none. */
 export const skyInsets = (file) => skyOfFile(file)?.insets ?? [];
 /** The atlas of `insets`: { width, height, places: [{ x, y, width, height }] } in texels. */
@@ -1026,7 +1068,9 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
   }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), air: new THREE.Vector3(), airDensity: 0, lux: 1, level: 1 };
-  let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
+  const CLEAR_WEATHER = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
+  let weather = CLEAR_WEATHER;
+  let airless = false;   // the sky shown has no air (`airless`): the weather set is kept, clear is in force
 
   /**
    * Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) at one of
@@ -1076,7 +1120,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     const facingSun = new THREE.Vector3(Math.cos(facingElevation) * Math.sin(azimuth), Math.sin(facingElevation), -Math.cos(facingElevation) * Math.cos(azimuth));
     const [facingSunX, , facingSunZ] = facing.sun.direction;
     const facingRotation = Math.atan2(facingSunZ, facingSunX) - Math.atan2(facingSun.z, facingSun.x * mirror);
-    const rotation = file === facingFile ? facingRotation : facingRotation + THREE.MathUtils.degToRad(measurement.north - facing.north);
+    // A computed sky's hours (`builtBy`: Europa's) share one frame and measure no north: theirs is the same, 0.
+    const rotation = file === facingFile ? facingRotation : facingRotation + THREE.MathUtils.degToRad((measurement.north ?? 0) - (facing.north ?? 0));
     // The sun: the photo's, or where the true one is when it is down, at
     // DOWN_SUN_ELEVATION; the file's direction turned into the scene's.
     const sunlit = lightOf(measurement) !== 'none';   // the sun or the moon
@@ -1100,7 +1145,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
     const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
     const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
-    const level = (file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit)) / adaptedLight(hourLight(anchor, place.hours[place.anchor ?? firstHour].lit))) * 2 ** (entry.exposure ?? 0);
+    const anchorEntry = place.hours[place.anchor ?? firstHour];
+    const level = (file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit, entry.lux ?? null)) / adaptedLight(hourLight(anchor, anchorEntry.lit, anchorEntry.lux ?? null))) * 2 ** (entry.exposure ?? 0);
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
@@ -1112,10 +1158,12 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       clear.sun.set(0, 0, 0);
     }
     clear.sky.fromArray(measurement.skyRadiance).multiplyScalar(scale);
+    // An airless sky's light (`iceShine`): what lights a thing's sides is its sunlit ice, not its black sky.
+    if (place.iceShine) clear.sky.addScaledVector(clear.sun, place.iceShine);
     if (entry.air) clear.air.fromArray(entry.air.horizon).multiplyScalar(scale);
     else clear.air.set(0, 0, 0);
     clear.airDensity = entry.air ? 1 / entry.air.distance : 0;
-    clear.lux = hourLight(measurement, entry.lit);
+    clear.lux = hourLight(measurement, entry.lit, entry.lux ?? null);
     clear.level = level;
 
     const previous = domeUniforms.uPanorama.value;
@@ -1126,13 +1174,14 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     const backdrop = skyBackdrop(skyName);
     domeUniforms.uBackdrop.value.set(...(backdrop?.centre ?? [0, 0, 0]), backdrop?.radius ?? 0);
     domeUniforms.uScale.value = scale;
-    domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
+    airless = Boolean(place.airless);
+    domeUniforms.uRadianceCap.value = place.sunCap ? radianceCap(file, measurement) * scale : RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();
     previous?.dispose();
     environment.horizonReady = loadHorizon(file, signal);   // the strip follows the panorama; a superseded load's is dropped
 
     const assets = [panoramaUrl(panoramaFile(entry)), ...new Set([file, anchorFile, facingFile, BALANCE_FILE].map(measurementUrl))];
-    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets });
+    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets, glow: entry.glow ?? 0 });
     return skyName;
   }
 
@@ -1166,17 +1215,18 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
    * none), its haze's brightness against the cloud's (`hazeBrightness`) and
    * its depth (`hazeLayer`, metres). Applied at once, the cube and the
    * prefiltered map captured again (Weather, above); the weather already
-   * over it changes nothing.
+   * over it changes nothing, and under an airless sky it is kept for the
+   * next sky with air, clear in force.
    */
   function setWeather({ cover = 0, light = 1, visibility = Infinity, hazeBrightness = HAZE_BRIGHTNESS, hazeLayer = HAZE_LAYER } = {}) {
     if (cover === weather.cover && light === weather.light && visibility === weather.visibility && hazeBrightness === weather.hazeBrightness && hazeLayer === weather.hazeLayer) return;
     weather = { cover, light, visibility, hazeBrightness, hazeLayer };
-    applyWeather();
+    if (!airless) applyWeather();   // under an airless sky nothing changes: clear stays in force (Weather, above)
   }
 
   /** The lighting of the hour (clear) under the weather; then the cube and the prefiltered map. */
   function applyWeather() {
-    const { cover, light, visibility, hazeBrightness, hazeLayer } = weather;
+    const { cover, light, visibility, hazeBrightness, hazeLayer } = airless ? CLEAR_WEATHER : weather;
     const sunSine = Math.max(lighting.sunDirection.y, 0);
     const hazeDensity = Number.isFinite(visibility) ? 3 / visibility : 0;
     // What reaches the ground of the sun's direct light: what the cloud leaves, through the haze along the sun's path

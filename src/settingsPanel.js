@@ -25,6 +25,10 @@
 // closes on the button, on Escape (before Escape's glide back to the shore
 // view, src/main.js) and on a press anywhere else; a press on the water then only
 // closes it, it does not throw a stone.
+//
+// A page's choices the place does not allow (Weather's and Wind's at an
+// airless place, Europa) are greyed out, aria-disabled (radioGroup), its
+// note saying why; the page script sets that as it shows the place.
 const ROOT_PAGE = 'root';
 const SLIDE_MS = 220;
 const SLIDE_SAFETY_MS = SLIDE_MS + 120;
@@ -165,12 +169,15 @@ export class SettingsPanel {
 
 /**
  * Wire a group of radio buttons (role="radio", data-value) in `root`:
- * clicking one calls onChoose with its value. Returns show(value), which
+ * clicking one calls onChoose with its value, unless it is greyed out
+ * (aria-disabled="true": Weather and Wind where there is no air, whose notes
+ * say why), which the arrow keys pass over too. Returns show(value), which
  * marks that one checked. The buttons are found each time, so `root`'s may
  * be built again (the Object page's, as things are defined).
  */
 export function radioGroup(root, onChoose) {
   const radios = () => [...root.querySelectorAll('[role="radio"]')];
+  const disabled = (button) => button.getAttribute('aria-disabled') === 'true';
   const show = (value) => {
     for (const button of radios()) {
       const checked = button.dataset.value === value;
@@ -180,7 +187,7 @@ export function radioGroup(root, onChoose) {
   };
   root.addEventListener('click', (event) => {
     const button = event.target.closest('[role="radio"]');
-    if (!button || !root.contains(button)) return;
+    if (!button || !root.contains(button) || disabled(button)) return;
     onChoose(button.dataset.value);
   });
   // Arrow keys move the choice, as a radio group's do. The choice is made
@@ -190,7 +197,8 @@ export function radioGroup(root, onChoose) {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
     event.preventDefault();
-    const buttons = radios().filter((button) => !button.hidden);   // a hidden choice is not one
+    const buttons = radios().filter((button) => !button.hidden && !disabled(button));   // a hidden or greyed-out choice is not one
+    if (buttons.length === 0) return;
     const index = buttons.indexOf(document.activeElement);
     const next = buttons[(Math.max(index, 0) + step + buttons.length) % buttons.length];
     onChoose(next.dataset.value);

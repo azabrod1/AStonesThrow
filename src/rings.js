@@ -246,7 +246,8 @@
 //      enough that what the water reads between texels matches the exact
 //      profile (tools/ring-probe.mjs). Outside its annulus it writes zero at
 //      once: inside innerRadius (no wave is slower than
-//      SLOWEST_GROUP_SPEED, the capillary-gravity minimum, so at age τ no
+//      slowestGroupSpeed(), the capillary-gravity minimum, SLOWEST_GROUP_SPEED
+//      under Earth's gravity and as g^¼ under a place's own (src/gravity.js), so at age τ no
 //      part of the ring is nearer its centre than that times τ, less the
 //      source's own extent (SOURCE_EXTENT of its widest splat's σ·rim, and
 //      its offsets), but the Airy tail of the caustic there, exponentially
@@ -324,6 +325,7 @@
 // takes some 40 µs a frame.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
+import { GRAVITY, EARTH_GRAVITY, gravityUniform } from './gravity.js';
 
 export const MAX_RINGS = 32;          // layers of the profile texture: live and fading sources together
 export const DEFAULT_LIVE_LIMIT = 24; // sources that count as live at once (setLiveLimit; the quality presets set it), so the rings leaving have MAX_RINGS − this layers to fade out in
@@ -356,6 +358,8 @@ export const REACH = { least: 2, most: 40, margin: 1.15 };   // a profile's radi
 export const WINDOW = { start: 1.15, end: 1.4 };     // in reaches: where the spectrum pass fades out a wavenumber's packet
 export const ALIAS_PERIOD = 2.5;      // 2π/Δk in reaches: the images of what the window keeps lie beyond the reach
 export const SLOWEST_GROUP_SPEED = 0.177;   // m/s: c_g's minimum (4.3 cm waves); no part of a ring is nearer its centre than this times its age
+/** c_g's minimum under the place's gravity (src/gravity.js): deep water's scales as (g·σ/ρ)^¼, so SLOWEST_GROUP_SPEED at Earth's. */
+export const slowestGroupSpeed = () => SLOWEST_GROUP_SPEED * (GRAVITY / EARTH_GRAVITY) ** 0.25;
 export const INNER_SHARE = 0.85;      // the profile pass writes zero inside this share of that radius...
 export const SOURCE_EXTENT = 4;       // ...less this many of the source's widest σ·rim (a Gaussian keeps 3e-4 of its peak there)
 export const OUTER = { share: 0.1, margin: 1.25 };   // the ring is drawn out to margin × the farthest packet still SLOPE_VISIBLE·share steep, and to the shortest such wave
@@ -390,7 +394,6 @@ const MERGE = { seconds: 0.05, reach: 3 };   // a splat joins a source started t
 const REPLAN = 1.25;                  // a live source is planned again when the camera has this many times the pixels per radian it was planned for
 const AIRY = 1.2945;                  // the stationary-phase spread's cap at a caustic: 3.245/√(2π) (the cubic phase integral)
 export const TAPER_START = 0.85;      // of the reach: the profile fades to zero from here
-const GRAVITY = 9.81;
 const SURFACE_TENSION_OVER_DENSITY = 7.2e-5;
 
 /** ω (rad/s) for a wavenumber (rad/m) on water of the given depth: the solver's dispersion. */
@@ -420,9 +423,11 @@ export function splatSpectrum(wavenumber, sigma, rim) {
 }
 
 // Per wavenumber of a geometric table: ω, c_g, |ω''|, |ω'''| and γ, for the envelope.
+// One table a depth and a gravity (src/gravity.js: the place's).
 const envelopeTables = new Map();
 function envelopeTable(depth) {
-  if (envelopeTables.has(depth)) return envelopeTables.get(depth);
+  const key = `${depth} ${GRAVITY}`;
+  if (envelopeTables.has(key)) return envelopeTables.get(key);
   const groupVelocity = (wavenumber) => ringGroupSpeed(wavenumber, depth);
   const bend = (wavenumber, step) => (groupVelocity(wavenumber + step) - groupVelocity(wavenumber - step)) / (2 * step);
   const table = [];
@@ -437,7 +442,7 @@ function envelopeTable(depth) {
       damping: ringDamping(wavenumber, depth),
     });
   }
-  envelopeTables.set(depth, table);
+  envelopeTables.set(key, table);
   return table;
 }
 
@@ -551,7 +556,7 @@ function sourceExtent(source) {
 /** The radius (m) inside which a source has nothing at world time `time` (the header): what the profile pass leaves at zero. */
 export function innerRadius(source, time) {
   const youngest = Math.max(...source.groups.map((group) => group.start));
-  return Math.max(INNER_SHARE * SLOWEST_GROUP_SPEED * (time - youngest) - SOURCE_EXTENT * sourceExtent(source), 0);
+  return Math.max(INNER_SHARE * slowestGroupSpeed() * (time - youngest) - SOURCE_EXTENT * sourceExtent(source), 0);
 }
 
 /**
@@ -689,6 +694,7 @@ export const RING_SPECTRUM_FRAGMENT = /* glsl */`
 #define WINDOW_END ${WINDOW.end.toFixed(3)}
 uniform float uTime;
 uniform float uDepth;
+uniform float uGravity;   // the place's (src/gravity.js): ringFrequency's GRAVITY
 uniform float uViscosity;
 uniform float uFilm;
 uniform float uScale;
@@ -705,13 +711,13 @@ void main() {
   vec4 grid = texelFetch(uSources, ivec2(0, layer), 0);
   if (float(index) >= grid.y) { gl_FragColor = vec4(0.0); return; }
   float wavenumber = (float(index) + 0.5) * grid.x;
-  float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
+  float omega = sqrt((uGravity * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
   float damping = uFilm * wavenumber * sqrt(uViscosity * omega / 8.0) + 2.0 * uViscosity * wavenumber * wavenumber;
   // The group velocity dω/dk, for the window.
   float depthPhase = min(wavenumber * uDepth, 20.0);
   float tangent = tanh(depthPhase);
-  float force = 9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber;
-  float forceSlope = 9.81 + 3.0 * 7.2e-5 * wavenumber * wavenumber;
+  float force = uGravity * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber;
+  float forceSlope = uGravity + 3.0 * 7.2e-5 * wavenumber * wavenumber;
   float speed = (forceSlope * tangent + (depthPhase < 20.0 ? force * uDepth * (1.0 - tangent * tangent) : 0.0)) / (2.0 * omega);
   vec4 starts = texelFetch(uSources, ivec2(1, layer), 0);
   float zeroth = 0.0;
@@ -1085,6 +1091,7 @@ export class Rings {
     this.spectrumPass = new FullscreenPass(RING_SPECTRUM_FRAGMENT, {
       uTime: { value: 0 },
       uDepth: { value: depth },
+      uGravity: gravityUniform,
       uViscosity: { value: RING_DAMPING.viscosity },
       uFilm: { value: RING_DAMPING.film },
       uScale: { value: COEFFICIENT_SCALE },
