@@ -249,16 +249,23 @@ for (const [label, where, frozen, night] of flyingRuns) {
   if (!groups.some((group) => group.habit === 'visit')) continue;
   const { frames } = run(where, 600, 1 / 60, { frozen, view: PHONE_FRAME, conditions: night ? NIGHT : DAY });
   let nearest = Infinity, steepestBank = 0, inside = 0;
+  // A hop turns back a short way inside the frame's edge (src/birds.js layVisit): on the phone's narrower frame too,
+  // each comes into it, never turning back beyond its side unseen.
+  const hops = [];
   frames.forEach((frame, index) => frame.birds.forEach((bird, which) => {
     const before = index ? frames[index - 1].birds[which] : bird;
     if (bird.shown !== before.shown && Math.abs(bearingOf(bird.shown ? bird : before)) < THREE.MathUtils.degToRad(PHONE_FRAME + 15)) inside++;
     if (!bird.shown) return;
+    if (bird.style === 'hop' && (!index || !before.shown)) hops[which] = (hops[which] ?? []).concat([{ seen: false }]);
+    if (bird.style === 'hop' && Math.abs(bearingOf(bird)) < THREE.MathUtils.degToRad(PHONE_FRAME)) hops[which].at(-1).seen = true;
     nearest = Math.min(nearest, Math.hypot(bird.x - EYE.x, bird.z - EYE.z));
     steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
   }));
   const phone = inFrameShare(where, frozen, night, PHONE_FRAME, PHONE_FRAME), wide = inFrameShare(where, frozen, night, WIDE_FRAME, null);
   check(inside === 0 && nearest > THROW_REACH && steepestBank <= THREE.MathUtils.degToRad(35) + 1e-9, `${label}, upright phone: every visit begins and ends beyond the frame's sides (${inside} inside), nearest ${nearest.toFixed(1)} m, banked at most ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
   check(phone > 0.8 * wide && phone < 1.5 * wide, `${label}, upright phone: a bird in its frame ${(phone * 100).toFixed(0)}% of the time, a wide screen's ${(wide * 100).toFixed(0)}%`);
+  const hopVisits = hops.flat().filter(Boolean);
+  if (hopVisits.length) check(hopVisits.every((hop) => hop.seen), `${label}, upright phone: every hop comes into its frame (${hopVisits.filter((hop) => hop.seen).length} of ${hopVisits.length})`);
 }
 {
   // Laid out as it always was for a frame as wide as a 16:9 screen's or wider.

@@ -559,7 +559,8 @@ const OUT = 64;   // degrees either side of the home view's line: out of a wide 
 // half as long, the bird spending the rest out beyond its sides: there every bearing a visit is laid out by (OUT, a
 // turn's way in and out, a group's `aim` and `spread`) is drawn in toward the home view's line by `fit`, so its
 // ends are OUT_MARGIN beyond the frame's side, as a wide screen's are, and the gaps between visits are shortened by
-// as much again (GAP_FIT, a power of `fit`): over ten minutes the birds are in an upright phone's frame about as much
+// as much again (GAP_FIT, a power of `fit`; not after a hop, which turns back as far inside any frame's edge and is
+// seen as long in it): over ten minutes the birds are in an upright phone's frame about as much
 // as in a wide screen's (bird-probe). A frame as wide as WIDE_FRAME's, or wider, is laid out as it always was.
 const WIDE_FRAME = THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(24)) * 16 / 9));   // degrees either side at 16:9 (src/main.js frameFov: 48° high), 38.4°
 const OUT_MARGIN = OUT - WIDE_FRAME;
@@ -682,6 +683,7 @@ export class BirdPopulation {
   constructor({ seed = 1 } = {}) {
     this.seed = seed;
     this.fit = 1;   // setView
+    this.frameEdge = WIDE_FRAME;   // setView: the side of the frame a visit is laid out for, degrees from the view's line
     this.sunAway = null;   // setConditions
     this.place = 'none';
     this.birds = [];
@@ -796,6 +798,7 @@ export class BirdPopulation {
    */
   setView(halfWidth) {
     this.fit = halfWidth >= WIDE_FRAME - 1e-6 ? 1 : (halfWidth + OUT_MARGIN) / OUT;
+    this.frameEdge = Math.min(halfWidth, WIDE_FRAME);
   }
 
   /**
@@ -1078,10 +1081,12 @@ export class BirdPopulation {
       // side, nearer or farther than it came in: a songbird flitting from tree to tree beside the view, crossing nothing.
       const radius = turnRadius(speed, 22 + random() * 5);
       const middleDistance = near + radius + random() * Math.max((far - near) / 2, 2);
-      // On a narrow frame (`fit`) the edge drawn in as every bearing is, but not the depth: the turn itself is as wide
-      // in metres, and taken in as far as the edge it barely showed (bird-probe's upright phone); never past a fifth
-      // of the way to the middle from the far side.
-      const nose = Math.max(WIDE_FRAME * fit - range(group.depth ?? HOP_DEPTH), 0.2 * WIDE_FRAME * fit);
+      // Its nose is the depth inside the frame's true edge (frameEdge: a narrow frame's is nearer the middle than
+      // `fit` draws the other bearings in, so a hop laid from WIDE_FRAME · fit could turn back beyond the side of an
+      // upright phone's frame unseen, bird-probe); the turn itself as wide in metres; never past a fifth of the way to
+      // the middle from the far side.
+      const { frameEdge } = this;
+      const nose = Math.max(frameEdge - range(group.depth ?? HOP_DEPTH), 0.2 * frameEdge);
       const centreBearing = THREE.MathUtils.degToRad(side * (nose + THREE.MathUtils.radToDeg(Math.atan(radius / middleDistance))));
       const centreX = EYE.x + Math.sin(centreBearing) * middleDistance, centreZ = EYE.z - Math.cos(centreBearing) * middleDistance;
       const awayX = Math.sin(centreBearing), awayZ = -Math.cos(centreBearing);   // from the eye
@@ -1190,7 +1195,9 @@ export class BirdPopulation {
       visits.push(this.makeVisit(visitor, 0, between(FIRST_VISIT, hashed(visitor.seed, 0, 32)) * group.gap[1]));
     }
     for (let last = visits[visits.length - 1]; last.start + last.duration + visitor.lagMost / last.speed <= local; last = visits[visits.length - 1]) {
-      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32)) * this.fit ** GAP_FIT;
+      // Shortened on a narrow frame (GAP_FIT) after a visit that frame saw less of; a hop turns back as far inside
+      // any frame's edge (frameEdge), so it is seen as long on any, and the gap after it is as it is.
+      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32)) * (last.style === 'hop' ? 1 : this.fit ** GAP_FIT);
       visits.push(this.makeVisit(visitor, last.index + 1, last.start + last.duration + visitor.lagMost / last.speed + gap));
       if (visits.length > 4) visits.shift();
     }
