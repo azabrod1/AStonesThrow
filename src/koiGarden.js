@@ -45,8 +45,14 @@
 // darkens the lawn there and the shrubs' own feet. Under this garden's sun,
 // seen through leaves (src/sky.js `shadedSun`), its shadows are soft and
 // faint, as the photo's are. Each look is one merged mesh drawn
-// twice: in the main scene, and on the mirror's layer, its distance in the
-// mirror image's alpha, so the water reflects it. The mirror's is the same
+// twice: in the main scene, and on the mirror's layer, as far as the sky in
+// the mirror image's alpha (1), so the water spreads its image as it spreads
+// the sky's wherever it lies: its distance there was read only inside the
+// rectangle of what moves (src/main.js nearRect: a heron), where the
+// garden's image stood sharp under rain in a box round the heron, and read
+// everywhere its image by the bank broke into pale dashes (the rain's
+// resolved ripples turning each pixel's ray past the shrubs or onto them).
+// The mirror's is the same
 // garden more coarsely made (COARSE: its shrubs' spheres, from the same
 // draws), the water's ripples breaking its image anyway, and so is the
 // scene's on a preset that asks (setCoarse: Low); what catches is the fine
@@ -63,7 +69,6 @@ import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt, gardenShadeUniforms } from './pondFloor.js';
 import { GARDEN_SHADE, GARDEN_SHADE_TOP } from './shaders/scene.js';
 
-const MIRROR_NEARNESS_SCALE = 4;   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
 const COARSE = 0.5;   // the coarse garden's shrubs (the header) as finely made as this of the fine's: about a third of its triangles
 const UP = new THREE.Vector3(0, 1, 0);
 const GROUND_ALBEDO = new THREE.Vector3(0.1, 0.13, 0.06);   // the lawn's, for the light it throws back up
@@ -947,7 +952,7 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = ()
   ${lit}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${normal}`)
         .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-  ${mirrored ? `gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);` : ''}`);
+  ${mirrored ? 'gl_FragColor.a = 1.0;' : ''}`);
     };
     made.customProgramCacheKey = () => `koi-garden-${lookName}-${mirrored ? 'mirror' : 'main'}`;
     return made;
