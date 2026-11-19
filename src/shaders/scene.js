@@ -1970,14 +1970,18 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
   // An old crust's frost (uIceCrust) is stained along long bands, as Europa's lineae are (a ridged noise's crests, stretched).
   // The frost itself a little warm with it (Europa's natural colour is beige-white, its blue-grey the false colour's).
-  vec2 lineaAt = mat2(0.6, 0.8, -0.8, 0.6) * vWorld.xz * vec2(0.06, 0.16) / ICE_CRUST_LINEA + 17.0;
-  float linea = 1.0 - abs(2.0 * valueNoise(lineaAt + 0.8 * valueNoise(vWorld.xz * 0.4 + 5.0)) - 1.0);
-  float stain = ICE_CRUST_CAST + (1.0 - ICE_CRUST_CAST) * smoothstep(0.86, 0.96, linea) * (0.5 + 0.5 * valueNoise(vWorld.xz * 7.0));
-  scattered *= mix(vec3(1.0), uIceCrust.rgb, uIceCrust.w * stain);
+  // Only a crust pays for its noise (a uniform branch): every other ice is as it was without it.
   vec3 levelSun = uSunIrradiance * max(uSunDir.y, 0.0);
-  scattered = mix(scattered, scattered * ICE_CRUST_THIN, uIceCrust.w * (1.0 - smoothstep(0.45, 0.95, look.white)))
-    + uIceCrust.w * ICE_CRUST_FILL * ICE_WHITE_ALBEDO * levelSun * ICE_CRUST_FILL_TINT * ICE_CRUST_THIN;
-  under += uIceCrust.w * ICE_CRUST_LEAD * levelSun * (0.3 + 0.7 * shade.x) * (1.0 - look.white);
+  float stain = 0.0;
+  if (uIceCrust.w > 0.0) {
+    vec2 lineaAt = mat2(0.6, 0.8, -0.8, 0.6) * vWorld.xz * vec2(0.06, 0.16) / ICE_CRUST_LINEA + 17.0;
+    float linea = 1.0 - abs(2.0 * valueNoise(lineaAt + 0.8 * valueNoise(vWorld.xz * 0.4 + 5.0)) - 1.0);
+    stain = ICE_CRUST_CAST + (1.0 - ICE_CRUST_CAST) * smoothstep(0.86, 0.96, linea) * (0.5 + 0.5 * valueNoise(vWorld.xz * 7.0));
+    scattered *= mix(vec3(1.0), uIceCrust.rgb, uIceCrust.w * stain);
+    scattered = mix(scattered, scattered * ICE_CRUST_THIN, uIceCrust.w * (1.0 - smoothstep(0.45, 0.95, look.white)))
+      + uIceCrust.w * ICE_CRUST_FILL * ICE_WHITE_ALBEDO * levelSun * ICE_CRUST_FILL_TINT * ICE_CRUST_THIN;
+    under += uIceCrust.w * ICE_CRUST_LEAD * levelSun * (0.3 + 0.7 * shade.x) * (1.0 - look.white);
+  }
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
   float sineInside = clamp(length(v.xz) / ICE_INDEX, 0.0, 0.99);
