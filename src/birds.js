@@ -1049,10 +1049,11 @@ export class BirdPopulation {
     const flapping = FLAPPING[BIRD_KINDS[group.kind].flapping];
     const rise = flapping.bounding ? GRAVITY * flapping.bound[1] ** 2 / 8 + 0.1 : 0;
     const closest = near * 0.9;   // no point of a visit is laid nearer the eye
+    const ceilingAt = (distance) => EYE_HEIGHT + distance * Math.tan(CEILING) - rise;   // the highest a point this far out is laid (CEILING)
     const at = (bearing, distance, height, free = false) => {
       const radians = THREE.MathUtils.degToRad(bearing);
       const clampedDistance = Math.max(distance, closest);
-      const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING) - rise;
+      const ceiling = free ? Infinity : ceilingAt(clampedDistance);
       points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
     };
     const { fit } = this;   // drawn in to a narrow frame (OUT's note)
@@ -1105,7 +1106,7 @@ export class BirdPopulation {
       points[0] = beyond(points[entry]);
       points.push(beyond(points[points.length - 1]));
       // Each kept under the frame's top, as at() keeps a point.
-      for (let index = 0; index < points.length; index++) points[index][1] = Math.min(points[index][1], EYE_HEIGHT + Math.hypot(points[index][0] - EYE.x, points[index][2] - EYE.z) * Math.tan(CEILING) - rise);
+      for (let index = 0; index < points.length; index++) points[index][1] = Math.min(points[index][1], ceilingAt(Math.hypot(points[index][0] - EYE.x, points[index][2] - EYE.z)));
     } else if (style === 'turn') {
       // In, out over the water and round (half a circle the far way, as wide as its speed asks at a bank of 12° to
       // 22°, or tighter, up to TURN_BANK, for its far side to stay within reach), and back out the side it came in,
