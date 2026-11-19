@@ -6,8 +6,8 @@
 // Who lives where (BIRDS_BY_PLACE): a bird of every place (but the Pool), of where its
 // photograph was taken (Poly Haven's coordinates), a few done well.
 //   - Rocky cove (Cape Town's Atlantic shore): kelp gulls, each coming by
-//     now and then to work the water out past the rocks, mostly gliding, a
-//     few wingbeats now and then. Loch Ness: herring gulls, so.
+//     now and then to work the water out past the rocks, flap-gliding:
+//     bouts of beats with glides between. Loch Ness: herring gulls, so.
 //   - The Koi pond (Nagoya), frozen: no heron standing on the ice; one flies
 //     over the garden now and then instead (BIRDS_WHEN_FROZEN).
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
@@ -38,7 +38,7 @@
 //     on the same dam: a string of sacred ibises; Mesas, the hill over it: a
 //     pair of Egyptian geese. Highlands (the eastern Free State): a grey heron.
 //   - Desert oasis (the Richtersveld): a Verreaux's eagle under the koppies.
-//     Swiss Alps (Lago d'Isola): a pair of ravens. Wooded lake (Radków): a
+//     Swiss Alps (Lago d'Isola): a pair of ravens, high over the water. Wooded lake (Radków): a
 //     pair of mute swans. The Polynesian lagoon: great frigatebirds, hardly
 //     ever beating their wings, circling. The Reflecting Pool (Washington,
 //     D.C.): a blue jay and a northern cardinal, birds of the elms either
@@ -112,7 +112,11 @@ const CLEAR = { gap: 0.07, height: 0.1, span: 0.1, tries: 12, step: 0.02 };
 // `most` seconds of beating from the spell's start, eased in and out over `ease`; and it beats while it climbs,
 // `climb` of full beating a m/s of climb. `steady`: it beats all the time (a goose, a swan, a crow going somewhere).
 const FLAPPING = {
-  gull: { window: 5.5, share: 0.4, least: 1.2, most: 2.6, ease: 0.35, climb: 1.4 },   // glides, a few beats now and then
+  // A gull over open water flap-glides: bouts of beats with short glides between, not the long glides of a bird a
+  // thermal or a slope holds up, which still water has none of (Shamoun-Baranes et al., Phil. Trans. R. Soc. B 371,
+  // 2016: lesser black-backed gulls, with accelerometers, flapped more often than they soared, soaring where thermals
+  // or slopes lift them). Beating in about 40% of its frames (bird-probe), in bouts of 1.4 to 3.2 s; it was under 20%.
+  gull: { window: 4.5, share: 0.75, least: 1.4, most: 3.2, ease: 0.35, climb: 1.4 },
   soaring: { window: 12, share: 0.18, least: 0.8, most: 1.6, ease: 0.3, climb: 0.5 },   // an eagle: a few beats in a minute
   fishing: { window: 6, share: 0.65, least: 2, most: 4, ease: 0.4, climb: 0.8 },   // a fish eagle low over the water: bouts of slow, shallow beats between glides
   frigate: { window: 20, share: 0.1, least: 0.6, most: 1.0, ease: 0.25, climb: 0.2 },   // hardly ever
@@ -159,12 +163,14 @@ export const BIRD_KINDS = {
 //     home view's line, give or take `spread`; a crossing's places each up to `wander` m nearer or farther than the
 //     one before (by its speed if not given: 14 m at 10 m/s, less faster). `count` birds, each on its own visits, or with `together` one flock
 //     on its leader's, each `spacing` m behind the one before and a little to one side, as a small flock strings out.
+//     Its points are kept under `ceiling` degrees above the eye's level (CEILING, the shore view's, if not given), for
+//     a place whose home view (src/places.js `defaultView`) looks higher than the shore view does.
 //   wade: where it stands, drawn afresh each time it comes down (and as the place is shown: laySpot): `angles` (rad
 //     about the pond's centre, KOI_SHORE: the far bank, in the home view's frame even on an upright phone) and
 //     `offshore` (m out from the waterline); it faces either way across the eye's line of sight, turned up to `toPond`
 //     rad toward the water: side on to the home view, so its outline reads. Standing, its ways are HERON's.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
-// sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
+// sky (under its frame's top, HOME_VIEWS in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
 // The swans, the ibises, the geese and the Highlands' heron only cross: at their speed (10 to 15 m/s) a turn is too
 // wide to keep within reach (layVisit: TURN_REACH, TURN_BANK), and they would spend it 150 m out and more.
 export const BIRDS_BY_PLACE = {
@@ -172,7 +178,12 @@ export const BIRDS_BY_PLACE = {
   loch: [{ kind: 'herring', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [10, 45], styles: { cross: 0.6, turn: 0.4 } }],
   koi: [{ kind: 'heron', habit: 'wade', count: 1, angles: [4.3, 5.15], offshore: [0.07, 0.15], toPond: 0.3 }],   // in 8 to 20 cm of water: ankle to mid-shin
   lagoon: [{ kind: 'frigate', habit: 'visit', count: 2, distance: [45, 100], height: [3, 6], aim: 0, spread: 14, gap: [8, 40], styles: { cross: 0.3, turn: 0.2, circle: 0.5 } }],
-  swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [35, 80], height: [2, 4.5], aim: 0, spread: 14, gap: [10, 40], styles: { cross: 0.6, turn: 0.4 } }],
+  // Swiss Alps: its home view is the low, level one (src/places.js defaultView), its frame's top 22° above the eye's
+  // level, and below about 6° the far shore is dark spruce forest, the left half's all the way up, where a black raven
+  // is not seen at all. Ravens cross a valley well above the trees, not skimming the water: these fly 8 to 14 m up,
+  // against the snow of the peaks ahead and right of the line and the sky to their right (aim), under 15° (ceiling).
+  // From the shore view (its frame's top 7.4° up) they are mostly above the frame: that view looks down at the ice.
+  swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [40, 75], height: [8, 14], ceiling: 15, aim: 12, spread: 10, gap: [10, 40], styles: { cross: 0.6, turn: 0.4 } }],
   desert: [{ kind: 'eagle', habit: 'visit', count: 1, distance: [55, 110], height: [3.5, 6.5], aim: 0, spread: 12, gap: [10, 40], styles: { cross: 0.35, turn: 0.2, circle: 0.45 } }],
   lakeside: [{ kind: 'fishEagle', habit: 'visit', count: 1, distance: [35, 85], height: [2.5, 5], aim: 14, spread: 12, gap: [8, 30], styles: { cross: 0.35, turn: 0.25, circle: 0.4 } }],
   wooded: [{ kind: 'swan', habit: 'visit', count: 2, together: true, spacing: 4, distance: [35, 70], height: [1.5, 3.5], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 1 } }],
@@ -1052,7 +1063,8 @@ export class BirdPopulation {
     const flapping = FLAPPING[BIRD_KINDS[group.kind].flapping];
     const rise = flapping.bounding ? GRAVITY * flapping.bound[1] ** 2 / 8 + 0.1 : 0;
     const closest = near * 0.9;   // no point of a visit is laid nearer the eye
-    const ceilingAt = (distance) => EYE_HEIGHT + distance * Math.tan(CEILING) - rise;   // the highest a point this far out is laid (CEILING)
+    const top = group.ceiling === undefined ? CEILING : THREE.MathUtils.degToRad(group.ceiling);   // a place whose home view looks higher keeps its own (BIRDS_BY_PLACE `ceiling`)
+    const ceilingAt = (distance) => EYE_HEIGHT + distance * Math.tan(top) - rise;   // the highest a point this far out is laid
     const at = (bearing, distance, height, free = false) => {
       const radians = THREE.MathUtils.degToRad(bearing);
       const clampedDistance = Math.max(distance, closest);
@@ -1128,7 +1140,8 @@ export class BirdPopulation {
         // From the circle's near point, round by its far side (away from where it came in), to its far point.
         const angle = Math.PI * step / 4;
         const towardEye = Math.cos(angle), awaySide = Math.sin(angle);
-        points.push([centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, low + (high - low) * step / 4, centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide]);
+        const x = centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, z = centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide;
+        points.push([x, Math.min(low + (high - low) * step / 4, ceilingAt(Math.hypot(x - EYE.x, z - EYE.z))), z]);   // kept under the frame's top, as at() keeps a point
       }
       // Out along the circle's far side's line (no nearer than its middle, so it never doubles back).
       const outward = inner + radius * (1 + random());
