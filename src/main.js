@@ -1013,7 +1013,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     ice.setCrust(PLACES[placeName].iceCrust);   // frozen, its ice's look: Europa's old frosted crust, else black ice
-    // In vacuum (src/air.js) open water boils and freezes over fast, and the ice has its lead, open whenever it is whole.
+    // In vacuum (src/air.js) open water boils, and the ice is a crust with its lead, open whenever it is whole.
     ice.setVacuum(AIR_DENSITY === 0 ? PLACES[placeName].lead ?? null : null);
     applyWaterColor();
   }
@@ -1036,8 +1036,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The ice (the header): Frozen water's, as chosen above.
   let birdsFrozen = null;   // whether the birds were last laid out for frozen water (applyBirds; null before they are)
   let iceName = frozenAtStart ? iceThickness : 'none';
-  /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
   const boiling = new Boiling();   // open water in vacuum (src/boiling.js), stepped with the physics (simulate)
+  /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
   function applyIce(name = iceName) {
     iceName = name;
     ice.setThickness(ICE_THICKNESS[name]);

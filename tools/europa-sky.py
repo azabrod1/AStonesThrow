@@ -186,8 +186,8 @@ def direction(azimuth, elevation):
 
 
 def smoothstep(edge0, edge1, value):
-    t = np.clip((value - edge0) / (edge1 - edge0), 0.0, 1.0)
-    return t * t * (3.0 - 2.0 * t)
+    share = np.clip((value - edge0) / (edge1 - edge0), 0.0, 1.0)
+    return share * share * (3.0 - 2.0 * share)
 
 
 def blur(image, radius):
@@ -357,16 +357,16 @@ class Ground:
             bottom = grid[r1, c0] * (1 - fc) + grid[r1, c1] * fc
             return top * (1 - fr) + bottom * fr
 
-        def weights(f):
-            return ((1 - f) ** 3 / 6, (3 * f ** 3 - 6 * f ** 2 + 4) / 6, (-3 * f ** 3 + 3 * f ** 2 + 3 * f + 1) / 6, f ** 3 / 6)
+        def weights(fraction):
+            return ((1 - fraction) ** 3 / 6, (3 * fraction ** 3 - 6 * fraction ** 2 + 4) / 6, (-3 * fraction ** 3 + 3 * fraction ** 2 + 3 * fraction + 1) / 6, fraction ** 3 / 6)
         column_weights, row_weights = weights(fc), weights(fr)
         total = 0.0
-        for j in range(4):
-            r = self._mirror(base_row + j - 1, self.rows)
+        for row_offset in range(4):
+            grid_row = self._mirror(base_row + row_offset - 1, self.rows)
             line = 0.0
-            for i in range(4):
-                line = line + grid[r, self._mirror(base_column + i - 1, self.columns)] * column_weights[i]
-            total = total + line * row_weights[j]
+            for column_offset in range(4):
+                line = line + grid[grid_row, self._mirror(base_column + column_offset - 1, self.columns)] * column_weights[column_offset]
+            total = total + line * row_weights[row_offset]
         return total
 
     def height(self, x, z, distance):
@@ -458,15 +458,15 @@ class Ground:
 def noise(x, z, wavelength, salt):
     """Smooth value noise from −1 to 1 at `wavelength` m, its lattice turned so octaves do not line up."""
     angle = 0.7 + salt * 1.3
-    u = (x * math.cos(angle) - z * math.sin(angle)) / wavelength + salt * 17.3
-    v = (x * math.sin(angle) + z * math.cos(angle)) / wavelength - salt * 9.1
-    iu, iv = np.floor(u), np.floor(v)
-    fu, fv = u - iu, v - iv
+    lattice_u = (x * math.cos(angle) - z * math.sin(angle)) / wavelength + salt * 17.3
+    lattice_v = (x * math.sin(angle) + z * math.cos(angle)) / wavelength - salt * 9.1
+    iu, iv = np.floor(lattice_u), np.floor(lattice_v)
+    fu, fv = lattice_u - iu, lattice_v - iv
     iu, iv = iu.astype(np.int64), iv.astype(np.int64)
     fu, fv = fu * fu * (3 - 2 * fu), fv * fv * (3 - 2 * fv)
 
-    def lattice(a, b):
-        return LATTICE[(PERMUTATION[(a + salt * 59) & 1023] + b * 7 + salt * 131) & 1023]
+    def lattice(cell_u, cell_v):
+        return LATTICE[(PERMUTATION[(cell_u + salt * 59) & 1023] + cell_v * 7 + salt * 131) & 1023]
     top = lattice(iu, iv) + (lattice(iu + 1, iv) - lattice(iu, iv)) * fu
     bottom = lattice(iu, iv + 1) + (lattice(iu + 1, iv + 1) - lattice(iu, iv + 1)) * fu
     return top + (bottom - top) * fv
@@ -495,14 +495,14 @@ def render_ground(ground, top_row, bottom_row):
     def row_of(elevation):
         return (math.pi / 2 - elevation) / math.pi * HEIGHT
 
-    t = np.full(count, EYE / math.tan(math.radians(-LOWEST)))
+    travelled = np.full(count, EYE / math.tan(math.radians(-LOWEST)))
     highest = np.full(count, row_of(math.radians(LOWEST)))      # the row (fractional) the column is filled up to
     active = np.arange(count)
     started = time.time()
     steps = 0
     while active.size:
         steps += 1
-        distance = t[active]
+        distance = travelled[active]
         x, z = dx[active] * distance, dz[active] * distance
         height = ground.height(x, z, distance)
         elevation = np.arctan2(height - EYE - distance * distance / (2 * MOON_RADIUS), distance)
@@ -527,10 +527,10 @@ def render_ground(ground, top_row, bottom_row):
                 np.add.at(colour[:, channel], flat, radiance[which[inside], channel] * weight)
             highest[index] = upper
         # Done: past REACH, or the drawn edge stands over anything the ground beyond could raise.
-        reach = t[active]
+        reach = travelled[active]
         ceiling = np.arctan2(ground.highest - EYE - reach * reach / (2 * MOON_RADIUS), reach)
         done = (reach > REACH) | (row_of(ceiling) > highest[active])
-        t[active] = reach + np.maximum(0.25, reach * 0.0012)
+        travelled[active] = reach + np.maximum(0.25, reach * 0.0012)
         active = active[~done]
         if steps % 1000 == 0:
             print(f'  ground: step {steps}, {active.size} rays marching ({time.time() - started:.0f} s)')
@@ -570,16 +570,16 @@ def jupiter(directions, jupiter_map):
     frame = np.stack([J_EAST, J_AXIS * squeeze, J_PRIME])
     origin = frame @ (-J_CENTRE)
     ray = directions @ frame.T
-    a = (ray * ray).sum(-1)
-    b = ray @ origin
-    c = origin @ origin - J_EQUATOR ** 2
-    disc = b * b - a * c
+    quadratic = (ray * ray).sum(-1)
+    half_linear = ray @ origin
+    constant = origin @ origin - J_EQUATOR ** 2
+    disc = half_linear * half_linear - quadratic * constant
     hit = disc > 0
     radiance = np.zeros(directions.shape)
     if not hit.any():
         return radiance, hit
-    t = (-b[hit] - np.sqrt(disc[hit])) / a[hit]
-    point = origin[None, :] + ray[hit] * t[:, None]          # on the sphere, in squeezed coordinates
+    hit_distance = (-half_linear[hit] - np.sqrt(disc[hit])) / quadratic[hit]
+    point = origin[None, :] + ray[hit] * hit_distance[:, None]          # on the sphere, in squeezed coordinates
     # The spheroid's normal, back in the panorama's frame (planetographic: the normal's own latitude).
     east, axial, toward = point[:, 0], point[:, 1] / squeeze, point[:, 2]
     normal_local = np.stack([east, axial * squeeze * squeeze, toward], -1)
@@ -588,18 +588,18 @@ def jupiter(directions, jupiter_map):
     latitude = np.arcsin(np.clip(normal_local[:, 1], -1, 1))
     longitude = np.arctan2(normal_local[:, 0], normal_local[:, 2])        # east of the meridian facing the eye
     rows, columns = jupiter_map.shape[:2]
-    u = (JUPITER['meridian'] / 360.0 + longitude / (2 * math.pi)) % 1.0 * (columns - 1)
-    v = (0.5 - latitude / math.pi) * (rows - 1)
-    u0, v0 = np.floor(u).astype(np.int64), np.clip(np.floor(v).astype(np.int64), 0, rows - 2)
-    fu, fv = (u - u0)[:, None], np.clip(v - v0, 0, 1)[:, None]
+    map_column = (JUPITER['meridian'] / 360.0 + longitude / (2 * math.pi)) % 1.0 * (columns - 1)
+    map_row = (0.5 - latitude / math.pi) * (rows - 1)
+    u0, v0 = np.floor(map_column).astype(np.int64), np.clip(np.floor(map_row).astype(np.int64), 0, rows - 2)
+    fu, fv = (map_column - u0)[:, None], np.clip(map_row - v0, 0, 1)[:, None]
     u1 = (u0 + 1) % columns
     colour = ((jupiter_map[v0, u0] * (1 - fu) + jupiter_map[v0, u1] * fu) * (1 - fv)
               + (jupiter_map[v0 + 1, u0] * (1 - fu) + jupiter_map[v0 + 1, u1] * fu) * fv)
     # Lit as a cloud deck is (Minnaert's law): darkened to the limb and softly to the terminator.
     incidence = normal @ TRUE_SUN
     emergence = np.clip(-(normal * directions[hit]).sum(-1), 0.02, 1.0)
-    k = JUPITER['minnaert']
-    lit = np.clip(incidence, 0, None) ** k * emergence ** (k - 1) * smoothstep(-0.02, 0.05, incidence)
+    minnaert = JUPITER['minnaert']
+    lit = np.clip(incidence, 0, None) ** minnaert * emergence ** (minnaert - 1) * smoothstep(-0.02, 0.05, incidence)
     radiance[hit] = colour * lit[:, None] * SUN_LIGHT / math.pi
     return radiance, hit
 
@@ -621,11 +621,11 @@ def milky_way(directions):
     return MILKY_WAY['radiance'] * brightness[:, None] * np.array([1.0, 0.95, 0.88])
 
 
-def fbm(u, v, octaves, salt):
+def fbm(along, across, octaves, salt):
     """Fractal value noise, −1 to 1-ish, over unit wavelengths of u and v."""
     total, amplitude, scale = 0.0, 0.5, 1.0
     for octave in range(octaves):
-        total = total + amplitude * noise(u * scale, v * scale, 1.0, salt + octave)
+        total = total + amplitude * noise(along * scale, across * scale, 1.0, salt + octave)
         amplitude *= 0.5
         scale *= 2.03
     return total

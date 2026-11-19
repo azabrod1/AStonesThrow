@@ -337,9 +337,10 @@ const FLOOD = { reach: [1.35, 1.8], wobble: 0.18, lean: 0.4, feather: 0.3, soak:
 // painted every `step` seconds as it grows, `seam` (m) over the old edge (so no line of water shows along it); its field
 // is worked out `texels` a step over the `prepare` seconds before it begins (prepareSkin).
 const REFREEZE = { after: 40, closing: 30, skin: 0.004, thickening: 60, step: 0.25, seam: 0.01, texels: 600, prepare: 2 };
-// In vacuum (setVacuum) open water boils, and its boiling takes the heat to freeze it: a hole skins over in seconds, the
-// wet freezes in a few (its own film boiling), and drops come down on it already frozen, wetting nothing.
-const VACUUM = { after: 4, closing: 18, thickening: 25, dry: 4 };
+// In vacuum (setVacuum) open water boils, and its boiling takes the heat to freeze it: the wet freezes in a few seconds
+// (its own film boiling), and drops come down on it already frozen, wetting nothing. No hole opens there but the lead,
+// which the water welling up keeps open, so none skins over.
+const VACUUM = { dry: 4 };
 // A lead's outline (openLead): LEAD.corners corners round an ellipse its length by its width, jagged by shapeHole as a
 // hole's edge is, then eased LEAD.smoothing times with each corner's neighbours.
 const LEAD = { corners: 96, smoothing: 2 };
@@ -606,7 +607,7 @@ export class IceSheet {
 
   /**
    * Whether the ice lies under vacuum (src/air.js: Europa), and its lead: `lead` { x, z, length, width, angle (degrees
-   * from +x toward +z), seed } or null. In vacuum open water boils and freezes over fast (VACUUM), drops wet nothing, and
+   * from +x toward +z), seed } or null. In vacuum open water boils, its wet freezes fast (VACUUM), drops wet nothing, and
    * the lead, a crack the ocean wells up into, is open whenever the ice is whole (openLead), boiling, never skinned over:
    * the water welling up keeps it open as it freezes at its edges, as a lead in sea ice is kept open by the sea under it.
    * And the ice is a moon's crust (`crust`): kilometres thick at about 100 K, so no blow and no weight breaks or cracks
@@ -1191,12 +1192,13 @@ export class IceSheet {
     }
     // It fits through, and stirs the hole's water: it is left alone again from now (REFREEZE). Its splash would stand on
     // the ice if the hole is narrower than its lip: a fast one opens the hole wider (the water it throws aside breaks the
-    // edge); a slow one (sliding in off the edge) goes in without its crown.
+    // edge); a slow one (sliding in off the edge) goes in without its crown, and so does any into a moon's crust's lead
+    // (setVacuum): nothing breaks the crust, so its edge holds whatever the splash throws at it.
     this.disturb(hole);
     const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
     const room = roundLipReach(rock.radius, speed, horizontal / Math.max(speed, 1e-6), 0, HOLE.fall);
     if (this.clearance(x, z) >= room) return { hole, broke: false, keep: 1, open: true };
-    if (speed < HOLE.widensFrom || !this.mayOpen(x, z)) return { hole, broke: false, keep: 1, open: false };
+    if (speed < HOLE.widensFrom || this.crust || !this.mayOpen(x, z)) return { hole, broke: false, keep: 1, open: false };
     return { hole: this.openHole(rock, x, z, hole.thickness), broke: true, keep: 1, open: false };
   }
 

@@ -245,7 +245,7 @@ for (const [name, multiplier] of [['medium toss', 1], ['soft toss', 1.18], ['med
   check(!/9\.81/.test(spectrumShader) && /uGravity \* wavenumber/.test(spectrumShader), "the rings' spectrum shader does not take uGravity");
   const glsl = (name) => spectral.slice(spectral.indexOf(`export const ${name}`), spectral.indexOf('`;', spectral.indexOf(`export const ${name}`)));
   for (const name of ['SPECTRAL_UPDATE_FRAGMENT', 'AMBIENT_EVALUATE_FRAGMENT']) check(!/9\.81/.test(glsl(name)) && /uGravity \*/.test(glsl(name)), `${name} does not take uGravity`);
-  check(/9\.81/.test(glsl('GALE_EVALUATE_FRAGMENT')), "the gale's dispersion is no longer Earth's (src/galeWaves.js's CPU twin is)");
+  check(/\$\{EARTH_GRAVITY\} \* wavenumber/.test(glsl('GALE_EVALUATE_FRAGMENT')), "the gale's dispersion is no longer Earth's, by name (src/galeWaves.js's CPU twin is)");
   check(/#define SPRAY_GRAVITY uGravity/.test(SPRAY_VERTEX), "the spray's shader does not take uGravity");
   check(/#define WHITE_GRAVITY uGravity/.test(white), "the cannon's churn does not take uGravity");
 }
@@ -281,14 +281,27 @@ for (const [name, multiplier] of [['medium toss', 1], ['soft toss', 1.18], ['med
   const life = landingBound(0.05, 2.5, flight);
   check(Math.abs(0.05 + 2.5 * life - 0.5 * GRAVITY * life * life) < 1e-9, `with no air a drop's life ${life} is not its parabola's landing`);
   check(/aSlow\.x <= 0\.0/.test(SPRAY_VERTEX), "the spray's shader has no parabola for no air");
-  // The ice in vacuum: its lead open from the start and never skinned over, a stone's hole skinned over in seconds,
-  // drops wetting nothing; and the boiling, seeded by the step's time.
+  // The ice in vacuum: its lead open from the start and never skinned over, no blow breaking the crust or widening the
+  // lead into it, drops wetting nothing; and the boiling, seeded by the step's time.
   const ice = new IceSheet({ domainMin: [-3, -4], domainSize: 6 });   // the solver's patch (src/spectralWater.js)
   ice.setThickness(0.01);
   const lead = { x: 0.1, z: -1.25, length: 3.6, width: 1.0, angle: 12, seed: 7 };
   ice.setVacuum(lead);
   check(ice.holes.length === 1 && ice.holes[0].lead && ice.holeAt(0, -1.3) === ice.holes[0], 'in vacuum the ice has no open lead');
   check(ice.strike({ position: new THREE.Vector3(1, 0, -2.5), velocity: new THREE.Vector3(0, -20, 0), mass: 7, radius: 0.11, collisionRadius: 0.11 }) === null && ice.holes.length === 1, 'a blow breaks a moon\'s crust');
+  // A fast stone into the lead close by its edge, too close for its splash's lip: in a lake's ice it would open the hole
+  // wider (src/ice.js meet), but a crust's edge holds.
+  const across = { x: -Math.sin((lead.angle * Math.PI) / 180), z: Math.cos((lead.angle * Math.PI) / 180) };
+  let edgeX = lead.x, edgeZ = lead.z;
+  for (let out = 0; out < lead.width; out += 0.005) {
+    const pointX = lead.x + across.x * out, pointZ = lead.z + across.z * out;
+    if (!ice.holeAt(pointX, pointZ) || ice.clearance(pointX, pointZ) < 0.05) break;
+    edgeX = pointX; edgeZ = pointZ;
+  }
+  const nearEdge = { position: new THREE.Vector3(edgeX, 0, edgeZ), velocity: new THREE.Vector3(3.5, -4, 0), mass: 0.2, radius: 0.03, collisionRadius: 0.03 };
+  const met = ice.meet(nearEdge, null);
+  check(ice.clearance(edgeX, edgeZ) < 0.06 && met?.hole === ice.holes[0] && !met.broke && ice.holes.length === 1,
+    `a fast stone ${ice.clearance(edgeX, edgeZ).toFixed(3)} m inside the lead's edge widens it into the crust (${met?.broke ? 'broke' : 'held'}, ${ice.holes.length} holes)`);
   ice.wetSpot(1, -2.5, 0.05);
   check(!ice.wetBox, 'in vacuum a drop wets the ice');
   for (let time = 0; time <= 120; time += 0.25) ice.setTime(time);

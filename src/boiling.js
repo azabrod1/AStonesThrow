@@ -3,8 +3,8 @@
 // open to the sky there, its vapour pressure (611 Pa at 0 °C) has nothing to
 // hold it down, so it boils at its surface, bubbles of vapour welling up and
 // bursting, and its boiling carries off the heat that freezes it (src/ice.js
-// setVacuum: a hole skins over in seconds, the lead is kept open by the ocean
-// welling up into it). The vapour rises over it, its grains of frost lit by
+// setVacuum: the lead, the only hole in a crust nothing breaks, is kept open
+// by the ocean welling up into it). The vapour rises over it, its grains of frost lit by
 // the sun (src/boilingVapour.js).
 //
 // Each physics step (src/main.js simulate, so a seeded game boils alike at

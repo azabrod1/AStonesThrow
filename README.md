@@ -1337,11 +1337,11 @@ The curated locations include:
   - A drop boils as it flies, and that freezes it in a few hundredths of a
     second, so it is drawn as a grain of ice and wets nothing where it lands.
   - Open water boils, since 0.1 µPa is far under water's triple point of
-    611 Pa (`src/boiling.js`). The lead, a new hole or the whole pond thawed
+    611 Pa (`src/boiling.js`). The lead, or the whole pond thawed,
     fizzes with bursting bubbles, and a faint haze of frost glitters over it
     (`src/boilingVapour.js`).
-  - Boiling carries off heat, so a stone's hole skins over in seconds. The
-    lead stays open, fed from below.
+  - The crust is kilometres thick, so nothing thrown breaks it. The lead
+    stays open, fed from below.
   `tools/gravity-probe.mjs` checks these too.
 
 The Time of day page has named buttons as well as the slider. Selecting a

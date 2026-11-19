@@ -70,7 +70,7 @@ const SCENERY = { kept: 8 };
 const FIRST = [-0.4, 1];   // the first eruption at a share of `gap`'s most from the start (under way already if below 0)
 
 const between = ([least, most], share) => least + (most - least) * share;
-const smoothstep = (edge0, edge1, value) => { const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1); return t * t * (3 - 2 * t); };
+const smoothstep = (edge0, edge1, value) => { const share = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1); return share * share * (3 - 2 * share); };
 
 /**
  * A place's scenery: `plume` ({ x, z, strength 0 to 1, time }) and `probe` (its pose: the header). setPlace(place)

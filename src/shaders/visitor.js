@@ -69,6 +69,8 @@
 // beyond its front or under the slope cutoff unattenuated (exactly what the
 // cutoff would drop), a contact's waves and foam, and a ring's foam, past
 // where they fall under what can show (tools/visitor-wave-probe.mjs checks).
+import { EARTH_GRAVITY } from '../gravity.js';
+
 export const VISITOR_CONTACTS = 4;
 export const VISITOR_RINGS = 2;
 export const VISITOR_RING_SLOPE_LEAST = 1e-3;  // invisible beyond this slope; shared with the CPU reach bound
@@ -77,7 +79,7 @@ export const VISITOR_WATER = /* glsl */`
 #define VISITOR_CONTACTS ${VISITOR_CONTACTS}
 #define VISITOR_RINGS ${VISITOR_RINGS}
 #define VISITOR_RING_SLOPE_LEAST ${VISITOR_RING_SLOPE_LEAST}
-#define VISITOR_GRAVITY 9.81   // Earth's: the visitor is Loch Ness's alone (src/gravity.js)
+#define VISITOR_GRAVITY ${EARTH_GRAVITY}   // Earth's: the visitor is Loch Ness's alone (src/gravity.js)
 #define VISITOR_RING_SIZE 0.4      // m: a breach's or a dive's impulse, about a body's girth
 #define CONTACT_RIPPLE 0.32        // m: the ripples' wavelength where the body breaks the surface
 #define CONTACT_RIPPLE_REACH 1.4   // m: how far out they die by e

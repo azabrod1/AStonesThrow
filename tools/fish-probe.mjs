@@ -318,6 +318,13 @@ console.log('\nEuropa\'s ice lanterns (glowing medusas):');
   const gathered = population.fish.filter((fish) => Math.hypot(fish.x - landX, fish.z - landZ) < 0.8);
   check(gathered.length >= 3, `then drift to where it went in and hang about it (${gathered.length} of ${population.fish.length} within 0.8 m, ${population.fish.map((fish) => Math.hypot(fish.x - landX, fish.z - landZ).toFixed(2)).join(', ')} m)`);
   check(gathered.every((fish) => fish.y > -0.6), `up under the surface (${gathered.map((fish) => fish.y.toFixed(2)).join(', ')} m)`);
+  // A splash the pond is cleared of (src/main.js clearPond: the warm-up's throws) lures none: resetClock forgets it.
+  const cleared = drift();
+  cleared.startle(landX, 0, landZ, 1);
+  cleared.resetClock();
+  let luredSince = 0;
+  for (let frame = 0; frame < 30 / FRAME; frame++) { cleared.step(FRAME); luredSince += cleared.groups.filter((group) => group.lured).length; }
+  check(cleared.lure === null && luredSince === 0, `a splash cleared with the pond lures none (${luredSince} group-frames lured)`);
   check(new FishPopulation({ seed: 1 }).fish.every((fish) => fish.glow === 0) && (() => { const koi = new FishPopulation({ seed: 1 }); koi.setWaters({ place: 'koi', ...KOI }); return koi.fish.every((fish) => fish.glow === 0); })(), 'no fish glows');
 }
 

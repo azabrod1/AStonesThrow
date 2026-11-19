@@ -109,7 +109,8 @@
 // that step, drawn between their last two (showAt): so a seeded throw is the
 // same with fish, at any frame rate. When the world's clock goes back to
 // zero (src/main.js clearPond: Frozen water, a new place) theirs goes with
-// it (resetClock), each fish kept where it is with its own timers, or they
+// it (resetClock), each fish kept where it is with its own timers (a lure
+// forgotten: its splash is gone with the pond), or they
 // would hang until the world caught up with the old clock. Held (hold), they
 // neither swim nor take fright and their clock keeps still: the warm-up's
 // pass that draws nothing (src/main.js warmUp) throws and steps a world the
@@ -677,10 +678,12 @@ export class FishPopulation {
     return this.bites;
   }
 
-  /** Rebase on a reset world clock, keeping the swimmers and their own timers. */
+  /** Rebase on a reset world clock, keeping the swimmers and their own timers; the lure (LURE) is forgotten with the splash it was. */
   resetClock(time = 0) {
     if (this.held) return;
     this.clock = time;
+    this.lure = null;
+    for (const group of this.groups) { group.lured = false; group.lureAt = null; }
     for (const fish of this.fish) {
       const before = (fish.before ??= {});
       for (const key of DRAWN) before[key] = fish[key];
