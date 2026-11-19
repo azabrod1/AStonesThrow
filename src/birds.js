@@ -6,8 +6,8 @@
 // Who lives where (BIRDS_BY_PLACE): a bird of every place (but the Pool), of where its
 // photograph was taken (Poly Haven's coordinates), a few done well.
 //   - Rocky cove (Cape Town's Atlantic shore): kelp gulls, each coming by
-//     now and then to work the water out past the rocks, mostly gliding, a
-//     few wingbeats now and then. Loch Ness: herring gulls, so.
+//     now and then to work the water out past the rocks, flap-gliding:
+//     bouts of beats with glides between. Loch Ness: herring gulls, so.
 //   - The Koi pond (Nagoya), frozen: no heron standing on the ice; one flies
 //     over the garden now and then instead (BIRDS_WHEN_FROZEN).
 //   - The Koi pond (Nagoya): a grey heron wading in the shallows of the far
@@ -38,11 +38,13 @@
 //     on the same dam: a string of sacred ibises; Mesas, the hill over it: a
 //     pair of Egyptian geese. Highlands (the eastern Free State): a grey heron.
 //   - Desert oasis (the Richtersveld): a Verreaux's eagle under the koppies.
-//     Swiss Alps (Lago d'Isola): a pair of ravens. Wooded lake (Radków): a
+//     Swiss Alps (Lago d'Isola): a pair of ravens, high over the water. Wooded lake (Radków): a
 //     pair of mute swans. The Polynesian lagoon: great frigatebirds, hardly
 //     ever beating their wings, circling. The Reflecting Pool (Washington,
-//     D.C.): a blue jay and a northern cardinal, crossing low between the
-//     elms either side of the pool, now and then.
+//     D.C.): a blue jay and a northern cardinal, birds of the elms either
+//     side of the pool, now and then crossing low between them, or flitting
+//     in over one side of the view and back out it (hop), the cardinal
+//     mostly so.
 //   - At night (setConditions: the true sun more than NIGHT_SUN below the
 //     horizon, though the moon may light the scene) the day's birds are gone,
 //     and where they live black-crowned night herons come over instead
@@ -60,7 +62,8 @@
 // are alike. Each visit is a path of its own (makeVisit), drawn from the
 // bird's seed and the visit's number: over from one side to the other,
 // wandering nearer and farther, higher and lower; or in, round in a wide
-// turn and back out; or, for a soaring kind, round and round in a thermal,
+// turn and back out; or a short way in over one side and back out it (a
+// songbird's hop); or, for a soaring kind, round and round in a thermal,
 // rising, and off. On a frame narrower than a 16:9 screen's (an upright
 // phone's) visits are drawn in toward the home view's line and come more
 // often (setView). The path is a cubic B-spline (splinePath: smooth to its
@@ -109,12 +112,16 @@ const CLEAR = { gap: 0.07, height: 0.1, span: 0.1, tries: 12, step: 0.02 };
 // `most` seconds of beating from the spell's start, eased in and out over `ease`; and it beats while it climbs,
 // `climb` of full beating a m/s of climb. `steady`: it beats all the time (a goose, a swan, a crow going somewhere).
 const FLAPPING = {
-  gull: { window: 5.5, share: 0.4, least: 1.2, most: 2.6, ease: 0.35, climb: 1.4 },   // glides, a few beats now and then
+  // A gull over open water flap-glides: bouts of beats with short glides between, not the long glides of a bird a
+  // thermal or a slope holds up, which still water has none of (Shamoun-Baranes et al., Phil. Trans. R. Soc. B 371,
+  // 2016: lesser black-backed gulls, with accelerometers, flapped more often than they soared, soaring where thermals
+  // or slopes lift them). Beating in about 40% of its frames (bird-probe), in bouts of 1.4 to 3.2 s; it was under 20%.
+  gull: { window: 4.5, share: 0.75, least: 1.4, most: 3.2, ease: 0.35, climb: 1.4 },
   soaring: { window: 12, share: 0.18, least: 0.8, most: 1.6, ease: 0.3, climb: 0.5 },   // an eagle: a few beats in a minute
   fishing: { window: 6, share: 0.65, least: 2, most: 4, ease: 0.4, climb: 0.8 },   // a fish eagle low over the water: bouts of slow, shallow beats between glides
   frigate: { window: 20, share: 0.1, least: 0.6, most: 1.0, ease: 0.25, climb: 0.2 },   // hardly ever
   corvid: { window: 3.2, share: 0.75, least: 1.6, most: 2.8, ease: 0.25, climb: 1.4 },   // rows, with short glides
-  jay: { window: 2.6, share: 0.85, least: 1.6, most: 2.5, ease: 0.15, climb: 1.2 },   // a blue jay: rows steadily, now and then a short glide
+  jay: { window: 2.6, share: 0.9, least: 1.8, most: 2.5, ease: 0.15, climb: 1.2 },   // a blue jay: rows steadily, now and then a short glide
   steady: { steady: true },
   // A small songbird's bounding flight (a cardinal's): a burst of beats (`flap` s), climbing, then its wings shut for
   // a bound (`bound` s), coasting up and over and dropping under gravity, again and again, so its path rises and dips
@@ -136,9 +143,11 @@ export const BIRD_KINDS = {
   raven: { name: 'Common raven', span: 1.2, length: 0.62, beat: 3.4, cruise: 10, flapping: 'corvid' },
   swan: { name: 'Mute swan', span: 2.2, length: 1.45, beat: 2.9, cruise: 15, flapping: 'steady' },
   frigate: { name: 'Great frigatebird', span: 2.2, length: 0.95, beat: 1.6, cruise: 9, flapping: 'frigate' },
-  // Songbirds: a passerine's quick beats (a jay's about 7 a second, a cardinal's about 11, as birds of their weight beat).
-  blueJay: { name: 'Blue jay', span: 0.4, length: 0.28, beat: 7, cruise: 8.5, flapping: 'jay' },
-  cardinal: { name: 'Northern cardinal', span: 0.29, length: 0.22, beat: 11, cruise: 7.5, flapping: 'bounding' },
+  // Songbirds: a passerine's quick beats (a jay's about 7 a second, a cardinal's about 11, as birds of their weight beat),
+  // at the speed of a short flight from tree to tree, slower than a songbird travelling (8 to 12 m/s): at 8.5 and 7.5
+  // they swept the Reflecting Pool's frame in two seconds, faster than anything else in it.
+  blueJay: { name: 'Blue jay', span: 0.4, length: 0.28, beat: 7, cruise: 7, flapping: 'jay' },
+  cardinal: { name: 'Northern cardinal', span: 0.29, length: 0.22, beat: 11, cruise: 5.5, flapping: 'bounding' },
   // A small, stocky heron: quicker beats than the grey heron's, slower than a gull's.
   nightHeron: { name: 'Black-crowned night heron', span: 1.1, length: 0.6, beat: 3.0, cruise: 9, flapping: 'steady' },
 };
@@ -147,18 +156,21 @@ export const BIRD_KINDS = {
 //   visit: now and then a bird comes into the view, goes about over the water a while and leaves (visitAt): each
 //     visit a fresh path, `gap` [least, most] s apart (the first anywhere from under way already to `gap`'s most: FIRST_VISIT), drawn
 //     with `styles`' weights (cross: over from one side to the other, wandering nearer and farther; turn: in from one
-//     side, round in a wide turn out over the water and back out the same side; circle: in, round and round over the
+//     side, round in a wide turn out over the water and back out the same side; hop: in over one side, a short way
+//     (`depth` [least, most] degrees inside the frame's edge, HOP_DEPTH unless given), round in a U and back out it; circle: in, round and round over the
 //     water, rising as in a thermal, and off; a soaring kind's), between `distance` [near, far] m from the shore's
 //     eye and `height` [low, high] m over the water, its turns and circles centred `aim` degrees to the right of the
 //     home view's line, give or take `spread`; a crossing's places each up to `wander` m nearer or farther than the
 //     one before (by its speed if not given: 14 m at 10 m/s, less faster). `count` birds, each on its own visits, or with `together` one flock
 //     on its leader's, each `spacing` m behind the one before and a little to one side, as a small flock strings out.
+//     Its points are kept under `ceiling` degrees above the eye's level (CEILING, the shore view's, if not given), for
+//     a place whose home view (src/places.js `defaultView`) looks higher than the shore view does.
 //   wade: where it stands, drawn afresh each time it comes down (and as the place is shown: laySpot): `angles` (rad
 //     about the pond's centre, KOI_SHORE: the far bank, in the home view's frame even on an upright phone) and
 //     `offshore` (m out from the waterline); it faces either way across the eye's line of sight, turned up to `toPond`
 //     rad toward the water: side on to the home view, so its outline reads. Standing, its ways are HERON's.
 // Each a bird of where its photograph was taken (Poly Haven's places: the header), low enough to be in the home view's
-// sky (under FRAME_TOP in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
+// sky (under its frame's top, HOME_VIEWS in tools/bird-probe.mjs, but for a thermal's last turns) and out of a throw's reach.
 // The swans, the ibises, the geese and the Highlands' heron only cross: at their speed (10 to 15 m/s) a turn is too
 // wide to keep within reach (layVisit: TURN_REACH, TURN_BANK), and they would spend it 150 m out and more.
 export const BIRDS_BY_PLACE = {
@@ -166,7 +178,12 @@ export const BIRDS_BY_PLACE = {
   loch: [{ kind: 'herring', habit: 'visit', count: 3, distance: [32, 75], height: [1.5, 4], aim: 0, spread: 14, gap: [10, 45], styles: { cross: 0.6, turn: 0.4 } }],
   koi: [{ kind: 'heron', habit: 'wade', count: 1, angles: [4.3, 5.15], offshore: [0.07, 0.15], toPond: 0.3 }],   // in 8 to 20 cm of water: ankle to mid-shin
   lagoon: [{ kind: 'frigate', habit: 'visit', count: 2, distance: [45, 100], height: [3, 6], aim: 0, spread: 14, gap: [8, 40], styles: { cross: 0.3, turn: 0.2, circle: 0.5 } }],
-  swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [35, 80], height: [2, 4.5], aim: 0, spread: 14, gap: [10, 40], styles: { cross: 0.6, turn: 0.4 } }],
+  // Swiss Alps: its home view is the low, level one (src/places.js defaultView), its frame's top 22° above the eye's
+  // level, and below about 6° the far shore is dark spruce forest, the left half's all the way up, where a black raven
+  // is not seen at all. Ravens cross a valley well above the trees, not skimming the water: these fly 8 to 14 m up,
+  // against the snow of the peaks ahead and right of the line and the sky to their right (aim), under 15° (ceiling).
+  // From the shore view (its frame's top 7.4° up) they are mostly above the frame: that view looks down at the ice.
+  swiss: [{ kind: 'raven', habit: 'visit', count: 2, together: true, spacing: 3, distance: [40, 75], height: [8, 14], ceiling: 15, aim: 12, spread: 10, gap: [10, 40], styles: { cross: 0.6, turn: 0.4 } }],
   desert: [{ kind: 'eagle', habit: 'visit', count: 1, distance: [55, 110], height: [3.5, 6.5], aim: 0, spread: 12, gap: [10, 40], styles: { cross: 0.35, turn: 0.2, circle: 0.45 } }],
   lakeside: [{ kind: 'fishEagle', habit: 'visit', count: 1, distance: [35, 85], height: [2.5, 5], aim: 14, spread: 12, gap: [8, 30], styles: { cross: 0.35, turn: 0.25, circle: 0.4 } }],
   wooded: [{ kind: 'swan', habit: 'visit', count: 2, together: true, spacing: 4, distance: [35, 70], height: [1.5, 3.5], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 1 } }],
@@ -175,11 +192,14 @@ export const BIRDS_BY_PLACE = {
   highlands: [{ kind: 'heron', habit: 'visit', count: 1, distance: [30, 55], height: [1.5, 3], aim: 0, spread: 14, gap: [12, 45], styles: { cross: 1 } }],
   // The Reflecting Pool (Washington, D.C.): a blue jay and a cardinal, birds of the elms either side of it, each on
   // its own comings and goings and in its own way (nothing thrown goes past the water's 6 m patch, so they may come
-  // within 10 m of the eye, where a songbird shows): the jay crossing higher and farther out, at the elms' lower
-  // branches; the cardinal dashing low and near, bounding, less often.
+  // within 10 m of the eye, where a songbird shows). The pool is 50 m wide, so in the frame within 32 m of the eye a
+  // bird is over its water: the jay, which crosses open ground, crosses it higher and farther out, at the elms' lower
+  // branches, half the time, and otherwise flits in over one side and back (hop); the cardinal, a reluctant flier on
+  // short round wings that keeps to cover (Cornell's All About Birds), mostly hops in low and near, bounding, and back
+  // out the side it came from, and crosses only now and then.
   mall: [
-    { kind: 'blueJay', habit: 'visit', count: 1, distance: [15, 32], height: [2.4, 4.5], aim: 0, spread: 22, gap: [12, 50], styles: { cross: 1 } },
-    { kind: 'cardinal', habit: 'visit', count: 1, distance: [10.5, 19], height: [1.2, 2.5], aim: 0, spread: 12, gap: [25, 75], styles: { cross: 1 } },
+    { kind: 'blueJay', habit: 'visit', count: 1, distance: [15, 32], height: [2.4, 4.5], aim: 0, spread: 22, gap: [12, 50], styles: { cross: 0.5, hop: 0.5 } },
+    { kind: 'cardinal', habit: 'visit', count: 1, distance: [10.5, 19], height: [1.4, 2.5], aim: 0, spread: 12, gap: [18, 60], depth: [5, 15], styles: { hop: 0.8, cross: 0.2 } },
   ],
 };
 
@@ -550,11 +570,13 @@ const OUT = 64;   // degrees either side of the home view's line: out of a wide 
 // half as long, the bird spending the rest out beyond its sides: there every bearing a visit is laid out by (OUT, a
 // turn's way in and out, a group's `aim` and `spread`) is drawn in toward the home view's line by `fit`, so its
 // ends are OUT_MARGIN beyond the frame's side, as a wide screen's are, and the gaps between visits are shortened by
-// as much again (GAP_FIT, a power of `fit`): over ten minutes the birds are in an upright phone's frame about as much
+// as much again (GAP_FIT, a power of `fit`; not after a hop, which turns back as far inside any frame's edge and is
+// seen as long in it): over ten minutes the birds are in an upright phone's frame about as much
 // as in a wide screen's (bird-probe). A frame as wide as WIDE_FRAME's, or wider, is laid out as it always was.
 const WIDE_FRAME = THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(24)) * 16 / 9));   // degrees either side at 16:9 (src/main.js frameFov: 48° high), 38.4°
 const OUT_MARGIN = OUT - WIDE_FRAME;
 const GAP_FIT = 3;
+const HOP_DEPTH = [6, 20];   // degrees: how far inside the frame's edge a hop (layVisit) turns back
 const CEILING = THREE.MathUtils.degToRad(6);   // a visit's points are kept this far above the eye's level, under the frame's top (7.4°)
 const SPAN_SAMPLES = 16;   // a spline's span sampled this many times for its length table
 
@@ -672,6 +694,7 @@ export class BirdPopulation {
   constructor({ seed = 1 } = {}) {
     this.seed = seed;
     this.fit = 1;   // setView
+    this.frameEdge = WIDE_FRAME;   // setView: the side of the frame a visit is laid out for, degrees from the view's line
     this.sunAway = null;   // setConditions
     this.place = 'none';
     this.birds = [];
@@ -786,6 +809,7 @@ export class BirdPopulation {
    */
   setView(halfWidth) {
     this.fit = halfWidth >= WIDE_FRAME - 1e-6 ? 1 : (halfWidth + OUT_MARGIN) / OUT;
+    this.frameEdge = Math.min(halfWidth, WIDE_FRAME);
   }
 
   /**
@@ -1039,10 +1063,12 @@ export class BirdPopulation {
     const flapping = FLAPPING[BIRD_KINDS[group.kind].flapping];
     const rise = flapping.bounding ? GRAVITY * flapping.bound[1] ** 2 / 8 + 0.1 : 0;
     const closest = near * 0.9;   // no point of a visit is laid nearer the eye
+    const top = group.ceiling === undefined ? CEILING : THREE.MathUtils.degToRad(group.ceiling);   // a place whose home view looks higher keeps its own (BIRDS_BY_PLACE `ceiling`)
+    const ceilingAt = (distance) => EYE_HEIGHT + distance * Math.tan(top) - rise;   // the highest a point this far out is laid
     const at = (bearing, distance, height, free = false) => {
       const radians = THREE.MathUtils.degToRad(bearing);
       const clampedDistance = Math.max(distance, closest);
-      const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(CEILING) - rise;
+      const ceiling = free ? Infinity : ceilingAt(clampedDistance);
       points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
     };
     const { fit } = this;   // drawn in to a narrow frame (OUT's note)
@@ -1061,6 +1087,43 @@ export class BirdPopulation {
         at((side * (OUT - 2 * OUT * share) * 0.75 + group.aim * (1 - Math.abs(2 * share - 1)) + signed(6)) * fit, distance, range(group.height));
       }
       at(-side * out(), range(group.distance), range(group.height));
+    } else if (style === 'hop') {
+      // In over one side of the frame a short way (its turn's nose `depth` degrees inside the frame's edge, HOP_DEPTH
+      // unless given), round half a circle (as wide as its speed asks at 22° to 27° of bank: a songbird turns sharply) and back out the same
+      // side, nearer or farther than it came in: a songbird flitting from tree to tree beside the view, crossing nothing.
+      const radius = turnRadius(speed, 22 + random() * 5);
+      const middleDistance = near + radius + random() * Math.max((far - near) / 2, 2);
+      // Its nose is the depth inside the frame's true edge (frameEdge: a narrow frame's is nearer the middle than
+      // `fit` draws the other bearings in, so a hop laid from WIDE_FRAME · fit could turn back beyond the side of an
+      // upright phone's frame unseen, bird-probe); the turn itself as wide in metres; never past a fifth of the way to
+      // the middle from the far side.
+      const { frameEdge } = this;
+      const nose = Math.max(frameEdge - range(group.depth ?? HOP_DEPTH), 0.2 * frameEdge);
+      const centreBearing = THREE.MathUtils.degToRad(side * (nose + THREE.MathUtils.radToDeg(Math.atan(radius / middleDistance))));
+      const centreX = EYE.x + Math.sin(centreBearing) * middleDistance, centreZ = EYE.z - Math.cos(centreBearing) * middleDistance;
+      const awayX = Math.sin(centreBearing), awayZ = -Math.cos(centreBearing);   // from the eye
+      const inwardX = -side * Math.cos(centreBearing), inwardZ = -side * Math.sin(centreBearing);   // toward the frame's middle
+      const way = random() < 0.5 ? 1 : -1;   // in on the near side of its circle and out on the far (1), or the other way
+      const low = range(group.height), high = range(group.height);
+      const entry = points.length;
+      for (let step = 0; step <= 4; step++) {
+        const angle = Math.PI * step / 4;
+        const x = centreX - way * awayX * radius * Math.cos(angle) + inwardX * radius * Math.sin(angle), z = centreZ - way * awayZ * radius * Math.cos(angle) + inwardZ * radius * Math.sin(angle);
+        points.push([x, low + (high - low) * step / 4, z]);
+      }
+      // In and out along its circle's tangents at its ends, from and to beyond the frame's side (out()), so it comes
+      // into its turn straight and rolls into it gently.
+      const beyond = (point) => {
+        const bearing = out();
+        for (let back = 1; ; back++) {
+          const x = point[0] - inwardX * back, z = point[2] - inwardZ * back;
+          if (back >= 80 || side * THREE.MathUtils.radToDeg(Math.atan2(x - EYE.x, -(z - EYE.z))) >= bearing) return [x, point[1], z];
+        }
+      };
+      points[0] = beyond(points[entry]);
+      points.push(beyond(points[points.length - 1]));
+      // Each kept under the frame's top, as at() keeps a point.
+      for (let index = 0; index < points.length; index++) points[index][1] = Math.min(points[index][1], ceilingAt(Math.hypot(points[index][0] - EYE.x, points[index][2] - EYE.z)));
     } else if (style === 'turn') {
       // In, out over the water and round (half a circle the far way, as wide as its speed asks at a bank of 12° to
       // 22°, or tighter, up to TURN_BANK, for its far side to stay within reach), and back out the side it came in,
@@ -1077,7 +1140,8 @@ export class BirdPopulation {
         // From the circle's near point, round by its far side (away from where it came in), to its far point.
         const angle = Math.PI * step / 4;
         const towardEye = Math.cos(angle), awaySide = Math.sin(angle);
-        points.push([centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, low + (high - low) * step / 4, centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide]);
+        const x = centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, z = centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide;
+        points.push([x, Math.min(low + (high - low) * step / 4, ceilingAt(Math.hypot(x - EYE.x, z - EYE.z))), z]);   // kept under the frame's top, as at() keeps a point
       }
       // Out along the circle's far side's line (no nearer than its middle, so it never doubles back).
       const outward = inner + radius * (1 + random());
@@ -1144,7 +1208,9 @@ export class BirdPopulation {
       visits.push(this.makeVisit(visitor, 0, between(FIRST_VISIT, hashed(visitor.seed, 0, 32)) * group.gap[1]));
     }
     for (let last = visits[visits.length - 1]; last.start + last.duration + visitor.lagMost / last.speed <= local; last = visits[visits.length - 1]) {
-      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32)) * this.fit ** GAP_FIT;
+      // Shortened on a narrow frame (GAP_FIT) after a visit that frame saw less of; a hop turns back as far inside
+      // any frame's edge (frameEdge), so it is seen as long on any, and the gap after it is as it is.
+      const gap = between(group.gap, hashed(visitor.seed, last.index + 1, 32)) * (last.style === 'hop' ? 1 : this.fit ** GAP_FIT);
       visits.push(this.makeVisit(visitor, last.index + 1, last.start + last.duration + visitor.lagMost / last.speed + gap));
       if (visits.length > 4) visits.shift();
     }

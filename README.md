@@ -646,17 +646,19 @@ the skies in South Africa):
 | Mesas (above the dam) | a pair of Egyptian geese now and then |
 | Highlands (eastern Free State) | a grey heron flying over now and then |
 | Desert oasis (Richtersveld) | a Verreaux's eagle under the koppies |
-| Swiss Alps | two ravens |
+| Swiss Alps | two ravens, high over the water against the snow and sky |
 | Wooded lake (Radków) | a pair of mute swans now and then |
 | Polynesian lagoon | great frigatebirds soaring |
-| Reflecting Pool (Washington, D.C.) | a blue jay and a northern cardinal crossing between the elms |
+| Reflecting Pool (Washington, D.C.) | a blue jay and a northern cardinal, crossing between the elms or flitting in over one side and back |
 
 The flying birds come and go: now and then one (or a flock) comes into
 the view from beyond a side of the frame, goes about over the water and
 leaves, and is away a while before it comes again. Each visit is a path of
 its own, drawn from the bird's seed and the visit's number: across from one
 side to the other, wandering nearer and farther; in, round in a wide turn
-and back out; or, for the eagles and frigatebirds, round and round in a
+and back out; for the songbirds, a short way in over one side of the view,
+round in a U and back out the same side (a hop, crossing nothing); or, for
+the eagles and frigatebirds, round and round in a
 thermal, rising, and off (all of it, its circles and its way in and out,
 kept as far from the eye as the rest of a visit is laid). The path is a smooth spline flown at the bird's
 speed, laid out so that no turn on it needs more than 28° of bank, so it
@@ -667,7 +669,7 @@ birds are in the frame as much of the time as on a wide screen. A place
 shown finds its birds anywhere in their comings and goings, and every visit
 to the page has its own seed (`?birdSeed=` chooses one; a page driven by a
 tool has seed 1, so frames are reproducible). Each
-kind flaps as it does (a gull a few beats now and then, a fish eagle in
+kind flaps as it does (a gull flap-gliding, beating somewhat less than half the time, a fish eagle in
 bouts, an eagle hardly, a raven mostly, a jay steadily, a cardinal in
 bounds: a few beats, then its wings shut a moment as it arcs on, its path
 rising and dipping a few centimetres about the visit's). The
@@ -696,7 +698,9 @@ and lives at all five, crosses the sky now and then instead (`BIRDS_AT_NIGHT`), 
 enough to stand against the sky as a silhouette. Loch Ness has none: it is
 north of their range. They
 are scenery, as the fish are: nothing thrown meets them, and they keep out
-of reach and in the home view's sky. Their state changes only in the
+of reach and in the home view's sky (the Swiss Alps' home view is the low,
+level one, so its ravens fly higher, above the dark spruce of the far
+shore). Their state changes only in the
 physics steps and they are posed at each frame's time from closed forms,
 from their own seeded stream, so a seeded game goes alike at any frame rate.
 
