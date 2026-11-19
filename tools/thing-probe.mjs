@@ -146,6 +146,8 @@ import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { WaterCannon, nozzle } from '../src/waterCannon.js';
+import { EARTH_GRAVITY, setGravity } from '../src/gravity.js';
+import { PLACES } from '../src/places.js';
 import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
 import { costClock, costSince } from './cost-clock.mjs';
@@ -602,6 +604,20 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   const inAir = churn(false), inVacuum = churn(true);
   check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
     `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
+  // Under Europa's gravity the fan flies as many times longer, and its ring has room for it (src/waterCannon.js
+  // fanCapacity): over a long burst every landing still throws its moment of the fan.
+  {
+    setGravity(PLACES.europa.gravity);
+    try {
+      const longBurst = new WaterCannon({ water, splash });
+      longBurst.start({ hand: handFor(0.025, thing), x: 0.3, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 4 });
+      for (let step = 0; step < 4 * 240; step++) longBurst.step(step * STEP, STEP, []);
+      check(longBurst.landings > 900 && longBurst.tail.count === longBurst.landings,
+        `under Europa's gravity a 4 s burst's ${longBurst.landings} landings throw ${longBurst.tail.count} moments of its fan (${longBurst.fanInAir} in the air, room for ${longBurst.tail.capacity})`);
+    } finally {
+      setGravity(EARTH_GRAVITY);
+    }
+  }
   console.log(`  a step costs ${(1000 * cost / steps).toFixed(2)} µs`);
   check(cost / steps < STEP_COST_MS, `a cannon step costs ${(1000 * cost / steps).toFixed(2)} µs`);
 }

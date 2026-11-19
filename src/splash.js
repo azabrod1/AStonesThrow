@@ -127,7 +127,8 @@
 // drag under: the hole fills with nothing but the water's own vapour, which
 // condenses as the walls close, so no foam, no specks and no bubbles, and a
 // landing drop takes none down either; and no air tears a big drop in
-// flight (Lumps: the Weber number is the air's). Its drops boil as they
+// flight (Lumps: the Weber number is the air's), nor slows one: the drops
+// fly plain parabolas, as long as the place's gravity keeps them up. Its drops boil as they
 // fly, and a millimetre drop's boiling takes the heat to freeze it in a few
 // hundredths of a second (its vapour leaves at about 0.7 kg/m²·s at 0 °C,
 // Hertz and Knudsen's rate, each kilogram taking 2.5 MJ), so each is drawn
@@ -316,12 +317,13 @@ import { basinBounds, basinDeck } from './basin.js';
 import { PARTICLE_VERTEX, SPRAY_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
-import { GRAVITY } from './gravity.js';
-import { AIR_DENSITY } from './air.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
+import { AIR_DENSITY, EARTH_AIR } from './air.js';
 
 const REFERENCE_RADIUS = 0.03;   // the stone size the tuning constants were set for
 const MAX_CROWNS = 5;            // an older crown tears at once when another arrives
 const MAX_JETS = 4;              // an older jet breaks into drops at once when another starts
+const DROP_MOST_LIFE = 6;             // s: no drop flies longer under Earth's gravity; under a weaker one (src/gravity.js) as many times longer as a flight is
 const LANDING_SPLAT_RADIUS = 0.0016;  // drops bigger than this push a splat into the solver where they land...
 const LANDING_SPLATS = 40;            // ...at most this many a substep, the biggest
 const LANDING_CROWN_RADIUS = 0.0035;   // drops this big throw a crown where they land (and a boil and a kick if not)...
@@ -1830,7 +1832,8 @@ export class SplashSystem {
           (pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece) => this.spawnDroplet(pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece, true, piece > DROP_CEILING));
         continue;
       }
-      const drag = Math.min(0.00027 / radius * speed * dt, 0.5);
+      // Its drag is the air's (src/air.js): none in vacuum, where it flies a parabola.
+      const drag = Math.min(0.00027 / radius * speed * dt * (AIR_DENSITY / EARTH_AIR), 0.5);
       vx -= vx * drag; vy -= vy * drag; vz -= vz * drag;
       vy -= GRAVITY * dt;
       let x = this.positions[p] + vx * dt;
@@ -1873,7 +1876,7 @@ export class SplashSystem {
         this.removeDroplet(i);
         continue;
       }
-      if ((y <= 0 && vy < 0) || this.ages[i] > 6) {
+      if ((y <= 0 && vy < 0) || this.ages[i] > DROP_MOST_LIFE * (EARTH_GRAVITY / GRAVITY)) {
         if (y <= 0 && radius > Math.min(LANDING_SPLAT_RADIUS, DROP_RING.least)) landings.push({ x, z, radius, fallSpeed: -vy, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), velocityX: vx, velocityZ: vz, flight: this.ages[i] });
         this.removeDroplet(i);
         continue;

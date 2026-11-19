@@ -29,8 +29,8 @@
 //   - pool: a basketball, a skipped stone and twenty-two stones in the
 //     pool's walls, more than Low keeps at rest, so the oldest fades as one
 //     comes to rest past the cap, between throws;
-//   - europa: a stone into the lead and a bowling ball through the ice,
-//     whose hole skins over in seconds in vacuum (src/ice.js setVacuum), the
+//   - europa: a stone into the lead and a bowling ball down on the crust,
+//     which nothing breaks (src/ice.js setVacuum), the
 //     open water boiling every step (src/boiling.js: its bursts counted);
 //   - loch: a stone and a skipped stone at Loch Ness, then left past its
 //     first sighting (src/lochVisitor.js), whose state must match too: what
@@ -76,8 +76,8 @@ const SCENES = [
     ],
   },
   {
-    // Europa (frozen, its lead open, in vacuum): a stone into the lead, a bowling ball through the ice, whose hole skins
-    // over in seconds there, and the boiling of the open water at every step (its count compared too).
+    // Europa (frozen, its lead open, in vacuum): a stone into the lead, a bowling ball down on the crust, which nothing
+    // breaks (src/ice.js setVacuum), skidding to rest, and the boiling of the open water at every step (its count compared too).
     name: 'europa', place: 'europa', ice: 'thin', until: 22,
     throws: [
       { at: 0, x: 0, z: -1.4, thing: 'stone' },

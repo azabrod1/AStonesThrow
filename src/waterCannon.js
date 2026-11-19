@@ -128,7 +128,7 @@ import * as THREE from 'three';
 import { seededRandom, sprayDrops } from './spray.js';
 import { SHEATH } from './streamSheath.js';
 import { FAN_GRID } from './sprayFan.js';
-import { GRAVITY } from './gravity.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 
 const WATER_DENSITY = 1000;
 const SURFACE_TENSION = 0.072;
@@ -182,8 +182,10 @@ export const ROUGH = {
   shed: 0.01,         // the share of the flow the rough skin throws off as mist (BREAKUP.mist where it has broken up)
 };
 // The fan of spray the stream throws off the water where it lands (the header; src/sprayFan.js draws it).
+// The fan's ring's room under the place's gravity (FAN.capacity): its flights, 2·vy/g, as many times longer as g is weaker.
+const fanCapacity = () => Math.ceil(FAN.capacity * Math.max(EARTH_GRAVITY / GRAVITY, 1));
 export const FAN = {
-  capacity: 512,        // moments of it in the air at most
+  capacity: 512,        // moments of it in the air at most under Earth's gravity; under a weaker one as many times more as its flights are longer (fanCapacity)
   spread: 1.05,         // rad: its headings, to either side of the stream's way (some two thirds of that is seen: the sheet thins to nothing towards its sides)
   speed: [0.22, 0.15],  // thrown at this share of the landing speed down its middle, and at its sides...
   rise: 0.2,            // ...up at this (rad)...
@@ -367,9 +369,16 @@ export class WaterCannon {
     this.count = 0;
     // The fan (FAN): a ring of the moments it was thrown at, `head` the oldest with any of it still in the air; for
     // each moment the launch of each part across it (the fan's columns).
-    const moments = FAN.capacity, parts = FAN_GRID.columns;
-    this.tail = {
-      head: 0, count: 0,
+    this.tail = this.makeTail(fanCapacity());
+    this.thrown = { vx: 0, vy: 0, vz: 0 };   // the fan's middle's launch at the last landing (the spray goes with it)
+    this.stepSeconds = 1 / 240;
+  }
+
+  /** The fan's ring (FAN) of `moments` moments, empty. */
+  makeTail(moments) {
+    const parts = FAN_GRID.columns;
+    return {
+      head: 0, count: 0, capacity: moments,
       drift: new Float64Array(FAN.controls * 8),    // its wander (FAN.sway): at each control, for each of speed, elevation, heading and strength, the walk and its smoothed value
       swayed: new Float64Array(FAN.controls * 4),   // the smoothed values, this landing
       comb: new Float64Array(parts),                // each part's own wander (FAN.fingers)
@@ -386,8 +395,6 @@ export class WaterCannon {
       strength: new Float32Array(moments * parts),       // how much water each part carries, against the mean
       reach: new Float32Array(moments * parts),          // the share of its flight each part lasts as a sheet (FAN.reach)
     };
-    this.thrown = { vx: 0, vy: 0, vz: 0 };   // the fan's middle's launch at the last landing (the spray goes with it)
-    this.stepSeconds = 1 / 240;
   }
 
   /** Parcels in the air. */
@@ -635,8 +642,8 @@ export class WaterCannon {
     const comb = tail.comb, kept = FAN.fingers.memory * period;
     for (let part = 0; part < parts; part++) comb[part] += (-comb[part] * dt) / kept + Math.sqrt((2 * dt) / kept) * 2 * (random() + random() + random() - 1.5);
     const onward = Math.atan2(directionZ, directionX);
-    const room = tail.count - tail.head < FAN.capacity;
-    const slot = tail.count % FAN.capacity;
+    const room = tail.count - tail.head < tail.capacity;
+    const slot = tail.count % tail.capacity;
     let longest = 0;
     for (let part = 0; part < parts; part++) {
       const place = -1 + (2 * part) / (parts - 1), middle = 1 - place * place;
@@ -656,7 +663,7 @@ export class WaterCannon {
       longest = Math.max(longest, (2 * vy) / GRAVITY);
     }
     if (!room) return;
-    const before = (tail.count + FAN.capacity - 1) % FAN.capacity;
+    const before = (tail.count + tail.capacity - 1) % tail.capacity;
     tail.lead[slot] = tail.count === 0 || time - tail.time[before] > 1.5 * dt ? 1 : 0;
     tail.time[slot] = time; tail.x[slot] = x; tail.z[slot] = z;
     tail.sideX[slot] = -directionZ; tail.sideZ[slot] = directionX;
@@ -676,7 +683,7 @@ export class WaterCannon {
    * and drops leave it (FAN.drops places on it).
    */
   stepFan(time, dt, splashTime) {
-    const tail = this.tail, capacity = FAN.capacity, parts = FAN_GRID.columns;
+    const tail = this.tail, capacity = tail.capacity, parts = FAN_GRID.columns;
     while (tail.count > tail.head) {
       const slot = tail.head % capacity;
       if (tail.time[slot] + tail.life[slot] > time + dt - 1e-12) break;
@@ -885,7 +892,7 @@ export class WaterCannon {
    * nothing is drawn from one piece to the next.
    */
   drawFan(time) {
-    const fan = this.fan, tail = this.tail, capacity = FAN.capacity, parts = FAN_GRID.columns;
+    const fan = this.fan, tail = this.tail, capacity = tail.capacity, parts = FAN_GRID.columns;
     const inAir = tail.count - tail.head;
     if (inAir === 0) { fan.hide(); return; }
     const slotAt = (back) => (tail.count - 1 - back) % capacity;
@@ -944,6 +951,8 @@ export class WaterCannon {
     this.lastLanding = -Infinity;
     this.lastStartle = -Infinity;
     this.landing = null;
+    // The fan's ring as long as the place's gravity keeps its water up (fanCapacity): a change of gravity clears the pond.
+    if (this.tail.capacity !== fanCapacity()) this.tail = this.makeTail(fanCapacity());
     this.tail.head = 0; this.tail.count = 0;
     this.sheath?.hide();
     this.fan?.hide();

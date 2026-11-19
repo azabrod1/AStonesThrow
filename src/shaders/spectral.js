@@ -20,6 +20,8 @@
 // tools/fft-test.mjs reproduces these passes on the CPU, also through
 // binary16 storage.
 
+import { EARTH_GRAVITY } from '../gravity.js';
+
 export const FULLSCREEN_VERTEX = /* glsl */`
 varying vec2 vUv;
 void main() {
@@ -224,7 +226,7 @@ void main() {
   vec2 latticeIndex = vec2(texel.x < size / 2 ? texel.x : texel.x - size, texel.y < size / 2 ? texel.y : texel.y - size);
   vec2 waveVector = 2.0 * PI * latticeIndex / uTileSize;   // rad/m along world x and z
   float wavenumber = length(waveVector);
-  float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
+  float omega = sqrt((${EARTH_GRAVITY} * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
   omega = floor(omega / uFrequencyStep + 0.5) * uFrequencyStep;
   float angle = omega * uTime;
   vec2 turn = vec2(cos(angle), sin(angle));
