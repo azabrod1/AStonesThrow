@@ -1791,6 +1791,9 @@
       if (pond.airless !== airShown) {
         updateWeather();
         updateWind();
+        // Out to air with a rain chosen: its table may still be on its way, or have failed to come (the pond's holdAir
+        // only warns), so it is asked for as a choice is, with its note and, if it fails, its retry.
+        if (!pond.airless && RAINY.includes(pond.weatherChoice) && !pond.raining) chooseWeather(pond.weatherChoice);
       }
     }
     // The time of day: the shown place's hours on a slider (pond.hours), a

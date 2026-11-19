@@ -53,7 +53,9 @@
 // glances (IMPACT.sheet of its water as spray, thrown as the fan's middle
 // below is, kicked about, and pulsing from step to step as a jet's splash
 // does), big drops now and then (IMPACT.drops a second) and a few stray
-// drops' rings around it (src/dropRings.js). Onset and shutoff ring the
+// drops' rings around it (src/dropRings.js); where there is no air
+// (src/splash.js `airless`: Europa) none is driven under, so no foam, specks,
+// froth or white water. Onset and shutoff ring the
 // water by themselves. A floater in the footprint is shoved along the
 // stream (Rock.knock, the stream's momentum on it, no more than
 // IMPACT.pushCap a step), and the fish are frightened (the caller's
@@ -551,12 +553,14 @@ export class WaterCannon {
       this.water.addSplat({ x: x + Math.cos(angle) * out, z: z + Math.sin(angle) * out, radius: footprint, velocity: -IMPACT.push * speed * dt, rim: IMPACT.rim });
       // Its churn: a stamp of foam each step, each its own size, place and strength (the header).
       // Laid along the way the stream glances on (IMPACT.trail), wider and so thinner the farther: a streak, never a disc.
+      // With no air (src/splash.js `airless`: Europa) none is driven under, so it leaves no foam, specks or white water.
+      const airless = this.splash.airless;
       const onward = random() ** 2, trail = IMPACT.trail * across * onward;
       angle = random() * Math.PI * 2; out = IMPACT.boilReach * radius * Math.sqrt(random()) * (1 + IMPACT.trailWiden * onward);
       const stampRadius = (radius * (IMPACT.boilRadii[0] + (IMPACT.boilRadii[1] - IMPACT.boilRadii[0]) * random()) + 0.01) * (1 + IMPACT.trailWiden * onward);
-      this.water.addFoam?.({ x: x + directionX * trail + Math.cos(angle) * out, z: z + directionZ * trail + Math.sin(angle) * out, radius: stampRadius, amount: Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1), lifetime: IMPACT.boilLife, boil: true });
+      if (!airless) this.water.addFoam?.({ x: x + directionX * trail + Math.cos(angle) * out, z: z + directionZ * trail + Math.sin(angle) * out, radius: stampRadius, amount: Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1), lifetime: IMPACT.boilLife, boil: true });
       // A speck of foam drifting out of it, now and then.
-      if (this.splash.foamSpecks && random() < IMPACT.specks) {
+      if (!airless && this.splash.foamSpecks && random() < IMPACT.specks) {
         angle = random() * Math.PI * 2;
         const drift = IMPACT.speckDrift[0] + (IMPACT.speckDrift[1] - IMPACT.speckDrift[0]) * random();
         this.splash.foamSpecks.spawn(x + Math.cos(angle) * footprint, z + Math.sin(angle) * footprint, Math.cos(angle) * drift, Math.sin(angle) * drift, splashTime, undefined, random);
@@ -567,7 +571,7 @@ export class WaterCannon {
         this.dropRings.add({ x: x + Math.cos(turn) * reach, z: z + Math.sin(turn) * reach, radius: 0.002, fallSpeed: 3 }, splashTime);
       }
       // Its white water heaping up and rolling on.
-      if (this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
+      if (!airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
     }
     // The drops torn off as it glances, off the water or the ice: they go with the fan's middle, kicked about, pulsing from step to step.
     const pulse = IMPACT.pulse[0] + (IMPACT.pulse[1] - IMPACT.pulse[0]) * random();
@@ -705,7 +709,7 @@ export class WaterCannon {
         this.water.addSplat({ x, z, radius: FAN.pockRadius[0] + (FAN.pockRadius[1] - FAN.pockRadius[0]) * random(), velocity: -(FAN.pockPush[0] + (FAN.pockPush[1] - FAN.pockPush[0]) * random()) * strength });
       } else if (draw < FAN.pock + FAN.rings) {
         this.dropRings?.add({ x, z, radius: 0.001 + 0.0015 * random(), fallSpeed: Math.max(tail.velocity[at + 1], 1) }, splashTime);
-      } else {
+      } else if (!this.splash.airless) {   // froth, but where there is no air (above)
         this.water.addFoam?.({ x, z, radius: FAN.frothRadius * wide * (0.6 + 0.8 * random()), amount: FAN.frothAmount * strength, lifetime: FAN.frothLife });
       }
     }

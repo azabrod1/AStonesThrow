@@ -591,6 +591,17 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   for (let step = 0; step < 480; step++) { splash.time = step * STEP; cannon.step(step * STEP, STEP, []); }
   check(cannon.inAir === 0 && handle.state === 'done' && Math.abs(cannon.landings - 48) <= 1 && !cannon.firing && !cannon.active,
     `a 0.2 s squirt lands its 48 parcels and is done (${cannon.landings} landed, ${cannon.inAir} in the air, ${handle.state}${cannon.active ? ', still active' : ''})`);
+  // With no air (src/splash.js `airless`: Europa) nothing is driven under: a squirt leaves no foam and no white water.
+  const churn = (airless) => {
+    let foam = 0, puffs = 0;
+    const own = new WaterCannon({ water: { ...water, addFoam: () => { foam++; return true; } }, splash: { ...splash, airless, whiteWater: { puff: () => { puffs++; } } } });
+    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
+    for (let step = 0; step < 240; step++) own.step(step * STEP, STEP, []);
+    return { foam, puffs };
+  };
+  const inAir = churn(false), inVacuum = churn(true);
+  check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
+    `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
   console.log(`  a step costs ${(1000 * cost / steps).toFixed(2)} µs`);
   check(cost / steps < STEP_COST_MS, `a cannon step costs ${(1000 * cost / steps).toFixed(2)} µs`);
 }

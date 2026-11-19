@@ -121,7 +121,7 @@
 // reckoned at birth.
 import * as THREE from 'three';
 import { GRAVITY, EARTH_GRAVITY, gravityUniform } from './gravity.js';
-import { AIR_DENSITY } from './air.js';
+import { AIR_DENSITY, EARTH_AIR } from './air.js';
 
 export const SPRAY_CAPACITY = 65536;
 export const SPRAY_STRIDE = 16;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2, the wind's drift at birth (x, z) and the burst's kick
@@ -130,7 +130,7 @@ export const SPRAY_LEAST_RADIUS = 0.00005;
 export const SPRAY_MOST_RADIUS = 0.001;  // larger fragments are the CPU's drops
 const MOST_LIFE = 4;                     // s: no sprite flies longer under Earth's gravity; under a weaker one (src/gravity.js) as many times longer as a flight is
 const mostLife = () => MOST_LIFE * (EARTH_GRAVITY / GRAVITY);
-const AIR = { density: 1.2, viscosity: 1.5e-5 };   // kg/m³ and m²/s (kinematic)
+const AIR = { density: EARTH_AIR, viscosity: 1.5e-5 };   // kg/m³ and m²/s (kinematic): Earth's air, as the drag tables are; with none (AIR_DENSITY 0) a parabola
 const WATER_DENSITY = 1000;
 export const COAST = 1.4;                // τ2's share across the water (the header; tools/spray-probe.mjs)
 const RADIUS_STEP = 0.00001;             // m: the tables' radii...

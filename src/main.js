@@ -3502,17 +3502,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Under Earth's gravity whatever the place's (src/gravity.js): its throws are the same throws, and their stone is in
     // the water, its cavity open and its jet up at the moments drawn (WARM_UP), where Europa's would still be in the air.
     // Gravity is a uniform, so the programs are the place's; the place's is back after.
-    // Its air too (src/air.js): a throw into air drags its bubbles and foam under, so their programs are drawn.
-    const placeGravity = GRAVITY, placeAir = AIR_DENSITY;
+    // Its air too (src/air.js): a throw into air drags its bubbles and foam under, so their programs are drawn. And its
+    // ice is a lake's, not a moon's crust with its lead (src/ice.js setVacuum): Frozen at the start (Europa opens so),
+    // the breaker breaks the thin sheet, where a crust would hold and the lead would take it, so the first break at a
+    // frozen place later builds nothing. The ice made whole again after, its lead open (setVacuum), as applyIce left it.
+    const placeGravity = GRAVITY, placeAir = AIR_DENSITY, placeLead = ice.lead;
     setGravity(EARTH_GRAVITY);
     setAirDensity(EARTH_AIR);
     splash.setAirless(false);
+    ice.setVacuum(null);
     try {
       warmUpUnderEarth();
     } finally {
       setGravity(placeGravity);
       setAirDensity(placeAir);
       splash.setAirless(placeAir === 0);
+      ice.setVacuum(placeLead);
     }
   }
   function warmUpUnderEarth() {
@@ -3819,9 +3824,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get birdsOn() { return birdsOn; },
     /** The birds (src/birds.js), as they are posed now: each one's kind, habit, mode and pose; and the draw calls they take. */
     get birds() { return { drawCalls: birdView.drawCalls, birds: birds.report() }; },
-    /** Europa's scenery (src/europaScenery.js), as posed now, and the draw calls it takes. */
     /** Bursts of open water boiling in vacuum since the pond was last cleared (src/boiling.js). */
     get boiling() { return boiling.bursts; },
+    /** Europa's scenery (src/europaScenery.js), as posed now, and the draw calls it takes. */
     get europaScenery() { return { drawCalls: europaSceneryView.drawCalls, ...europaScenery.report() }; },
     /** Puts the place's heron up now, as a splash at (x, z) beside it would (tools/bird-probe.mjs). */
     startleBirds(x, z) { birds.startle(stepsTime, x, z); },
