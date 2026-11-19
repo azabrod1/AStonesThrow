@@ -1051,10 +1051,11 @@ export class BirdPopulation {
     const rise = flapping.bounding ? GRAVITY * flapping.bound[1] ** 2 / 8 + 0.1 : 0;
     const closest = near * 0.9;   // no point of a visit is laid nearer the eye
     const top = group.ceiling === undefined ? CEILING : THREE.MathUtils.degToRad(group.ceiling);   // a place whose home view looks higher keeps its own (BIRDS_BY_PLACE `ceiling`)
+    const ceilingAt = (distance) => EYE_HEIGHT + distance * Math.tan(top) - rise;   // the highest a point this far out is laid
     const at = (bearing, distance, height, free = false) => {
       const radians = THREE.MathUtils.degToRad(bearing);
       const clampedDistance = Math.max(distance, closest);
-      const ceiling = free ? Infinity : EYE_HEIGHT + clampedDistance * Math.tan(top) - rise;
+      const ceiling = free ? Infinity : ceilingAt(clampedDistance);
       points.push([EYE.x + Math.sin(radians) * clampedDistance, Math.min(height, ceiling), EYE.z - Math.cos(radians) * clampedDistance]);
     };
     const { fit } = this;   // drawn in to a narrow frame (OUT's note)
@@ -1089,7 +1090,8 @@ export class BirdPopulation {
         // From the circle's near point, round by its far side (away from where it came in), to its far point.
         const angle = Math.PI * step / 4;
         const towardEye = Math.cos(angle), awaySide = Math.sin(angle);
-        points.push([centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, low + (high - low) * step / 4, centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide]);
+        const x = centreX - aheadX * radius * towardEye - side * rightX * radius * awaySide, z = centreZ - aheadZ * radius * towardEye - side * rightZ * radius * awaySide;
+        points.push([x, Math.min(low + (high - low) * step / 4, ceilingAt(Math.hypot(x - EYE.x, z - EYE.z))), z]);   // kept under the frame's top, as at() keeps a point
       }
       // Out along the circle's far side's line (no nearer than its middle, so it never doubles back).
       const outward = inner + radius * (1 + random());
