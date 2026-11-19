@@ -461,7 +461,17 @@ const SKIES = {
   // Its black sky lights nothing: the light that fills a shadow, lights a splash's sides and greys a frosted mirror
   // is its sunlit ice's, as on the Moon its regolith's (`iceShine`, added to the ambient as a share of its sun: the
   // ice's albedo, 0.65, times its sun's sine, 0.42, over the quarter of a thing's view the ice fills, about).
-  europa: { ownPlace: false, airless: true, iceShine: 0.07, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30, hours: { day: { file: 'europa', label: 'Day' } } },
+  // Its hours (tools/europa-sky.py HOURS) say their own light (`lux`: no formula for Earth's sky holds there): by day its
+  // sun's, 1/27 of Earth's at 5.2 au, 25° up, on level ice; at night Jupiter's, full, 11° up, 0.55% of the sun's.
+  // Its night's ice glows (`glow`: src/shaders/scene.js ICE_CRUST_GLOW; Gudipati et al. 2020); its file is exposed as a
+  // photograph's night is (tools/europa-sky.py NIGHT_EXPOSURE), and darkened here by its `lux` as the eye sees it.
+  europa: {
+    ownPlace: false, airless: true, iceShine: 0.07, builtBy: 'tools/europa-sky.py', shore: 'frost', salt: true, sunAzimuth: 110, sunCap: 0.5, stripAbove: 30,
+    hours: {
+      day: { file: 'europa', label: 'Day', lux: 2000 },
+      night: { file: 'europa_night', label: 'Night', lux: 5, glow: 1 },
+    },
+  },
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
@@ -599,7 +609,8 @@ function adaptedLight(lux) {
  * hour's lux: the Reflecting Pool's floodlit monuments and lamp-lit walks),
  * so its eye keeps its cones and its colours, as a starlit lake's does not.
  */
-function hourLight(measurement, lit = 0) {
+function hourLight(measurement, lit = 0, lux = null) {
+  if (lux !== null) return lux;   // an hour that says its own (`lux`: Europa's, under no sky of Earth's)
   const sunLight = illuminance(measurement.solar?.elevation ?? measurement.sun.elevation);
   return Math.max(lit, lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight);
 }
@@ -1109,7 +1120,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     const facingSun = new THREE.Vector3(Math.cos(facingElevation) * Math.sin(azimuth), Math.sin(facingElevation), -Math.cos(facingElevation) * Math.cos(azimuth));
     const [facingSunX, , facingSunZ] = facing.sun.direction;
     const facingRotation = Math.atan2(facingSunZ, facingSunX) - Math.atan2(facingSun.z, facingSun.x * mirror);
-    const rotation = file === facingFile ? facingRotation : facingRotation + THREE.MathUtils.degToRad(measurement.north - facing.north);
+    // A computed sky's hours (`builtBy`: Europa's) share one frame and measure no north: theirs is the same, 0.
+    const rotation = file === facingFile ? facingRotation : facingRotation + THREE.MathUtils.degToRad((measurement.north ?? 0) - (facing.north ?? 0));
     // The sun: the photo's, or where the true one is when it is down, at
     // DOWN_SUN_ELEVATION; the file's direction turned into the scene's.
     const sunlit = lightOf(measurement) !== 'none';   // the sun or the moon
@@ -1133,7 +1145,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
     const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
     const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
-    const level = (file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit)) / adaptedLight(hourLight(anchor, place.hours[place.anchor ?? firstHour].lit))) * 2 ** (entry.exposure ?? 0);
+    const anchorEntry = place.hours[place.anchor ?? firstHour];
+    const level = (file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit, entry.lux ?? null)) / adaptedLight(hourLight(anchor, anchorEntry.lit, anchorEntry.lux ?? null))) * 2 ** (entry.exposure ?? 0);
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
@@ -1150,7 +1163,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     if (entry.air) clear.air.fromArray(entry.air.horizon).multiplyScalar(scale);
     else clear.air.set(0, 0, 0);
     clear.airDensity = entry.air ? 1 / entry.air.distance : 0;
-    clear.lux = hourLight(measurement, entry.lit);
+    clear.lux = hourLight(measurement, entry.lit, entry.lux ?? null);
     clear.level = level;
 
     const previous = domeUniforms.uPanorama.value;
@@ -1168,7 +1181,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     environment.horizonReady = loadHorizon(file, signal);   // the strip follows the panorama; a superseded load's is dropped
 
     const assets = [panoramaUrl(panoramaFile(entry)), ...new Set([file, anchorFile, facingFile, BALANCE_FILE].map(measurementUrl))];
-    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets });
+    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets, glow: entry.glow ?? 0 });
     return skyName;
   }
 

@@ -493,6 +493,7 @@ export class IceSheet {
     this.refreeze = { ...REFREEZE, dry: FLOOD.dry };   // how soon holes skin over and the wet freezes (setVacuum)
     this.lead = null;            // an airless place's lead (setVacuum), opened whenever the ice is made whole
     this.vacuum = false;         // whether the ice lies under vacuum (setVacuum)
+    this.crust = false;          // and is a moon's crust, which nothing breaks (setVacuum)
     this.pool = null;            // the pool's square ({ minX, minZ, size }) when the water is the pool's, else the lake (setPool)
     this.poolBounds = null;      // its walls' faces (src/basin.js basinBounds)
     this.deck = null;            // the pool's deck as ground (src/pool.js poolGround), round a frozen pool
@@ -538,6 +539,7 @@ export class IceSheet {
       uIceFar: { value: MASK.holeFar },   // the cap a hole's distance's bytes span (fillMask)
       uIcePool: { value: new THREE.Vector4() },   // the pool's square (corner x, z, side) and 1 over a frozen pool, else 0 (setPool)
       uIceCrust: { value: new THREE.Vector4() },   // a place's old crust: its stain's colour and frost's reach (setCrust)
+      uIceGlow: { value: 0 },   // how much its crust glows (setGlow: Europa's night)
       uIceGlaze: { value: FLOOD.glaze },   // B's least once wet (fillMask)
       uIceWet: { value: 0 },   // how wet the rain has made it: src/main.js shares the weather's object
       uSnow: { value: 0 },     // the snow lying on it (SNOW_COVER in src/shaders/scene.js): src/main.js shares the weather's object
@@ -607,10 +609,14 @@ export class IceSheet {
    * from +x toward +z), seed } or null. In vacuum open water boils and freezes over fast (VACUUM), drops wet nothing, and
    * the lead, a crack the ocean wells up into, is open whenever the ice is whole (openLead), boiling, never skinned over:
    * the water welling up keeps it open as it freezes at its edges, as a lead in sea ice is kept open by the sea under it.
+   * And the ice is a moon's crust (`crust`): kilometres thick at about 100 K, so no blow and no weight breaks or cracks
+   * it, whatever the Ice setting's thickness (which only says how it is drawn): what comes down on it lands, skids and
+   * rests, and the lead is the way into the water.
    */
   setVacuum(lead = null) {
     const vacuum = Boolean(lead);
     this.vacuum = vacuum;
+    this.crust = vacuum;
     this.refreeze = vacuum ? { ...REFREEZE, ...VACUUM } : { ...REFREEZE, dry: FLOOD.dry };
     const changed = JSON.stringify(lead) !== JSON.stringify(this.lead);
     this.lead = lead;
@@ -652,6 +658,11 @@ export class IceSheet {
     this.holes.push(hole);
     this.dirty = true;
     return hole;
+  }
+
+  /** How much a crust glows (src/sky.js an hour's `glow`: Europa's night; 0 by day and on a lake): ICE_CRUST_GLOW. */
+  setGlow(glow = 0) {
+    this.uniforms.uIceGlow.value = glow;
   }
 
   /** Whole again: no hole, no crack, dry (but an airless place's lead, open again: setVacuum). */
@@ -884,7 +895,7 @@ export class IceSheet {
       const before = held.entries[index];
       if (same && !(before.rock === entry.rock && before.x === x && before.z === z && before.weight === entry.weight && before.thickness === entry.thickness)) same = false;
     }
-    if (same) return;
+    if (same || this.crust) return;   // nothing weighs a moon's crust through (setVacuum)
     let heaviest = null;
     for (const entry of this.onIce) {
       const { x, z, thickness } = entry;
@@ -1206,6 +1217,7 @@ export class IceSheet {
    * the hole it opens, broke, and the share of its speed it keeps.
    */
   strike(rock, thickness = this.thicknessAt(rock.position.x, rock.position.z)) {
+    if (this.crust) return null;   // a moon's crust (setVacuum): no blow breaks or cracks it
     const random = this.streamFor(rock);
     const blow = this.blow(rock);
     const x = rock.position.x, z = rock.position.z;

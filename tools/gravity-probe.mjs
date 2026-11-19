@@ -39,7 +39,7 @@
 // that in Europa's vacuum (src/air.js AIR_DENSITY 0) the toss is a parabola
 // (v²/2g up, down at the tap), a drop's flight and life its parabola's (on
 // the CPU, and SPRAY_VERTEX has the branch), the ice's lead is open and
-// stays so, drops wet nothing, and the lead boils at src/boiling.js's rate,
+// stays so, a bowling ball's blow breaks no crust, drops wet nothing, and the lead boils at src/boiling.js's rate,
 // inside it, alike run to run, and not at all in air;
 // and that after all this, back under Earth's gravity, every number above
 // that is Earth's is what it was before Europa's was ever set (nothing
@@ -288,6 +288,7 @@ for (const [name, multiplier] of [['medium toss', 1], ['soft toss', 1.18], ['med
   const lead = { x: 0.1, z: -1.25, length: 3.6, width: 1.0, angle: 12, seed: 7 };
   ice.setVacuum(lead);
   check(ice.holes.length === 1 && ice.holes[0].lead && ice.holeAt(0, -1.3) === ice.holes[0], 'in vacuum the ice has no open lead');
+  check(ice.strike({ position: new THREE.Vector3(1, 0, -2.5), velocity: new THREE.Vector3(0, -20, 0), mass: 7, radius: 0.11, collisionRadius: 0.11 }) === null && ice.holes.length === 1, 'a blow breaks a moon\'s crust');
   ice.wetSpot(1, -2.5, 0.05);
   check(!ice.wetBox, 'in vacuum a drop wets the ice');
   for (let time = 0; time <= 120; time += 0.25) ice.setTime(time);

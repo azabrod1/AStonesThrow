@@ -313,7 +313,7 @@ import { DropRings } from './dropRings.js';
 import { PLACES, placeShore, waterForPlace, placeAirless } from './places.js';
 import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour, skyBackdrop } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, setShoreGlow, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime, placeFlightTime } from './rock.js';
 import { GRAVITY, EARTH_GRAVITY, setGravity } from './gravity.js';
 import { AIR_DENSITY, EARTH_AIR, setAirDensity } from './air.js';
@@ -1761,6 +1761,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
+    ice.setGlow(environment.glow ?? 0);   // Europa's night ice glows (src/sky.js `glow`), and its frost beach
+    setShoreGlow(environment.glow ?? 0);
     applySunLights();
     splash.updateLighting();
     viewChanged = true;

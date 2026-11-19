@@ -23,6 +23,9 @@ import { VISITOR_WATER } from './visitor.js';
 // (uHazeDensity 3/visibility: a dark object at the visibility keeps 5% of its
 // contrast). The dome fades the same way, to the distance its land stands
 // at. With no rain the density is 0 and the colour passes untouched.
+// A crust's glow at night (Europa's: ICE_CRUST_GLOW, the frost beach's uShoreGlow) against its light on level ice:
+// tools/europa-sky.py GLOW, 0.28 of it, green-blue (Gudipati et al. 2020), as the panorama's far ice glows.
+const CRUST_GLOW = [0.084, 0.266, 0.224];
 export const HAZE = /* glsl */`
 uniform vec3 uHazeColor;
 uniform float uHazeDensity;
@@ -107,7 +110,10 @@ vec3 snowShade(vec2 point) {
 // dark leads, and its frost a little warm, stained along long bands (ICE_CRUST_LINEA).
 // Its ice is blue where the frost on it is thin (ICE_CRUST_THIN) and in its
 // leads (ICE_CRUST_LEAD), and its shade is lit blue by the sunlit ice about it
-// (ICE_CRUST_FILL): under a black sky nothing else lights it.
+// (ICE_CRUST_FILL): under a black sky nothing else lights it. At night
+// (uIceGlow: Europa's) its frost glows green-blue under the radiation Jupiter
+// drives into it (ICE_CRUST_GLOW: its own light, not light it gives back),
+// dimmer along its stained bands (salts dim it: Gudipati et al. 2020).
 //
 // Wet (the flood round a hole and the splash's drops, src/ice.js; the rain's
 // film), the ice is darker, its white ice greyed, and smooth: a mirror. Once
@@ -134,6 +140,7 @@ uniform float uIceGlaze;       // the mask's B where it was once wet and is dry 
 uniform float uIceWet;         // how wet the rain has made it (src/main.js WEATHERS)
 uniform vec4 uIcePool;         // a frozen pool's corner (x, z) and side (m), w 1; w 0 over a lake
 uniform vec4 uIceCrust;        // a place's old crust (src/places.js iceCrust): its stain's colour and how far frost covers it, 0 to 1
+uniform float uIceGlow;        // how much a crust glows at night (src/ice.js setGlow: Europa's), 0 by day
 #define ICE_INDEX 1.31
 #define ICE_CRACK_JAG 0.0005           // m: a crack's own roughness, finer than its points (ICE_CRACK_FRAGMENT)
 `;
@@ -165,6 +172,8 @@ ${ICE_UNIFORMS}
 #define ICE_CRUST_FILL 0.22            // the light the sunlit ice round about throws into its shade, against level ice's...
 #define ICE_CRUST_FILL_TINT vec3(0.62, 0.80, 1.0)   // ...blue, off ice onto ice (no air: nothing else lights a shadow)
 #define ICE_CRUST_LEAD vec3(0.05, 0.22, 0.42)  // what a bare lead's ice sends back of the sun's light: deep blue over the black sea
+#define ICE_CRUST_NIGHT_GLINT 0.1      // the share of a point sun's glint left on a crust lit by Jupiter's disc (iceSurface)
+#define ICE_CRUST_GLOW vec3(${CRUST_GLOW.join(', ')})   // a night crust's glow against its light on level ice (CRUST_GLOW)
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
 
@@ -1980,12 +1989,17 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
   body = mix(body, scattered * 1.15, face * clear);
   vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
-  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x;
+  // A crust's night is lit by Jupiter, a disc 12° across, not a point: its glint on the frost is spread to a sheen the
+  // frost's light already holds, so only a share is left (ICE_CRUST_NIGHT_GLINT).
+  float glintShare = mix(1.0, ICE_CRUST_NIGHT_GLINT, uIceGlow * uIceCrust.w);
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x * glintShare;
   // An old edge in new ice: a faint dark seam.
   color = mix(color, under * 0.7, 0.5 * seam);
   // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).
   float snow = snowOnIce(vWorld.xz, footprint) * (1.0 - newIce) * (1.0 - wet);
   if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * light, snow);
+  // A crust's night glow (uIceGlow): its frost's, not its open water's or its wet's.
+  color += uIceGlow * uIceCrust.w * ICE_CRUST_GLOW * dot(levelSun, vec3(0.2126, 0.7152, 0.0722)) * look.white * (1.0 - 0.85 * stain) * (1.0 - wet);
   return color;
 }
 
@@ -3317,6 +3331,7 @@ uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform samplerCube uLandCube;   // the land before the haze, for the grass (src/sky.js landCube)...
 uniform float uLandLevel;        // ...at this level of its mip chain
+uniform float uShoreGlow;        // how much a frost beach glows at night (src/pondFloor.js setShoreGlow: Europa's), 0 by day
 uniform vec4 uShoreLook;         // the place's shore (SHORE_LOOKS): the pebbles' share near the water, their size (times PEBBLE_RADII), the tufts' share (times TUFT_SHARE), the wrack's strength
 uniform vec2 uShoreMore;         // ...and how far inland the grass comes (times GRASS_FROM and GRASS_TO), the cracks of a dried flat (0 to 1)
 ${GARDEN_SHADE}
@@ -3655,6 +3670,8 @@ void main() {
   if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen), snow);
   // The haze by its distance (HAZE), but on the far land, which is the photo's, hazed already.
   if (uHazeDensity > 0.0) color = mix(color, uHazeColor, (1.0 - exp(-uHazeDensity * length(toLand))) * (1.0 - far));
+  // A frost beach's night glow (uShoreGlow), as its ice's (CRUST_GLOW): the far land, the photo's, glows in it already.
+  color += uShoreGlow * vec3(${CRUST_GLOW.join(', ')}) * dot(uSunIrradiance * max(uSunDir.y, 0.0), vec3(0.2126, 0.7152, 0.0722)) * (1.0 - far) * (1.0 - snow);
   gl_FragColor = vec4(color, 1.0);
 }
 `;

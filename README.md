@@ -1273,8 +1273,20 @@ The curated locations include:
 - **Europa** (`?sky=europa`; `?sky=jupiter` too): Jupiter's ice moon. No one has
   photographed its surface from the ground, so its sky is put together from
   spacecraft images (`tools/europa-sky.py`, numpy, public-domain sources it
-  downloads and checks): a black sky with stars and the Milky Way, the small,
-  far sun (a tenth of a degree across) behind the eye's right, Jupiter low
+  downloads and checks), in two hours.
+  - **Day:** a black sky without stars (an eye or camera exposed for sunlit
+    ice sees none, as no Apollo photograph of the sunlit Moon shows any).
+    The small, far sun (a tenth of a degree across) is behind the eye's
+    right, Jupiter low ahead and gibbous.
+  - **Night:** the sun is down behind Europa, opposite Jupiter, so Jupiter is
+    full and lights the ice alone, with 0.55% of the sun's light (about
+    5 lux). The ice glows green-blue where it is clean and less along the
+    salty lineae, as Gudipati et al. 2020 found ice under Jupiter's
+    radiation does (the near crust and frost beach too: `glow`, ICE_CRUST_GLOW
+    and `uShoreGlow`). The stars and the Milky Way are out.
+
+  Each hour says its own light (`lux`: Earth's sky formula holds nowhere
+  there). The rest of the sky: Jupiter low
   ahead as Cassini mapped it (PIA07782) on a globe 12.2° by 11.4°, gibbous in
   that sun with its belts and Great Red Spot, and ice to a near horizon (2.2
   km off for an eye 1.5 m up): Conamara Chaos as Galileo imaged it at 9 m a
@@ -1298,7 +1310,11 @@ The curated locations include:
   ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
   `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
   bands, blue where the frost is thin and in the bare leads between (where
-  alone Jupiter is mirrored), its shade lit blue, as the far ice's is. No birds (no air): its
+  alone Jupiter is mirrored), its shade lit blue, as the far ice's is. It is
+  a moon's crust, kilometres thick at about 100 K, so nothing thrown or set
+  on it breaks or cracks it, whatever the Ice setting's thickness, which only
+  sets how it is drawn (`crust`, `setVacuum` in `src/ice.js`). What comes down
+  on it lands, skids and rests, and the lead is the way into the ocean. No birds (no air): its
   plume and probe instead (below). With no
   air it has no weather and no wind (its sky's `airless`, `placeAirless` in
   `src/places.js`): there the weather is held clear and the wind calm,
@@ -1375,8 +1391,9 @@ M=--at=38.8893,-77.0464
 node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2026-09-20T10:38:00-04:00 $M
 node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2026-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
 node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2026-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
-# Europa's (computed by tools/europa-sky.py: no time or place to give)
+# Europa's (computed by tools/europa-sky.py: no time or place to give; its hours share one frame, no north)
 node tools/sky-probe.mjs assets/sky/europa_2k.hdr
+node tools/sky-probe.mjs assets/sky/europa_night_2k.hdr --light=80,11,7   # its light is Jupiter's disc, not the brightest star
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -2152,10 +2169,10 @@ farther out, so it rises into the view rather than filling its corner.
   and `credits.html` from the credits `birds.json` and `models.json`
   record; rerun it after either bird tool (`--check`, in `npm test`, fails
   if either file is not as it would write it).
-- `python3 tools/europa-sky.py [--preview=file.png] [--draft]` computes
-  Europa's sky (its opening comment says how): `assets/sky/europa_2k.hdr`
-  and the 8k file its horizon strip is cut from (`europa_8k.hdr`, never
-  committed); then `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify`
+- `python3 tools/europa-sky.py [--hour=day|night] [--preview=file.png] [--draft]`
+  computes Europa's sky at an hour (its opening comment and HOURS say how):
+  `assets/sky/europa_2k.hdr` (`europa_night_2k.hdr` at night) and the 8k file
+  its horizon strip is cut from (`europa_8k.hdr`, never committed); then `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify`
   on it, as for any sky. Its sources (Cassini's Jupiter map, Galileo's
   Conamara mosaic: one member of USGS's 1.5 GB zip, fetched by byte range)
   are downloaded once into `tools/.europa-sources/` (gitignored) and checked

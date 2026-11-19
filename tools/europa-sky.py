@@ -28,8 +28,9 @@ public domain (SOURCES; credited in CREDITS.md and credits.html):
   degrees across its equator, 11.4 pole to pole, as from Europa), its equator through its middle as from a moon in
   its plane, the Great Red Spot turned toward the eye; lit by the same sun (so as gibbous as the sun's place makes
   it, its night side black against the stars), darkened to its limb as a cloud deck is (Minnaert's law).
-- The sky is black: stars (a seeded field down to magnitude STAR_FAINTEST, each in one pixel of the 8k), the Milky
-  Way, and the Sun small (5.2 au: a disc 0.1 degrees across) and white.
+- The sky is black: by day the Sun small (5.2 au: a disc 0.1 degrees across) and white, and no stars; at night (HOURS:
+  the sun down, Jupiter full, the ice lit by it and glowing) stars (a seeded field down to magnitude STAR_FAINTEST, each
+  in one pixel of the 8k) and the Milky Way. --hour picks the hour.
 
 The frame: the file's columns run as tools/sky-probe.mjs says (azimuth 360·u from the left edge, turning right).
 The sun stands at SUN `azimuth`, the scene's ahead SUN_AZIMUTH to its left (src/sky.js `europa` turns the panorama
@@ -210,6 +211,32 @@ SUN_PLACE = ((round(SUN['azimuth'] / 360 * WIDTH / DOWN - 0.5) + 0.5) * 360 / (W
 SUN_DIRECTION = direction(*SUN_PLACE)
 SUN_LIGHT = np.array(SUN['colour']) * SUN['irradiance']
 
+# The hours (src/sky.js SKIES.europa hours; --hour): the land is laid out by the day's sun (SUN_DIRECTION: the mosaic
+# turned so its sun is that one), whatever the hour, so it keeps still between them; what changes is what lights it.
+#   day: the sun, SUN, 25 degrees up behind the eye's right. No stars and no Milky Way: an eye (or a camera) exposed
+#     for sunlit ice sees none, as no Apollo photograph of the sunlit Moon shows any.
+#   night: the sun down behind Europa, opposite Jupiter, so Jupiter is full; the ice lit by Jupiter alone (its light
+#     integrated over its disc as drawn: jupiter_light), no cast shadows (the mosaic's relief is shadowed along its rows,
+#     its own sun's way, not Jupiter's), its photo's shading softened to NIGHT_CONTRAST of the day's (that was its
+#     sun's); and the ice glows: Gudipati et al. 2020 (Nature Astronomy) found ice under the electrons Jupiter's field
+#     drives into Europa's night side glow, green and blue, dimmer where it holds salts such as the lineae's. The glow
+#     here is GLOW['share'] of what Jupiter-lit frost gives back, its colour GLOW['colour'], the stain's share of it
+#     GLOW['stained']. The stars and the Milky Way are out: an eye adapted to Jupiter's light sees them.
+HOURS = {
+    'day': {'file': 'europa', 'sun': SUN_PLACE, 'stars': False, 'glow': 0.0},
+    'night': {'file': 'europa_night', 'sun': None, 'stars': True, 'glow': 1.0},
+}
+NIGHT_CONTRAST = 0.35
+# The night's file is exposed as a camera would expose it (the hours of a photographed place are, src/sky.js Light by
+# the hour): its light brought up so Jupiter-lit level ice gives back NIGHT_EXPOSURE of what sunlit level ice does by
+# day; src/sky.js then darkens it as an eye adapted to its 5 lux sees it (`lux`).
+NIGHT_EXPOSURE = 0.5
+GLOW = {'share': 0.28, 'colour': np.array([0.30, 0.95, 0.80]), 'stained': 0.85}
+HOUR = HOURS['day']
+LIGHT_DIRECTION = SUN_DIRECTION   # what lights the ground at the hour (set_hour), and how strongly
+LIGHT = SUN_LIGHT
+TRUE_SUN = SUN_DIRECTION          # where the sun is at the hour: Jupiter's phase, the disc and its glare
+
 
 # ---------------------------------------------------------------------------------------------------------------
 # The ground: Conamara Chaos.
@@ -242,27 +269,38 @@ def load_ground():
     # Its light and shade: the image's own below LIGHT_SCALE pixels (its sun is the scene's), and above it the relief's
     # under the scene's sun, shadows and all (the image's is too faint for the relief photoclinometry makes of it).
     near = blur(filled, LIGHT_SCALE)
-    brightness = (filled / near) ** CONTRAST * np.sqrt(near / np.median(filled)) * lighting(blur(heights, LIGHT_SCALE // 2))
+    contrast = CONTRAST * (1.0 if HOUR['sun'] else NIGHT_CONTRAST)
+    brightness = (filled / near) ** contrast * np.sqrt(near / np.median(filled)) * lighting(blur(heights, LIGHT_SCALE // 2))
     albedo = blur(filled, 12) / np.median(local)  # a hundred metres' mean: the albedo, its shading averaged out
     stain = 0.75 * smoothstep(1.0, 0.68, albedo)   # the darker matrix and lineae: frost all but hides some of it
     return heights, brightness.astype(np.float32), stain.astype(np.float32)
 
 
+def image_axes():
+    """The mosaic's east and north on the ground (unit x, z): its sun (IMAGE_SUN north of its east) on the day's."""
+    sun = math.atan2(SUN_DIRECTION[2], SUN_DIRECTION[0])
+    east = sun + math.radians(IMAGE_SUN)
+    north = east - math.pi / 2       # turning right is clockwise from above: north is a right angle left of east
+    return (math.cos(east), math.sin(east)), (math.cos(north), math.sin(north))
+
+
 def lighting(heights):
-    """The relief's light under the scene's sun over level ground's (Lambert's), and its shadows: the sun stands
-    IMAGE_SUN north of the mosaic's east, so near enough along its rows, and a pixel is in shadow where any east of it
-    on its row stands over the line to the sun."""
+    """The relief's light under the hour's light (LIGHT_DIRECTION) over level ground's (Lambert's), and by day its
+    shadows: the sun stands IMAGE_SUN north of the mosaic's east, so near enough along its rows, and a pixel is in
+    shadow where any east of it on its row stands over the line to the sun. At night (Jupiter's light, not along the
+    rows) no shadows are cast."""
     across = PIXEL * math.cos(math.radians(LATITUDE))
-    rise = SUN_DIRECTION[1]
+    rise = LIGHT_DIRECTION[1]
     level = math.sqrt(1 - rise * rise)
-    toward = np.array([level * math.cos(math.radians(IMAGE_SUN)), level * math.sin(math.radians(IMAGE_SUN)), rise])  # east, north, up
+    (east_x, east_z), (north_x, north_z) = image_axes()
+    toward = np.array([LIGHT_DIRECTION[0] * east_x + LIGHT_DIRECTION[2] * east_z, LIGHT_DIRECTION[0] * north_x + LIGHT_DIRECTION[2] * north_z, rise])  # east, north, up
     east = np.gradient(heights, axis=1) / across
     north = -np.gradient(heights, axis=0) / PIXEL
     lambert = np.clip((-east * toward[0] - north * toward[1] + toward[2]) / np.sqrt(1 + east * east + north * north), 0, None) / rise
     climb = heights - np.arange(heights.shape[1])[None, :] * across * rise / level   # the height less the sun's line's
     beyond = np.maximum.accumulate(climb[:, ::-1], axis=1)[:, ::-1]
     beyond = np.concatenate([beyond[:, 1:], np.full((heights.shape[0], 1), -np.inf)], axis=1)
-    lit = smoothstep(4.0, -2.0, beyond - climb)
+    lit = smoothstep(4.0, -2.0, beyond - climb) if HOUR['sun'] else 1.0
     return lambert * (0.06 + 0.94 * lit)
 
 
@@ -292,11 +330,7 @@ class Ground:
         self.heights, self.brightness, self.stain = load_ground()
         self.rows, self.columns = self.heights.shape
         # The image's east and north on the ground: its sun (IMAGE_SUN north of east) on the scene's.
-        sun = math.atan2(SUN_DIRECTION[2], SUN_DIRECTION[0])
-        east = sun + math.radians(IMAGE_SUN)
-        north = east - math.pi / 2       # turning right is clockwise from above: north is a right angle left of east
-        self.east = (math.cos(east), math.sin(east))
-        self.north = (math.cos(north), math.sin(north))
+        self.east, self.north = image_axes()
         self.across = PIXEL * math.cos(math.radians(LATITUDE))
         level = self.sample(self.heights, *self._pixel(np.zeros(1), np.zeros(1)), cubic=True)[0]
         self.heights -= level
@@ -374,8 +408,8 @@ class Ground:
                 continue
             if gradient:
                 step = wavelength * 0.15
-                value = (noise(x + SUN_DIRECTION[0] * step, z + SUN_DIRECTION[2] * step, wavelength, octave)
-                         - noise(x - SUN_DIRECTION[0] * step, z - SUN_DIRECTION[2] * step, wavelength, octave)) / (2 * step)
+                value = (noise(x + LIGHT_DIRECTION[0] * step, z + LIGHT_DIRECTION[2] * step, wavelength, octave)
+                         - noise(x - LIGHT_DIRECTION[0] * step, z - LIGHT_DIRECTION[2] * step, wavelength, octave)) / (2 * step)
             else:
                 value = noise(x, z, wavelength, octave)
             total += amplitude * fade * value
@@ -393,7 +427,7 @@ class Ground:
         base_x, base_z = slope(self.chaos)
         crag_x, crag_z = slope(lambda at_x, at_z: self.crags(at_x, at_z, distance))
         def lambert(along_x, along_z):
-            return (-along_x * SUN_DIRECTION[0] + SUN_DIRECTION[1] - along_z * SUN_DIRECTION[2]) / np.sqrt(1 + along_x ** 2 + along_z ** 2)
+            return (-along_x * LIGHT_DIRECTION[0] + LIGHT_DIRECTION[1] - along_z * LIGHT_DIRECTION[2]) / np.sqrt(1 + along_x ** 2 + along_z ** 2)
         whole_x, whole_z = base_x + crag_x, base_z + crag_z
         lit = lambert(whole_x, whole_z)
         crag_light = np.clip(np.maximum(lit, 0) / np.maximum(lambert(base_x, base_z), 0.05), 0.0, 2.5)
@@ -403,16 +437,22 @@ class Ground:
         # Fresh frost about the eye (the hollow refrozen): its shading lightened toward level ice.
         hollow = smoothstep(BASIN['flat'] * 1.2, BASIN['flat'] * 0.5, np.hypot(x, z))
         brightness = (brightness + (1.0 - brightness) * 0.6 * hollow) * crag_light
-        horizontal = math.hypot(SUN_DIRECTION[0], SUN_DIRECTION[2])
+        horizontal = math.hypot(LIGHT_DIRECTION[0], LIGHT_DIRECTION[2])
         frost = np.ones_like(x)
         near = distance < MICRO_REACH
         if near.any():
             slope = self.frost(x[near], z[near], distance[near], gradient=True) / horizontal
-            frost[near] = np.clip(1.0 + slope * horizontal / SUN_DIRECTION[1], 0.15, 2.2)
+            frost[near] = np.clip(1.0 + slope * horizontal / LIGHT_DIRECTION[1], 0.15, 2.2)
         light = brightness * frost
         facing_up = 1 / np.sqrt(1 + whole_x ** 2 + whole_z ** 2)
         fill = FILL['share'] * (0.55 + 0.45 * facing_up)
-        return albedo * (light[:, None] + fill[:, None] * FILL['colour'][None, :] * albedo) * SUN_LIGHT[None, :] * SUN_DIRECTION[1] / math.pi
+        level = LIGHT[None, :] * LIGHT_DIRECTION[1] / math.pi   # level white ice's radiance under the hour's light
+        radiance = albedo * (light[:, None] + fill[:, None] * FILL['colour'][None, :] * albedo) * level
+        if HOUR['glow']:
+            # Its glow (HOURS: night), dimmer where it holds salts (the stain), its own light, not the light it gives back.
+            glow = GLOW['share'] * HOUR['glow'] * (1 - GLOW['stained'] * stain)
+            radiance = radiance + glow[:, None] * GLOW['colour'][None, :] * (level @ np.array([0.2126, 0.7152, 0.0722]))[:, None]
+        return radiance
 
 
 def noise(x, z, wavelength, salt):
@@ -556,7 +596,7 @@ def jupiter(directions, jupiter_map):
     colour = ((jupiter_map[v0, u0] * (1 - fu) + jupiter_map[v0, u1] * fu) * (1 - fv)
               + (jupiter_map[v0 + 1, u0] * (1 - fu) + jupiter_map[v0 + 1, u1] * fu) * fv)
     # Lit as a cloud deck is (Minnaert's law): darkened to the limb and softly to the terminator.
-    incidence = normal @ SUN_DIRECTION
+    incidence = normal @ TRUE_SUN
     emergence = np.clip(-(normal * directions[hit]).sum(-1), 0.02, 1.0)
     k = JUPITER['minnaert']
     lit = np.clip(incidence, 0, None) ** k * emergence ** (k - 1) * smoothstep(-0.02, 0.05, incidence)
@@ -626,16 +666,36 @@ def pixel_solid_angle(row, width, height):
 
 
 def render_sky():
-    """The sky alone, the whole 8k: the Milky Way, the sun's glare and disc, the stars, and Jupiter."""
+    """The sky alone, the whole 8k: the Milky Way and the stars (at night: HOURS), the sun's glare and disc (by day), and
+    Jupiter."""
     image = np.zeros((HEIGHT, WIDTH, 3), np.float32)
-    # The stars, each its light over its own pixel's solid angle: one 8k pixel, crisp in the strip.
-    star_directions, star_light = star_field()
-    elevation = np.arcsin(np.clip(star_directions[:, 1], -1, 1))
-    column = np.floor((np.arctan2(star_directions[:, 2], star_directions[:, 0]) / (2 * math.pi) + 0.5) * WIDTH).astype(np.int64) % WIDTH
-    row = np.clip(np.floor((math.pi / 2 - elevation) / math.pi * HEIGHT).astype(np.int64), 0, HEIGHT - 1)
     points = np.zeros((HEIGHT, WIDTH, 3), np.float32)
-    np.add.at(points, (row, column), (star_light / pixel_solid_angle(row, WIDTH, HEIGHT)[:, None]).astype(np.float32))
-    # The sun's disc, 16 x 16 samples a pixel about it.
+    if HOUR['stars']:
+        # The stars, each its light over its own pixel's solid angle: one 8k pixel, crisp in the strip.
+        star_directions, star_light = star_field()
+        elevation = np.arcsin(np.clip(star_directions[:, 1], -1, 1))
+        column = np.floor((np.arctan2(star_directions[:, 2], star_directions[:, 0]) / (2 * math.pi) + 0.5) * WIDTH).astype(np.int64) % WIDTH
+        row = np.clip(np.floor((math.pi / 2 - elevation) / math.pi * HEIGHT).astype(np.int64), 0, HEIGHT - 1)
+        np.add.at(points, (row, column), (star_light / pixel_solid_angle(row, WIDTH, HEIGHT)[:, None]).astype(np.float32))
+    if HOUR['sun']:
+        sun_disc(points)
+    columns = np.arange(WIDTH)
+    for start in range(0, HEIGHT, 128):
+        rows = np.arange(start, min(start + 128, HEIGHT))
+        grid_rows, grid_columns = np.meshgrid(rows, columns, indexing='ij')
+        directions = pixel_directions(grid_rows.ravel().astype(float), grid_columns.ravel().astype(float), WIDTH, HEIGHT)
+        sky = points[rows].reshape(-1, 3).astype(np.float64)
+        if HOUR['stars']:
+            sky = sky + milky_way(directions)
+        if HOUR['sun']:
+            sky = sky + sun_glare(directions)
+        image[rows] = sky.reshape(len(rows), WIDTH, 3)
+    jupiter_disc(image)
+    return image
+
+
+def sun_disc(points):
+    """The sun's disc into `points`, 16 x 16 samples a pixel about it."""
     sun_u = (math.atan2(SUN_DIRECTION[2], SUN_DIRECTION[0]) / (2 * math.pi) + 0.5) * WIDTH
     sun_v = (math.pi / 2 - math.asin(SUN_DIRECTION[1])) / math.pi * HEIGHT
     sun_radius = math.radians(SUN['radius'])
@@ -648,14 +708,10 @@ def render_sky():
             inside = np.arccos(np.clip(sub @ SUN_DIRECTION, -1, 1)) < sun_radius
             points[sun_row, sun_column % WIDTH] = 0
             points[sun_row, sun_column % WIDTH] += disc_radiance * inside.mean()
-    columns = np.arange(WIDTH)
-    for start in range(0, HEIGHT, 128):
-        rows = np.arange(start, min(start + 128, HEIGHT))
-        grid_rows, grid_columns = np.meshgrid(rows, columns, indexing='ij')
-        directions = pixel_directions(grid_rows.ravel().astype(float), grid_columns.ravel().astype(float), WIDTH, HEIGHT)
-        sky = milky_way(directions) + sun_glare(directions) + points[rows].reshape(-1, 3)
-        image[rows] = sky.reshape(len(rows), WIDTH, 3)
-    # Jupiter, 4 x 4 rays a pixel over the pixels about its disc: its limb anti-aliased, its map's detail averaged.
+
+
+def jupiter_disc(image):
+    """Jupiter into `image`, 4 x 4 rays a pixel over the pixels about its disc: its limb anti-aliased, its map's detail averaged."""
     jupiter_map = load_jupiter()
     reach = math.radians(JUPITER['radius'] + 0.5)
     centre_row = (math.pi / 2 - math.asin(J_CENTRE[1])) / math.pi * HEIGHT
@@ -676,7 +732,45 @@ def render_sky():
     wrapped = columns % WIDTH
     behind = image[rows[:, None], wrapped[None, :]]
     image[rows[:, None], wrapped[None, :]] = behind * (1 - covered[..., None]) + total
-    return image
+
+
+def jupiter_light():
+    """Jupiter's light on a surface facing it (irradiance, RGB, the sun's units): its radiance as drawn, summed over its
+    disc's solid angle (a grid of rays 0.02 degrees apart over the square about it)."""
+    jupiter_map = load_jupiter()
+    reach = math.radians(JUPITER['radius'] + 0.3)
+    step = math.radians(0.02)
+    offsets = np.arange(-reach, reach, step) + step / 2
+    across = np.cross(J_CENTRE, np.array([0.0, 1.0, 0.0]))
+    across /= np.linalg.norm(across)
+    up = np.cross(across, J_CENTRE)
+    grid_a, grid_b = np.meshgrid(offsets, offsets, indexing='ij')
+    directions = J_CENTRE[None, :] + grid_a.ravel()[:, None] * across[None, :] + grid_b.ravel()[:, None] * up[None, :]
+    directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
+    radiance, hit = jupiter(directions, jupiter_map)
+    return radiance.sum(0) * step * step
+
+
+def hour_exposure():
+    """How much the hour's file is brought up (NIGHT_EXPOSURE): 1 by day; at night the sun's light on level ice over
+    Jupiter's, times NIGHT_EXPOSURE."""
+    if HOUR['sun']:
+        return 1.0
+    luminance = np.array([0.2126, 0.7152, 0.0722])
+    return NIGHT_EXPOSURE * (SUN_LIGHT @ luminance) * SUN_DIRECTION[1] / ((LIGHT @ luminance) * LIGHT_DIRECTION[1])
+
+
+def set_hour(name):
+    """Puts hour `name` (HOURS) in force: what lights the ground, and where the sun is."""
+    global HOUR, LIGHT_DIRECTION, LIGHT, TRUE_SUN
+    HOUR = HOURS[name]
+    if HOUR['sun']:
+        TRUE_SUN = direction(*HOUR['sun'])
+        LIGHT_DIRECTION, LIGHT = TRUE_SUN, SUN_LIGHT
+    else:
+        TRUE_SUN = -J_CENTRE                 # behind Europa, opposite Jupiter: Jupiter full
+        LIGHT_DIRECTION, LIGHT = J_CENTRE, jupiter_light()
+        print(f'night: Jupiter lights the ice with {LIGHT @ np.array([0.2126, 0.7152, 0.0722]) / SUN_LIGHT.mean():.4f} of the sun\'s light, from {math.degrees(math.asin(J_CENTRE[1])):.1f} degrees up')
 
 
 def render():
@@ -756,6 +850,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--preview', help='write a tone-mapped PNG of the 2k panorama here')
     parser.add_argument('--draft', action='store_true', help='render the 2k alone, one ray a column, for a quick look (writes only the preview)')
+    parser.add_argument('--hour', choices=sorted(HOURS), default='day', help='the hour to render (HOURS): its file is HOURS[hour].file')
     arguments = parser.parse_args()
     if arguments.draft and not arguments.preview:
         parser.error('--draft writes only the preview: give --preview=file.png')
@@ -763,14 +858,16 @@ def main():
     if arguments.draft:
         global WIDTH, HEIGHT, DOWN, SUB
         WIDTH, HEIGHT, DOWN, SUB = 2048, 1024, 1, 1
-    image = render()
+    set_hour(arguments.hour)
+    image = render() * hour_exposure()
     if arguments.draft:
         preview(image, arguments.preview)
         return
     small = image.reshape(HEIGHT // DOWN, DOWN, WIDTH // DOWN, DOWN, 3).mean(axis=(1, 3))
-    write_hdr(os.path.join(SKY, 'europa_8k.hdr'), image)
-    write_hdr(os.path.join(SKY, 'europa_2k.hdr'), small)
-    print(f'wrote europa_8k.hdr and europa_2k.hdr ({time.time() - started:.0f} s)')
+    name = HOUR['file']
+    write_hdr(os.path.join(SKY, f'{name}_8k.hdr'), image)
+    write_hdr(os.path.join(SKY, f'{name}_2k.hdr'), small)
+    print(f'wrote {name}_8k.hdr and {name}_2k.hdr ({time.time() - started:.0f} s)')
     if arguments.preview:
         preview(small, arguments.preview)
 

@@ -171,6 +171,7 @@ const bedDetailUniform = { value: new THREE.Vector2(1, 1) };   // grain and silt
 const bedTintUniform = { value: new THREE.Vector4(1, 1, 1, 0) };   // FLOOR_SAND's uBedTint: the tint, and the grey share in w
 const shoreLookUniform = { value: new THREE.Vector4(0.3, 1, 1, 1) };   // LAND_FRAGMENT's uShoreLook...
 const shoreMoreUniform = { value: new THREE.Vector2(1, 0) };          // ...and uShoreMore
+const shoreGlowUniform = { value: 0 };   // LAND_FRAGMENT's uShoreGlow (setShoreGlow)
 /** The shore look in force (SHORE_LOOKS by name; 'sand' for one not there): the bed's tint and the beach's uniforms. */
 export function setShoreLook(name) {
   const look = SHORE_LOOKS[name] ?? SHORE_LOOKS.sand;
@@ -575,6 +576,7 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       uBedTint: bedTintUniform,       // the place's shore look (setShoreLook)...
       uShoreLook: shoreLookUniform,
       uShoreMore: shoreMoreUniform,
+      uShoreGlow: shoreGlowUniform,
       uSunDir: { value: lighting.sunDirection },
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
@@ -597,4 +599,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
   const mesh = new THREE.Mesh(koi ? koiLandGeometry(backdrop) : lagoon ? new THREE.BufferGeometry() : landGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
+}
+
+/** How much a frost beach glows at night (src/sky.js an hour's `glow`: Europa's night; 0 by day): LAND_FRAGMENT's uShoreGlow. */
+export function setShoreGlow(glow = 0) {
+  shoreGlowUniform.value = glow;
 }
