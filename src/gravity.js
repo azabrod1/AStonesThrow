@@ -25,9 +25,8 @@
 // calm: src/places.js placeAirless),
 // the ice's flotation and its holes' rims (src/ice.js), the fish's view of
 // what falls (src/fish.js), the birds' (src/birds.js), the water cannon and
-// its churn (src/waterCannon.js, src/shaders/whiteWater.js). The air is
-// still Earth's everywhere (the drag on what flies: src/rock.js, src/spray.js,
-// src/splash.js), Europa's too. What keeps
+// its churn (src/waterCannon.js, src/shaders/whiteWater.js). The air is the
+// place's too (src/air.js: none at Europa), set beside it. What keeps
 // Earth's, EARTH_GRAVITY by name: what only wind and weather make (the
 // gale's sea, src/galeWaves.js, and the rain's splashes and rings,
 // src/shaders/rain.js and assets/rain/), which only air brings, and the

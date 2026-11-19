@@ -318,7 +318,9 @@ void main() {
 // of a few drops is a sample of them and spreads by the share
 // 1 − e^(−(weight − 1) / PUFF_BLUR_DROPS) of that (src/spray.js says why),
 // and that share of its glints is spread with them, the rest a point at a
-// place of its own within PUFF_GLINT_REACH of its centre (puffHash).
+// place of its own within PUFF_GLINT_REACH of its centre (puffHash). With no
+// air (τ2 written 0: src/spray.js) it flies a parabola instead, spreading
+// at its kick for all its age.
 export const SPRAY_VERTEX = /* glsl */`
 uniform float uGravity;          // the place's (src/gravity.js)
 #define SPRAY_GRAVITY uGravity
@@ -344,6 +346,24 @@ void main() {
   float age = uTime - aOrigin.w;
   if (age < 0.0 || age >= aLaunch.w || aDrop.x < uLeastRadius) { cullDrop(); return; }
   float fastTau = aDrop.z;
+  if (aSlow.x <= 0.0) {
+    // No air (src/spray.js: its phases all 0): a parabola, its drops spreading at their kick all the while.
+    vec3 point = aOrigin.xyz + aLaunch.xyz * age - vec3(0.0, 0.5 * SPRAY_GRAVITY * age * age, 0.0);
+    if (point.y < 0.0) { cullDrop(); return; }
+    float pointRadius = aDrop.x, pointWeight = aDrop.y;
+    if (pointWeight > 1.0 && pointWeight < PUFF_LEAST) { pointRadius *= pow(pointWeight, 1.0 / 3.0); pointWeight = 1.0; }
+    float pointBlur = 1.0 - exp(-(pointWeight - 1.0) / PUFF_BLUR_DROPS);
+    drawDrop(point, aLaunch.xyz - vec3(0.0, SPRAY_GRAVITY * age, 0.0), pointRadius, 0.0, pointWeight, min(PUFF_SPREAD * aSlow.w * pointBlur * age, PUFF_MOST_SPREAD), 1.0);
+    if (pointWeight > 1.0) {
+      vec2 draws = puffHash(aOrigin);
+      float reach = PUFF_GLINT_REACH * sqrt(draws.x), angle = 6.2831853 * draws.y;
+      vec2 place = reach * vec2(cos(angle), sin(angle));
+      vGlintPoints += vec4(place, place);
+      vGlintShare = 1.0 - pointBlur;
+      vPuffSeed = draws;
+    }
+    return;
+  }
   float early = min(age, aDrop.w);
   vec3 fastTerminal = vec3(aSlow.y, -SPRAY_GRAVITY * fastTau, aSlow.z);
   float fastDecay = exp(-early / fastTau);
@@ -576,6 +596,7 @@ uniform float uExposure;
 uniform sampler2D uGlare;       // the scene's glare (src/glare.js), at the frame's uv
 uniform float uGlareShare;      // and the share of the scene it stands in for
 uniform float uRefract;
+uniform float uDropFrost;      // 1 where a drop freezes as it flies (no air: src/splash.js setAirless), else 0
 uniform float uFluidScale;      // fluid-buffer pixels per device pixel (the buffer's resolution scale)
 uniform float uProjScale;       // fluid-buffer pixels per world unit at distance 1
 uniform vec2 uFluidTexel;       // one fluid-buffer pixel, in uv
@@ -828,10 +849,13 @@ void main() {
       float detail = sheet + column * smoothstep(COLUMN_DETAIL_FROM, COLUMN_DETAIL_FULL, deviceRadius)
         + drop * smoothstep(DETAIL_FROM, DETAIL_FULL, deviceRadius) * smoothstep(0.3, 0.9, coverage);
       fluid = mix(meanLight, surface, detail);
+      // In vacuum (uDropFrost: Europa) a drop boils as it flies and freezes in a few hundredths of a second: a grain of
+      // white ice, lit by the sun on its side, not a lens. The sheets and the column, still joined to the pond, stay water.
+      fluid = mix(fluid, scattering * (0.45 + 0.55 * clamp(dot(worldNormal, sunWorld), 0.0, 1.0)), uDropFrost * drop);
       // In haze (src/sky.js) the water in the air fades by its distance, as the scene behind it does; a fine drop's
       // mean light is the haze's already, the scene's and the sky's.
       fluid = withHaze(fluid, length(position));
-      float glass = max(sheet + column, drop * smoothstep(BEAD_FROM, BEAD_FULL, deviceRadius));
+      float glass = max(sheet + column, drop * max(smoothstep(BEAD_FROM, BEAD_FULL, deviceRadius), uDropFrost));
       alpha = mix(alpha, min(coverage, 1.0), glass);
     }
     color = mix(scene, fluid, alpha) + uSunIrradiance * optics.b;

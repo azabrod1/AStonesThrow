@@ -819,7 +819,7 @@ export class JetColumn {
     const fallX = point.x + direction.x * drift, fallZ = point.z + direction.z * drift;
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 0.9, height: 0.22 * radius * strength });
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
-    water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });
+    if (!splash.airless) water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });   // no air, none (src/splash.js setAirless)
     splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025, FALLBACK_SPECK_SPAN * Math.sqrt(radius / GRAVITY));
   }
 

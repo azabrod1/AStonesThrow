@@ -316,6 +316,9 @@ import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime, placeFlightTime } from './rock.js';
 import { GRAVITY, EARTH_GRAVITY, setGravity } from './gravity.js';
+import { AIR_DENSITY, EARTH_AIR, setAirDensity } from './air.js';
+import { Boiling } from './boiling.js';
+import { createBoilingVapour } from './boilingVapour.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
 import { SplashSystem, MIRROR_LAYER, SAND_ALBEDO } from './splash.js';
@@ -821,6 +824,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const rainDownload = WEATHERS[weatherName].rain
     ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
   setGravity(PLACES[firstPlace].gravity ?? EARTH_GRAVITY);   // the place's (src/gravity.js), before anything falls
+  setAirDensity(placeAirless(firstPlace) ? 0 : EARTH_AIR);   // and its air (src/air.js): none at an airless place
   // The sky (src/sky.js Starting): its maps now, its photo on its way while
   // the pond is built and its programs warmed up (warmUp), awaited after them
   // (awaitSky); a failure is reported then, or before the warm-up if it came
@@ -1004,9 +1008,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     waterName = waterForPlace(placeName, lakeClarity);
     // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's, the loch's and the lakes' do not.
     splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
+    // No air to drag under at an airless place (src/air.js): no foam, specks or bubbles (src/splash.js setAirless).
+    splash.setAirless(AIR_DENSITY === 0);
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     ice.setCrust(PLACES[placeName].iceCrust);   // frozen, its ice's look: Europa's old frosted crust, else black ice
+    // In vacuum (src/air.js) open water boils and freezes over fast, and the ice has its lead, open whenever it is whole.
+    ice.setVacuum(AIR_DENSITY === 0 ? PLACES[placeName].lead ?? null : null);
     applyWaterColor();
   }
   /** The deep water's radiance: the clarity's, lit by the hour's light (the sky's level, src/sky.js). */
@@ -1029,6 +1037,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let birdsFrozen = null;   // whether the birds were last laid out for frozen water (applyBirds; null before they are)
   let iceName = frozenAtStart ? iceThickness : 'none';
   /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
+  const boiling = new Boiling();   // open water in vacuum (src/boiling.js), stepped with the physics (simulate)
   function applyIce(name = iceName) {
     iceName = name;
     ice.setThickness(ICE_THICKNESS[name]);
@@ -1211,6 +1220,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const europaScenery = new EuropaScenery({ seed: Number(birdSeed) });
   const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
   sceneMain.add(europaSceneryView.above, europaSceneryView.mirror);
+  // The frost the vapour of open water boiling in vacuum condenses into, over it (src/boilingVapour.js), posed a frame.
+  const vapour = createBoilingVapour(lighting);
+  sceneMain.add(vapour.group);
   /** Every bird posed at `time` (src/birds.js showAt), and drawn so; and Europa's scenery (src/europaScenery.js). */
   function poseBirds(time) {
     birds.showAt(time);
@@ -2859,6 +2871,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // The ice's clock (src/ice.js setTime): a hole floods the ice round it once its cavity has closed; the wet
       // freezes; holes skin over. (What it lets go was made things at the end of the step before.)
       ice.setTime(stepsTime);
+      // Open water in vacuum boils (src/boiling.js: Europa's lead, a new hole, or thawed, all of it).
+      boiling.step(stepsTime, PHYSICS_STEP, { water, ice });
       // What lies on the ice, and whether its weight breaks it (src/ice.js weigh: that thing goes in this step).
       ice.weigh(stepping);
       for (const rock of stepping) {
@@ -2922,6 +2936,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     visitor.showAt(end);   // whatever is out on the loch, posed at the frame's time (src/lochVisitor.js)
     poseBirds(end);   // the birds, posed at the frame's time (src/birds.js) and drawn so (src/birdViews.js)
+    vapour.update(ice, water, end);   // the vapour over open water boiling in vacuum (src/boilingVapour.js)
     cannon.drawAt(end);   // the stream in the air as it is now (src/waterCannon.js: its parcels' closed-form flight)
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
@@ -3164,7 +3179,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3386,6 +3401,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     water.clear();
     pool.dry();
     ice.clear();   // whole again
+    boiling.reset();
     splash.reset(renderer);
     cannon.reset();
     rings.reset();
@@ -3427,7 +3443,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A change of gravity (src/gravity.js) clears the pond too, so nothing thrown or ringing lives under two.
     const gravityChanges = (next.gravity ?? EARTH_GRAVITY) !== GRAVITY;
     setGravity(next.gravity ?? EARTH_GRAVITY);
-    if (geometryChanges || iceChanges || gravityChanges) clearPond();
+    // And of air (src/air.js): nothing in flight lives under two either.
+    setAirDensity(placeAirless(place) ? 0 : EARTH_AIR);
+    if (geometryChanges || iceChanges || gravityChanges || airChanges) clearPond();
     placeName = place;
     pooled = Boolean(next.pool);
     koiPond = Boolean(next.koi);
@@ -3482,12 +3500,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Under Earth's gravity whatever the place's (src/gravity.js): its throws are the same throws, and their stone is in
     // the water, its cavity open and its jet up at the moments drawn (WARM_UP), where Europa's would still be in the air.
     // Gravity is a uniform, so the programs are the place's; the place's is back after.
-    const placeGravity = GRAVITY;
+    // Its air too (src/air.js): a throw into air drags its bubbles and foam under, so their programs are drawn.
+    const placeGravity = GRAVITY, placeAir = AIR_DENSITY;
     setGravity(EARTH_GRAVITY);
+    setAirDensity(EARTH_AIR);
+    splash.setAirless(false);
     try {
       warmUpUnderEarth();
     } finally {
       setGravity(placeGravity);
+      setAirDensity(placeAir);
+      splash.setAirless(placeAir === 0);
     }
   }
   function warmUpUnderEarth() {
@@ -3583,6 +3606,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const fishWarmUp = everything || fishOn ? fishView.warmUp({ medusas: everything || fishView.medusas }) : null;
     const birdWarmUp = everything || birdsOn ? birdView.warmUp() : null;   // the birds' five programs (a model's above, mirror and below the water; a picture's above and mirror), whatever flies here
     const lifeWarmUp = everything || (birdsOn && placeName === 'europa') ? europaSceneryView.warmUp() : null;   // Europa's scenery: three programs (the probe's above and mirror, the plume's)
+    const vapourWarmUp = everything || placeAirless(placeName) ? vapour.warmUp() : null;   // the vapour over open water in vacuum: one program (src/boilingVapour.js)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
     buildPreview(everything ? 'pizza' : thingName);
@@ -3592,6 +3616,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishWarmUp?.done();
     birdWarmUp?.done();
     lifeWarmUp?.done();
+    vapourWarmUp?.done();
     if (everything) {
       buildPreview(DEFAULT_THING);
       if (preview.mesh) programKeepers.push(preview.mesh.material);
@@ -3793,6 +3818,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     /** The birds (src/birds.js), as they are posed now: each one's kind, habit, mode and pose; and the draw calls they take. */
     get birds() { return { drawCalls: birdView.drawCalls, birds: birds.report() }; },
     /** Europa's scenery (src/europaScenery.js), as posed now, and the draw calls it takes. */
+    /** Bursts of open water boiling in vacuum since the pond was last cleared (src/boiling.js). */
+    get boiling() { return boiling.bursts; },
     get europaScenery() { return { drawCalls: europaSceneryView.drawCalls, ...europaScenery.report() }; },
     /** Puts the place's heron up now, as a splash at (x, z) beside it would (tools/bird-probe.mjs). */
     startleBirds(x, z) { birds.startle(stepsTime, x, z); },

@@ -29,6 +29,9 @@
 //   - pool: a basketball, a skipped stone and twenty-two stones in the
 //     pool's walls, more than Low keeps at rest, so the oldest fades as one
 //     comes to rest past the cap, between throws;
+//   - europa: a stone into the lead and a bowling ball through the ice,
+//     whose hole skins over in seconds in vacuum (src/ice.js setVacuum), the
+//     open water boiling every step (src/boiling.js: its bursts counted);
 //   - loch: a stone and a skipped stone at Loch Ness, then left past its
 //     first sighting (src/lochVisitor.js), whose state must match too: what
 //     it is, where, how far up, and when it comes and goes.
@@ -70,6 +73,15 @@ const SCENES = [
       { at: 2.0, x: 0.05, z: -1.5, thing: 'stone' },
       { at: 3.0, x: 0.7, z: -1.1, thing: 'brick' },
       { at: 4.0, x: -0.1, z: -1.45, thing: 'stone', size: 0.02 },
+    ],
+  },
+  {
+    // Europa (frozen, its lead open, in vacuum): a stone into the lead, a bowling ball through the ice, whose hole skins
+    // over in seconds there, and the boiling of the open water at every step (its count compared too).
+    name: 'europa', place: 'europa', ice: 'thin', until: 22,
+    throws: [
+      { at: 0, x: 0, z: -1.4, thing: 'stone' },
+      { at: 1.0, x: -0.9, z: -2.4, thing: 'bowling' },
     ],
   },
   {
@@ -180,7 +192,7 @@ async function play(scene, pattern) {
       const things = [...new Set([...thrown, ...pond.rocks])].map((rock) => [rock.thing.name, rock.state, pond.rocks.includes(rock) ? (rock.fading !== undefined ? 'fading' : 'kept') : 'gone', rock.fadedAt ?? -1, ...rock.position.toArray(), ...rock.quaternion.toArray()]);
       const fish = pond.fish.fish.map((one) => [one.x, one.y, one.z, one.heading]);
       // The loch's visitor as the world has it: not `body`, where the last frame drew it.
-      return { things, fish, holes: pond.iceSheet.holes.length, visitor: JSON.stringify({ ...pond.visitor, body: undefined }), next: Math.random(), frames: frame };
+      return { things, fish, holes: pond.iceSheet.holes.length, skins: pond.iceSheet.holes.map((hole) => hole.skin ? hole.skin.front : -1), boils: pond.boiling, visitor: JSON.stringify({ ...pond.visitor, body: undefined }), next: Math.random(), frames: frame };
     } finally {
       Math.random = random;
     }

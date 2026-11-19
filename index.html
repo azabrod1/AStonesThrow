@@ -1590,8 +1590,8 @@
       },
       // An airless place (Europa: pond.airless) holds the weather clear and the wind calm; the choices come back after.
       airless: {
-        weather: (place, kept) => `${place} has no air, so no weather: no cloud, rain, snow or fog, the sky black to the horizon.${kept ? ` ${kept} comes back at the next place.` : ''}`,
-        wind: (place, kept) => `${place} has no air, so no wind: the water lies still.${kept ? ` ${kept} comes back at the next place.` : ''}`,
+        weather: (place, kept) => `${place} has only a trace of an atmosphere, a trillionth of Earth’s, so no weather: no cloud, rain, snow or fog, the sky black to the horizon.${kept ? ` ${kept} comes back at the next place.` : ''}`,
+        wind: (place, kept) => `${place} has only a trace of an atmosphere, a trillionth of Earth’s, so no wind.${kept ? ` ${kept} comes back at the next place.` : ''}`,
       },
       time: 'Choose a moment below or slide through the day. Each is a real photograph, aligned to keep the landscape in place.',
       oneTime: 'This place is a single photograph. Try Highlands, Desert oasis, Lakeside or Mesas for changing light.',
@@ -1651,7 +1651,7 @@
       off: 'The water is empty: nothing swims, and nothing is eaten.',
     };
     const BIRD_NOTES = {
-      on: 'Every place but the Pool and Europa has its own birds, the ones that live where its photograph was taken: kelp gulls at the Rocky cove, a heron in the Koi pond, a fish eagle over Lakeside, frigatebirds over the lagoon. Throw near the heron and it flies off, and comes back within a minute. Europa has no air to fly in: a vent on the far ice erupts now and then, and a probe like NASA’s Europa Clipper crosses the sky in front of Jupiter.',
+      on: 'Every place but the Pool and Europa has its own birds, the ones that live where its photograph was taken: kelp gulls at the Rocky cove, a heron in the Koi pond, a fish eagle over Lakeside, frigatebirds over the lagoon. Throw near the heron and it flies off, and comes back within a minute. Europa’s atmosphere is a trillionth of Earth’s, nothing to fly in: a vent on the far ice erupts now and then, and a probe like NASA’s Europa Clipper crosses the sky in front of Jupiter.',
       off: 'No birds: the sky and the banks are empty.',
     };
     const fishNote = document.getElementById('fish-note');

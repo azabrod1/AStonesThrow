@@ -1021,7 +1021,7 @@ for (const framing of FRAMINGS) {
     await page.screenshot({ path: path.join(outputFolder, `${framing.name}-weather-airless.png`) });
     check(airless.sky === 'europa' && airless.airless && airless.weather === 'clear' && !airless.raining && !airless.snowing && airless.wind === 'calm'
       && airless.choice === 'heavy-snow' && airless.stored === 'heavy-snow' && airless.windChoice === 'breeze' && airless.storedWind === 'breeze'
-      && airless.weatherGreyed && airless.windGreyed && airless.rows === 'None, None' && airless.note.includes('no air') && airless.note.includes('Heavy snow') && airless.windNote.includes('Breeze'),
+      && airless.weatherGreyed && airless.windGreyed && airless.rows === 'None, None' && airless.note.includes('trace of an atmosphere') && airless.note.includes('Heavy snow') && airless.windNote.includes('Breeze'),
       `at Europa the weather is ${airless.weather} and the wind ${airless.wind} (chosen and remembered: ${airless.choice}/${airless.stored}, ${airless.windChoice}/${airless.storedWind}), a greyed choice pressed changes nothing, the rows read "${airless.rows}", the note "${airless.note}"`);
     await page.evaluate(() => window.__pond.setWeather('heavy-rain'));
     const kept = await airState();

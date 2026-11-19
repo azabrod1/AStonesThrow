@@ -352,6 +352,7 @@
 // a frozen pool's ice), it falls again; up a step it cannot climb (a frozen
 // pool's wall, from the ice) it is turned back off it, at its own bounce,
 // along whichever axis of its move rose (the pool's walls are square).
+import { AIR_DENSITY } from './air.js';
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, DRAWN_DEPTH, sinkStep, underWater } from './cavity.js';
@@ -498,7 +499,6 @@ export function setAir({ freezing = false, drying = 1 } = {}) {
 }
 const KNOCK_NOTHING = 1e-9;   // m: a knock that moves a thing less than this, without changing its speed, is nothing (Rock.knock)
 const WHITE = new THREE.Color(1, 1, 1);
-const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag (flown in
 // PHYSICS_STEP, as the thing will fly), a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
 // coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,

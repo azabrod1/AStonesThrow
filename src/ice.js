@@ -337,6 +337,12 @@ const FLOOD = { reach: [1.35, 1.8], wobble: 0.18, lean: 0.4, feather: 0.3, soak:
 // painted every `step` seconds as it grows, `seam` (m) over the old edge (so no line of water shows along it); its field
 // is worked out `texels` a step over the `prepare` seconds before it begins (prepareSkin).
 const REFREEZE = { after: 40, closing: 30, skin: 0.004, thickening: 60, step: 0.25, seam: 0.01, texels: 600, prepare: 2 };
+// In vacuum (setVacuum) open water boils, and its boiling takes the heat to freeze it: a hole skins over in seconds, the
+// wet freezes in a few (its own film boiling), and drops come down on it already frozen, wetting nothing.
+const VACUUM = { after: 4, closing: 18, thickening: 25, dry: 4 };
+// A lead's outline (openLead): LEAD.corners corners round an ellipse its length by its width, jagged by shapeHole as a
+// hole's edge is, then eased LEAD.smoothing times with each corner's neighbours.
+const LEAD = { corners: 96, smoothing: 2 };
 // The mask (the header): texels a side over the solver's patch, and the caps of its distances (m); past `ranges` rows
 // to send since the last upload, the whole of it is sent.
 const MASK = { texels: 512, holeFar: 0.06, ranges: 256 };
@@ -484,6 +490,9 @@ export class IceSheet {
     this.cell = domainSize / texels;
     this.thickness = 0;
     this.time = 0;               // the world's clock (setTime): when a hole opened, its shards are let go, it skins over
+    this.refreeze = { ...REFREEZE, dry: FLOOD.dry };   // how soon holes skin over and the wet freezes (setVacuum)
+    this.lead = null;            // an airless place's lead (setVacuum), opened whenever the ice is made whole
+    this.vacuum = false;         // whether the ice lies under vacuum (setVacuum)
     this.pool = null;            // the pool's square ({ minX, minZ, size }) when the water is the pool's, else the lake (setPool)
     this.poolBounds = null;      // its walls' faces (src/basin.js basinBounds)
     this.deck = null;            // the pool's deck as ground (src/pool.js poolGround), round a frozen pool
@@ -593,7 +602,59 @@ export class IceSheet {
     this.uniforms.uIceCrust.value.set(...(crust ?? [1, 1, 1, 0]));
   }
 
-  /** Whole again: no hole, no crack, dry. */
+  /**
+   * Whether the ice lies under vacuum (src/air.js: Europa), and its lead: `lead` { x, z, length, width, angle (degrees
+   * from +x toward +z), seed } or null. In vacuum open water boils and freezes over fast (VACUUM), drops wet nothing, and
+   * the lead, a crack the ocean wells up into, is open whenever the ice is whole (openLead), boiling, never skinned over:
+   * the water welling up keeps it open as it freezes at its edges, as a lead in sea ice is kept open by the sea under it.
+   */
+  setVacuum(lead = null) {
+    const vacuum = Boolean(lead);
+    this.vacuum = vacuum;
+    this.refreeze = vacuum ? { ...REFREEZE, ...VACUUM } : { ...REFREEZE, dry: FLOOD.dry };
+    const changed = JSON.stringify(lead) !== JSON.stringify(this.lead);
+    this.lead = lead;
+    if (changed) this.clear();
+  }
+
+  /**
+   * The lead (setVacuum) as a hole: an ellipse its length by its width at its angle, its edge jagged as a broken hole's
+   * (shapeHole, from its own seed), open water from the start: no shards, no flood, no cracks of a blow, never skinned
+   * over (setTime).
+   */
+  openLead({ x, z, length, width, angle, seed }) {
+    const turn = (angle * Math.PI) / 180, along = Math.cos(turn), across = Math.sin(turn);
+    const corners = LEAD.corners;
+    const hole = {
+      x, z, radius: width / 2, least: 0, thickness: this.thickness, strength: 1, seed, corners: new Float64Array(2 * corners), inner: 0, outer: 0, reaches: new Float64Array(HOLE.reaches),
+      heading: { x: along, z: across, lean: 0 }, settled: true, painted: false, cracks: [], crackCorners: [],
+      openedAt: this.time, quiet: this.time, releaseAt: -Infinity, released: true, floodAt: -Infinity, flooded: true,
+      down: 0, by: null, skin: null, field: null, frozen: [], box: null, lead: true,
+    };
+    hole.angles = Float64Array.from({ length: corners }, (unused, index) => (2 * Math.PI * index) / corners);
+    hole.cosines = hole.angles.map(Math.cos);
+    hole.sines = hole.angles.map(Math.sin);
+    // The ellipse's reach along each corner's azimuth (its axes along the lead and across it), less the jag shapeHole adds.
+    const reaches = hole.angles.map((corner) => {
+      const relative = corner - turn;
+      return 1 / Math.hypot(Math.cos(relative) / (length / 2), Math.sin(relative) / (width / 2)) / (1 + HOLE.margin + HOLE.jag / 2);
+    });
+    this.shapeHole(hole, reaches);
+    // A lead's edge is ice parted along a crack, not a punch's crushed rim: its corners' jag eased with their neighbours'.
+    for (let pass = 0; pass < LEAD.smoothing; pass++) {
+      const before = Float64Array.from(hole.corners);
+      for (let index = 0; index < corners; index++) {
+        const previous = (index + corners - 1) % corners, next = (index + 1) % corners;
+        for (const axis of [0, 1]) hole.corners[2 * index + axis] = 0.25 * before[2 * previous + axis] + 0.5 * before[2 * index + axis] + 0.25 * before[2 * next + axis];
+      }
+    }
+    this.measureHole(hole);
+    this.holes.push(hole);
+    this.dirty = true;
+    return hole;
+  }
+
+  /** Whole again: no hole, no crack, dry (but an airless place's lead, open again: setVacuum). */
   clear() {
     this.holes.length = 0;
     this.crackLines.length = 0;
@@ -616,6 +677,7 @@ export class IceSheet {
     this.texture.clearUpdateRanges();   // all of it sent
     this.texture.needsUpdate = true;
     this.dirty = false;
+    if (this.lead && this.on) this.openLead(this.lead);
   }
 
   /** The ground for src/rock.js (the header). */
@@ -690,8 +752,8 @@ export class IceSheet {
     if (!this.skinAt(hole, x, z)) return 0;
     for (const piece of hole.frozen) if (Math.hypot(x - piece.x, z - piece.z) <= piece.radius && insidePolygon(piece.corners, x, z)) return piece.thickness;
     const skin = hole.skin;
-    const passed = skin.start + (REFREEZE.closing * polygonEdgeDistance(hole.corners, x, z)) / Math.max(skin.deepest, 1e-6);
-    return REFREEZE.skin * Math.min(Math.max((this.time - passed) / REFREEZE.thickening, 0.05), 1);
+    const passed = skin.start + (this.refreeze.closing * polygonEdgeDistance(hole.corners, x, z)) / Math.max(skin.deepest, 1e-6);
+    return REFREEZE.skin * Math.min(Math.max((this.time - passed) / this.refreeze.thickening, 0.05), 1);
   }
 
   /** The ground's height at (x, z) (src/rock.js `ground`): the ice's top over the water but in a hole's open water; the deck round a pool, the land behind a lake's waterline. */
@@ -1252,7 +1314,6 @@ export class IceSheet {
     }
     const box = this.holeBox;
     const low = [box.minX, box.minZ], high = [box.maxX, box.maxZ];
-    let outer = 0;
     for (let index = 0; index < count; index++) {
       const angle = hole.angles[index];
       const slow = waves.reduce((sum, wave) => sum + wave.amplitude * (1 + Math.cos(wave.mode * angle + wave.phase)) / 2, 0);
@@ -1261,8 +1322,15 @@ export class IceSheet {
       const z = Math.min(Math.max(hole.z + hole.sines[index] * out, low[1]), high[1]);
       hole.corners[2 * index] = x;
       hole.corners[2 * index + 1] = z;
-      outer = Math.max(outer, Math.hypot(x - hole.x, z - hole.z));
     }
+    this.measureHole(hole);
+  }
+
+  /** A hole's inner and outer radius about its middle, and its edge's reach at HOLE.reaches azimuths, from its corners. */
+  measureHole(hole) {
+    const count = hole.corners.length / 2;
+    let outer = 0;
+    for (let index = 0; index < count; index++) outer = Math.max(outer, Math.hypot(hole.corners[2 * index] - hole.x, hole.corners[2 * index + 1] - hole.z));
     hole.outer = outer;
     hole.inner = polygonEdgeDistance(hole.corners, hole.x, hole.z);
     // The edge's reach about its middle at even azimuths: the nearest of its sides a ray from the middle crosses.
@@ -1766,13 +1834,14 @@ export class IceSheet {
         this.flood(hole);
       }
       // Its field worked out a few rows a step in the seconds before (prepareSkin), then its new ice begins.
-      if (!hole.skin && hole.flooded && time - hole.quiet >= REFREEZE.after - REFREEZE.prepare && !hole.field?.ready) this.prepareSkin(hole, REFREEZE.texels);
-      if (!hole.skin && hole.field?.ready && time - hole.quiet >= REFREEZE.after) this.startSkin(hole);
+      if (hole.lead) continue;   // kept open by the water welling up (setVacuum)
+      if (!hole.skin && hole.flooded && time - hole.quiet >= this.refreeze.after - REFREEZE.prepare && !hole.field?.ready) this.prepareSkin(hole, REFREEZE.texels);
+      if (!hole.skin && hole.field?.ready && time - hole.quiet >= this.refreeze.after) this.startSkin(hole);
       if (hole.skin && !hole.skin.closed && time - hole.skin.painted >= REFREEZE.step) this.growSkin(hole);
     }
     if (this.wetBox) {
       this.wetDue += passed;
-      if (this.wetDue >= FLOOD.step) { this.dry(this.wetDue / FLOOD.dry); this.wetDue = 0; }
+      if (this.wetDue >= FLOOD.step) { this.dry(this.wetDue / this.refreeze.dry); this.wetDue = 0; }
     }
   }
 
@@ -1825,7 +1894,7 @@ export class IceSheet {
 
   /** A drop come down on the ice at (x, z), wetting a spot `radius` (m) across (src/splash.js): more drops, wetter. */
   wetSpot(x, z, radius) {
-    if (!this.on) return;
+    if (!this.on || this.vacuum) return;   // in vacuum a drop comes down frozen (setVacuum)
     const [firstColumn, lastColumn] = this.texelRange(x - radius, x + radius, 0);
     const [firstRow, lastRow] = this.texelRange(z - radius, z + radius, 1);
     if (lastColumn < firstColumn || lastRow < firstRow) return;
@@ -1947,7 +2016,7 @@ export class IceSheet {
    */
   growSkin(hole) {
     const skin = hole.skin, field = hole.field;
-    skin.front = Math.min((this.time - skin.start) / REFREEZE.closing, 1) * skin.deepest;
+    skin.front = Math.min((this.time - skin.start) / this.refreeze.closing, 1) * skin.deepest;
     skin.painted = this.time;
     const far = MASK.holeFar;
     for (let row = field.firstRow; row <= field.lastRow; row++) {

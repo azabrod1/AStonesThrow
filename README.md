@@ -1292,8 +1292,9 @@ The curated locations include:
   of its sun instead (`sunCap`, `radianceCap` in `src/sky.js`). The beach is
   frost cracked into plates (`SHORE_LOOKS.frost`), the water the ocean under
   the ice, a deep blue in the sun alone (`WATER_CLARITIES.europa`); it starts
-  open, a body of water among the ice, at the level view, so Jupiter stands
-  over the ice and is mirrored in the water. Frozen, its
+  Frozen at the level view, with a lead across the middle (`lead`, `openLead`
+  in `src/ice.js`): a crack 3.6 m long the ocean wells up into, Jupiter
+  mirrored in it. Its
   ice is an old crust, not a lake's black ice (`iceCrust`, `uIceCrust` in
   `src/shaders/scene.js`): frosted nearly all over, stained reddish-brown along
   bands, blue where the frost is thin and in the bare leads between (where
@@ -1310,8 +1311,22 @@ The curated locations include:
   as on Earth and goes the high way to the tap (`placeFlightTime` in
   `src/rock.js`), so a medium toss climbs ten metres and comes down eight
   seconds later nearly straight; the hole pinches 2.7 times later, the drops
-  hang longer and the rings run slower (`tools/gravity-probe.mjs`). The drag
-  on what flies is still Earth's air's.
+  hang longer and the rings run slower (`tools/gravity-probe.mjs`).
+  Its air is its own too (`src/air.js`). Europa's atmosphere is a trace of
+  oxygen, about 0.1 µPa at the surface, a trillionth of Earth's, so it counts
+  as none:
+  - Nothing drags on what flies: the stone and the spray fly plain parabolas.
+  - No air tears a big drop apart, and none is dragged under, so a splash
+    leaves no foam and no bubbles.
+  - A drop boils as it flies, and that freezes it in a few hundredths of a
+    second, so it is drawn as a grain of ice and wets nothing where it lands.
+  - Open water boils, since 0.1 µPa is far under water's triple point of
+    611 Pa (`src/boiling.js`). The lead, a new hole or the whole pond thawed
+    fizzes with bursting bubbles, and a faint haze of frost glitters over it
+    (`src/boilingVapour.js`).
+  - Boiling carries off heat, so a stone's hole skins over in seconds. The
+    lead stays open, fed from below.
+  `tools/gravity-probe.mjs` checks these too.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never

@@ -36,12 +36,20 @@
 //     within jet-probe's cost (COST_MOST ms a frame, mean, warm), however
 //     much longer it lives, and its launch's time unit sqrt(z_p/g) is the
 //     cavity's bowl unit;
+// that in Europa's vacuum (src/air.js AIR_DENSITY 0) the toss is a parabola
+// (v²/2g up, down at the tap), a drop's flight and life its parabola's (on
+// the CPU, and SPRAY_VERTEX has the branch), the ice's lead is open and
+// stays so, drops wet nothing, and the lead boils at src/boiling.js's rate,
+// inside it, alike run to run, and not at all in air;
 // and that after all this, back under Earth's gravity, every number above
 // that is Earth's is what it was before Europa's was ever set (nothing
 // computed under one gravity is kept for the other: src/spray.js's terminal
 // speeds, src/rings.js's envelope tables).
 import * as THREE from 'three';
 import { GRAVITY, EARTH_GRAVITY, setGravity } from '../src/gravity.js';
+import { EARTH_AIR, setAirDensity } from '../src/air.js';
+import { IceSheet } from '../src/ice.js';
+import { Boiling, BOIL } from '../src/boiling.js';
 import { Rock, aimThrow, throwFlightTime, placeFlightTime, flightTime } from '../src/rock.js';
 import { THINGS } from '../src/things.js';
 import { Cavity, PINCH_TIME } from '../src/cavity.js';
@@ -254,6 +262,54 @@ for (const [name, multiplier] of [['medium toss', 1], ['soft toss', 1.18], ['med
   console.log(`  the jet of the medium toss (in at ${thrown.entry.length().toFixed(2)} m/s): pinch ${(run.cavity.pinchTime * 1000).toFixed(0)} ms, ${(run.cavity.pinchDepth * 100).toFixed(1)} cm down, body ${run.speed.toFixed(2)} m/s, launch over ${(run.jet.launchEnd * 1000).toFixed(0)} ms, its water up to ${(run.jet.highest * 100).toFixed(0)} cm, gone ${run.life.toFixed(2)} s after its pinch (${run.frames} frames; Earth's ${earth.life.toFixed(2)} s, ${(earth.jet.highest * 100).toFixed(0)} cm); ${run.mean.toFixed(2)} ms a frame, the worst ${run.worst.toFixed(1)} (Earth's ${earth.mean.toFixed(2)}, ${earth.worst.toFixed(1)}); gains ${JSON.stringify(sweepGains(0.15))} for a 30 cm rock`);
   check(near(run.jet.launchEnd / run.cavity.bowlUnit, earth.jet.launchEnd / earth.cavity.bowlUnit, 1e-9), "the jet's launch is not in the bowl's unit");
   check(run.mean <= COST_MOST, `the Europa jet costs ${run.mean.toFixed(2)} ms a frame, over ${COST_MOST}`);
+}
+
+// ---- Europa's vacuum (src/air.js) ------------------------------------------------
+{
+  setAirDensity(0);
+  // A toss with no air: a parabola, aimed for none, climbing exactly v²/(2g) and down at the tap.
+  const thrown = toss();
+  const rise = thrown.launch.y ** 2 / (2 * GRAVITY);
+  console.log(`vacuum: the toss climbs ${(thrown.apex - hand.y).toFixed(3)} m (v²/2g ${rise.toFixed(3)}), down ${thrown.landing.distanceTo(new THREE.Vector3(target.x, thrown.landing.y, target.z)).toFixed(3)} m from the tap`);
+  check(Math.abs(thrown.apex - hand.y - rise) < 0.02 * rise, `with no air the toss climbs ${(thrown.apex - hand.y).toFixed(3)} m, not v²/2g ${rise.toFixed(3)}`);
+  check(Math.hypot(thrown.landing.x - target.x, thrown.landing.z - target.z) < 0.02, 'with no air the toss does not come down at the tap');
+  // The spray: its phases all 0, its flight the parabola, its life the parabola's landing.
+  const flight = sprayFlight(0.0002, 3);
+  check(flight.fastTau === 0 && flight.fastTime === 0 && flight.slowTau === 0, 'with no air a drop still has drag phases');
+  const at = flightPosition(0, 0.05, 0, 1.2, 2.5, -0.4, flight.fastTau, flight.fastTime, flight.slowTau, 0, 0, 1.7, {});
+  check(Math.abs(at.x - 1.2 * 1.7) < 1e-12 && Math.abs(at.y - (0.05 + 2.5 * 1.7 - 0.5 * GRAVITY * 1.7 ** 2)) < 1e-12 && Math.abs(at.z + 0.4 * 1.7) < 1e-12, 'with no air a drop does not fly a parabola');
+  const life = landingBound(0.05, 2.5, flight);
+  check(Math.abs(0.05 + 2.5 * life - 0.5 * GRAVITY * life * life) < 1e-9, `with no air a drop's life ${life} is not its parabola's landing`);
+  check(/aSlow\.x <= 0\.0/.test(SPRAY_VERTEX), "the spray's shader has no parabola for no air");
+  // The ice in vacuum: its lead open from the start and never skinned over, a stone's hole skinned over in seconds,
+  // drops wetting nothing; and the boiling, seeded by the step's time.
+  const ice = new IceSheet({ domainMin: [-3, -4], domainSize: 6 });   // the solver's patch (src/spectralWater.js)
+  ice.setThickness(0.01);
+  const lead = { x: 0.1, z: -1.25, length: 3.6, width: 1.0, angle: 12, seed: 7 };
+  ice.setVacuum(lead);
+  check(ice.holes.length === 1 && ice.holes[0].lead && ice.holeAt(0, -1.3) === ice.holes[0], 'in vacuum the ice has no open lead');
+  ice.wetSpot(1, -2.5, 0.05);
+  check(!ice.wetBox, 'in vacuum a drop wets the ice');
+  for (let time = 0; time <= 120; time += 0.25) ice.setTime(time);
+  check(!ice.holes[0].skin && ice.holeAt(0, -1.3), 'the lead skinned over');
+  const steps = (seed) => {
+    const splats = [], foam = [];
+    const water = { domainMin: [-3, -4], domainSize: 6, addSplat: (splat) => splats.push(splat), addFoam: (stamp) => foam.push(stamp) };
+    const boiling = new Boiling();
+    for (let step = 0; step < 10 * 120; step++) boiling.step(seed + step / 120, 1 / 120, { water, ice });
+    return { bursts: boiling.bursts, splats, foam };
+  };
+  const area = (() => { const corners = ice.holes[0].corners; let sum = 0; for (let index = 0, count = corners.length / 2, previous = count - 1; index < count; previous = index++) sum += corners[2 * previous] * corners[2 * index + 1] - corners[2 * index] * corners[2 * previous + 1]; return Math.abs(sum) / 2; })();
+  const boiled = steps(0);
+  const expected = BOIL.rate * area * 10;
+  console.log(`vacuum: the lead ${area.toFixed(2)} m² boils ${boiled.bursts} bursts in 10 s (${expected.toFixed(0)} expected), each inside it: ${boiled.splats.every((splat) => ice.holeAt(splat.x, splat.z))}`);
+  check(Math.abs(boiled.bursts / expected - 1) < 0.1, `the lead boils ${boiled.bursts} bursts in 10 s, not about ${expected.toFixed(0)}`);
+  check(boiled.splats.every((splat) => ice.holeAt(splat.x, splat.z) === ice.holes[0]), 'a burst outside the lead\'s open water');
+  check(JSON.stringify(steps(0).splats) === JSON.stringify(boiled.splats), 'the boiling is not the same run to run');
+  setAirDensity(EARTH_AIR);
+  check(steps(0).bursts === 0, 'water boils in air');
+  ice.setVacuum(null);
+  check(ice.holes.length === 0, 'out of vacuum the lead stays');
 }
 
 // ---- Earth, after ----------------------------------------------------------------

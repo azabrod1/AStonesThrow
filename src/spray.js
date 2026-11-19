@@ -38,6 +38,13 @@
 // nothing read back, and slow motion, pause and a seeded throw need nothing
 // of their own. Nothing is drawn once every sprite has landed.
 //
+// Where there is no air (src/air.js AIR_DENSITY 0: Europa) nothing slows a
+// drop: it flies a parabola, x(t) = x₀ + v₀·t − ½·g·t²·ŷ, however small. Its
+// phases are written as all 0 (sprayFlight), which no drop in air has (τ2 is
+// v_t / g), and SPRAY_VERTEX, flightPosition and landingBound take that for
+// the parabola (a τ long enough to stand for it would lose the fall to
+// float32 cancellation). The air is Earth's or none: the tables are Earth's.
+//
 // A sprite stands for `weight` like drops (1 to hundreds: a rock's mist is
 // millions of drops, which no phone draws one by one). The fragments carry
 // a sprite's coverage, water and glints times its weight; a puff of more
@@ -114,6 +121,7 @@
 // reckoned at birth.
 import * as THREE from 'three';
 import { GRAVITY, EARTH_GRAVITY, gravityUniform } from './gravity.js';
+import { AIR_DENSITY } from './air.js';
 
 export const SPRAY_CAPACITY = 65536;
 export const SPRAY_STRIDE = 16;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2, the wind's drift at birth (x, z) and the burst's kick
@@ -292,6 +300,8 @@ function stoppingDistance(radius, speed) {
  * terminal speed) and slowTau (τ2 = v_t / g).
  */
 export function sprayFlight(radius, speed, out = { fastTau: 0, fastTime: 0, slowTau: 0 }) {
+  // No air (the header): no drag, the phases all 0, a parabola.
+  if (AIR_DENSITY === 0) { out.fastTau = 0; out.fastTime = 0; out.slowTau = 0; return out; }
   const terminal = tabulatedTerminal(radius);
   out.slowTau = terminal / GRAVITY;
   out.fastTau = out.slowTau;
@@ -310,6 +320,10 @@ export function sprayFlight(radius, speed, out = { fastTau: 0, fastTime: 0, slow
  * the probe's fit).
  */
 export function flightPosition(x, y, z, vx, vy, vz, fastTau, fastTime, slowTau, windX, windZ, age, out, coast = COAST) {
+  if (slowTau <= 0) {   // no air: a parabola (the header)
+    out.x = x + vx * age; out.y = y + vy * age - 0.5 * GRAVITY * age * age; out.z = z + vz * age;
+    return out;
+  }
   const early = Math.min(age, fastTime), late = age - early;
   const fastFall = -GRAVITY * fastTau, decay = Math.exp(-early / fastTau);
   let px = x + windX * early + fastTau * (vx - windX) * (1 - decay);
@@ -367,6 +381,12 @@ function linearLanding(height, rise, tau) {
  */
 export function landingBound(height, rise, flight) {
   const { fastTau, fastTime, slowTau } = flight;
+  if (slowTau <= 0) {
+    // No air: a parabola's own landing and apex.
+    lastApex = height + Math.max(rise, 0) ** 2 / (2 * GRAVITY);
+    if (lastApex <= 0) return 0;
+    return Math.min((rise + Math.sqrt(rise * rise + 2 * GRAVITY * Math.max(height, 0))) / GRAVITY, mostLife());
+  }
   if (fastTime <= 0) return Math.min(linearLanding(height, rise, slowTau), mostLife());
   const fast = linearLanding(height, rise, fastTau);
   if (fast <= fastTime) return fast;
@@ -584,7 +604,7 @@ export class SpraySystem {
     this.lastDeath = Math.max(this.lastDeath, time + life);
     if (radius >= MIRROR_SPRAY_RADIUS) this.mirrorDeath = Math.max(this.mirrorDeath, time + life);
     // Its flight's box: no further out than the wind's drift for its life and its launch's reach against it in each phase, no higher than its apex.
-    const reach = (flight.fastTime > 0 ? flight.fastTau : 0) + COAST * flight.slowTau;
+    const reach = flight.slowTau > 0 ? (flight.fastTime > 0 ? flight.fastTau : 0) + COAST * flight.slowTau : life;   // no air: it flies on at its launch's speed
     const reachX = Math.abs(this.windX) * life + reach * Math.abs(vx - this.windX);
     const reachZ = Math.abs(this.windZ) * life + reach * Math.abs(vz - this.windZ);
     const apex = lastApex;
