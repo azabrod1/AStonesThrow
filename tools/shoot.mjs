@@ -192,6 +192,8 @@ try {
 if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing || window.__pond.airless, null, { timeout: patience(60000) });
 // The sky's horizon strip (src/sky.js, Horizon) comes after the panorama: every frame shows it.
 await page.evaluate(() => window.__pond.horizonReady);
+// Europa's probe's picture (src/europaSceneryMeshes.js), fetched when its scenery is first shown.
+await page.evaluate(() => window.__pond.europaSceneryReady);
 // The lagoon's scanned bark and sand (src/tropics.js loadSurfaces), which come after its scenery is built.
 await page.evaluate(() => window.__pond.tropics?.surfacesReady);
 // The drop rings' table (src/dropRings.js), which the page fetches at the first impact: fetched now, so the
@@ -267,7 +269,7 @@ if (throws.length > 0 && preImpact > 0) {
 // One app frame per step, at the page's time scale, so that in slow motion the
 // first frame after the impact is at most one slow frame (1/600 s at 0.1) late.
 const flightStep = await page.evaluate(() => Math.max(window.__pond.timeScale ?? 1, 0.01) / 60);
-while (throws.length > 0 && !(await page.evaluate(() => window.__pond.hasImpacted())) && flight < preImpact + 3) {   // past a --preimpact (a throw on Europa flies 8 s)
+while (throws.length > 0 && !(await page.evaluate(() => window.__pond.hasImpacted())) && flight < preImpact + 6) {   // past a --preimpact (a hard lob on Europa flies 3.7 s)
   await page.evaluate((seconds) => window.__pond.advance(seconds), flightStep);
   flight += flightStep;
 }
