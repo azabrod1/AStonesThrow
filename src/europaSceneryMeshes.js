@@ -92,13 +92,15 @@ void main() {
   // The sun's light and the sky's, as on a bird's picture, and the sunlit ice's from below, blue off the ice.
   vec3 iceLight = uSunIrradiance * max(sun.y, 0.0) * ${(PROBE.iceAlbedo / Math.PI).toFixed(3)} * vec3(0.84, 0.92, 1.0) * 0.5;
   vec3 light = uSunIrradiance * ${SUN_SHARE.toFixed(2)} * sunUp + uSkyAmbient * ${SKY_SHARE.toFixed(2)} + iceLight;
-  vec3 radiance = picture.rgb * light * uFade;
+  vec3 radiance = picture.rgb * light;
+  // Fading, it grows clearer, never darker: a dark picture would show black against Jupiter or the ice.
+  float alpha = picture.a * uFade;
   #ifdef MIRROR
-    if (picture.a < 0.5 || vWorld.y < 0.0) discard;
+    if (alpha < 0.5 || vWorld.y < 0.0) discard;
     gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
   #else
-    if (picture.a < 0.02) discard;
-    gl_FragColor = vec4(birdHazed(radiance, vWorld), picture.a);
+    if (alpha < 0.02) discard;
+    gl_FragColor = vec4(birdHazed(radiance, vWorld), alpha);
   #endif
 }
 `;

@@ -47,7 +47,8 @@
 // the muzzle: 6 cm for the weakest jet, some 40 at 3 bar, 2 m for the deck
 // gun. So it is white with bubbles almost at once, and goes on as a cone of
 // drops widening by u/V (1.5° at 3 bar), the same water over a wider way:
-// thinner the farther it flies (skin). What it sheds freezes as it flies
+// thinner the farther it flies (skin), and lands as wide, its push on the
+// water spread over the cone (land). What it sheds freezes as it flies
 // (src/splash.js `airless`), and lands as grains of ice.
 //
 // The landing, each step for each parcel that lands in it (so a seeded game
@@ -577,7 +578,11 @@ export class WaterCannon {
     const speed = Math.hypot(across, vy);
     const along = arcLength(across, records.vy[index], flight);
     const breakup = records.breakup[index];
-    const radius = records.radius[index] * (1 + (BREAKUP.widen - 1) * smoothstep(0, breakup, along)) * (1 + Math.max(along / breakup - 1, 0));   // past the breakup the shower widens on
+    let radius = records.radius[index] * (1 + (BREAKUP.widen - 1) * smoothstep(0, breakup, along)) * (1 + Math.max(along / breakup - 1, 0));   // past the breakup the shower widens on
+    // In vacuum it comes down as wide as its flashed cone (skin), the same momentum over more of the water: its push the less.
+    let cratering = IMPACT.push;
+    const cone = records.flash[index] > 0 ? records.radius[index] * (1 + along / records.flash[index]) : 0;
+    if (cone > radius) { cratering *= (radius / cone) ** 2; radius = cone; }
     const water = Math.PI * records.radius[index] ** 2 * records.speed[index] * dt;   // the parcel's water, m³
     const directionX = across > 1e-9 ? records.vx[index] / across : 0, directionZ = across > 1e-9 ? records.vz[index] / across : 0;
     this.landings++;
@@ -593,7 +598,7 @@ export class WaterCannon {
     if (!onIce) {
       // The crater, its centre wandering within the footprint.
       let angle = random() * Math.PI * 2, out = IMPACT.jitter * radius * Math.sqrt(random());
-      this.water.addSplat({ x: x + Math.cos(angle) * out, z: z + Math.sin(angle) * out, radius: footprint, velocity: -IMPACT.push * speed * dt, rim: IMPACT.rim });
+      this.water.addSplat({ x: x + Math.cos(angle) * out, z: z + Math.sin(angle) * out, radius: footprint, velocity: -cratering * speed * dt, rim: IMPACT.rim });
       // Its churn: a stamp of foam each step, each its own size, place and strength (the header).
       // Laid along the way the stream glances on (IMPACT.trail), wider and so thinner the farther: a streak, never a disc.
       // With no air (src/splash.js `airless`: Europa) none is driven under, so it leaves no foam, specks or white water.
@@ -750,16 +755,16 @@ export class WaterCannon {
       const strength = tail.strength[slot * parts + part];
       // Thrown from open water, it may come down on ice beyond it (under a weak pull, Europa's, far beyond): there it
       // does nothing, its draws drawn all the same, so the rest of the fan's are as they were.
-      const water = !this.iceAt?.(x, z);
+      const onWater = !this.iceAt?.(x, z);
       if (draw < FAN.pock) {
         const splat = { x, z, radius: FAN.pockRadius[0] + (FAN.pockRadius[1] - FAN.pockRadius[0]) * random(), velocity: -(FAN.pockPush[0] + (FAN.pockPush[1] - FAN.pockPush[0]) * random()) * strength };
-        if (water) this.water.addSplat(splat);
+        if (onWater) this.water.addSplat(splat);
       } else if (draw < FAN.pock + FAN.rings) {
         const ring = { x, z, radius: 0.001 + 0.0015 * random(), fallSpeed: Math.max(tail.velocity[at + 1], 1) };
-        if (water) this.dropRings?.add(ring, splashTime);
+        if (onWater) this.dropRings?.add(ring, splashTime);
       } else if (!this.splash.airless) {   // froth, but where there is no air (above)
         const froth = { x, z, radius: FAN.frothRadius * wide * (0.6 + 0.8 * random()), amount: FAN.frothAmount * strength, lifetime: FAN.frothLife };
-        if (water) this.water.addFoam?.(froth);
+        if (onWater) this.water.addFoam?.(froth);
       }
     }
     // The drops that leave it, where the sheet comes apart: they fly on with its velocity there, and land.
