@@ -1003,7 +1003,8 @@ export function throwFlightTime(hand, target, power, radius) {
  * (throwFlightTime). A thrower aims by the arc, so under a weaker pull a toss
  * or a lob flies Earth's arc, slower: let go sqrt(g/9.81) as fast, in the
  * air sqrt(9.81/g) as long (2.73 times on Europa: the medium toss 2.2 s
- * against 0.8), as high (1.2 m: in frame from every view) and in at the same
+ * against 0.8), as high (1.2 m, as on Earth: the level view, 16 cm up,
+ * loses its top as it does Earth's) and in at the same
  * angle and Froude number, so its splash is Earth's, in slow motion
  * (src/cavity.js: the same hole in R, 2.73 times as late). Let go as fast as
  * on Earth it would climb 11 m and come down 8 s later, out of sight.

@@ -1220,7 +1220,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // And Europa's scenery in their place (src/europaScenery.js, drawn by src/europaSceneryMeshes.js): no bird has air to
   // fly in there, so with the birds on it has its plume and a probe crossing its sky instead, on the birds' seed.
   const europaScenery = new EuropaScenery({ seed: Number(birdSeed) });
-  const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
+  // Its probe's picture comes when it comes: the mirror needs no redrawing whole for it, its region being drawn again every frame it is shown
+  // (mirrorChanges), so its coming changes nothing else drawn and frames are alike whenever it came.
+  const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
   sceneMain.add(europaSceneryView.above, europaSceneryView.mirror);
   // The frost the vapour of open water boiling in vacuum condenses into, over it (src/boilingVapour.js), posed a frame.
   const vapour = createBoilingVapour(lighting);

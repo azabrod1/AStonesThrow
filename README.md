@@ -1330,8 +1330,8 @@ The curated locations include:
   (`PLACES.europa.gravity`, `src/gravity.js`): a toss or a lob flies Earth's
   arc, slower (`placeFlightTime` in `src/rock.js`): let go at 0.37 of the
   speed, as high, in at the same angle and 2.7 times as long in the air (the
-  medium toss 2.2 s), so it stays in frame and its splash is Earth's in slow
-  motion; a hard toss is let go as fast as on Earth and comes in flatter.
+  medium toss 2.2 s), as much in frame as on Earth, and its splash is
+  Earth's in slow motion; a hard toss is let go as fast as on Earth and comes in flatter.
   Let go as fast as on Earth, a toss would climb 11 m and land 8 s later.
   The hole pinches 2.7 times later, the drops
   hang longer and the rings run slower (`tools/gravity-probe.mjs`).

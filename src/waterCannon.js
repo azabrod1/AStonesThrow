@@ -44,7 +44,7 @@
 // vapour grow in it at u = sqrt(2/3 · p_v/ρ), 0.64 m/s (FLASH: inertia-
 // limited, as Rayleigh's; water from the ocean below, its gas unknown, so
 // its vapour alone), and burst it across its bore r by FLASH's r·V/u from
-// the muzzle: 6 cm for the weakest jet, some 40 at 3 bar, 2 m for the deck
+// the muzzle: 8 cm for the weakest jet, some 40 at 3 bar, 1.8 m for the deck
 // gun. So it is white with bubbles almost at once, and goes on as a cone of
 // drops widening by u/V (1.5° at 3 bar), the same water over a wider way:
 // thinner the farther it flies (skin), and lands as wide, its push on the

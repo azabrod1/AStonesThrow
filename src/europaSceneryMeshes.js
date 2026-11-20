@@ -158,7 +158,7 @@ export function createEuropaSceneryView(options) {
 const luminance = (vector) => 0.2126 * vector.x + 0.7152 * vector.y + 0.0722 * vector.z;
 const quad = new THREE.PlaneGeometry(1, 1).translate(0.5, 0.5, 0);   // corners from (0, 0) to (1, 1)
 
-function makeView({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
+function makeView({ lighting, haze, mirrorLayer }) {
   const above = new THREE.Group(), mirror = new THREE.Group();
   above.name = 'europa-scenery';
   const shared = {
@@ -205,7 +205,6 @@ function makeView({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
         probeSprite.radius = probeBounds.radius = Math.hypot(Math.max(bodyX, 1 - bodyX) * width, Math.max(bodyY, 1 - bodyY) * height);
         pictured = true;
         update();
-        onLoaded();
       } catch (error) {
         console.warn('[europa] the probe\'s picture failed to load; it is not shown', error);
       }
