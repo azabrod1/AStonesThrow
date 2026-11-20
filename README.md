@@ -1340,8 +1340,8 @@ The curated locations include:
   as none:
   - Nothing drags on what flies: the stone and the spray fly plain parabolas.
   - No air carries a sound (`src/sound.js`): the splash, a skip and the
-    cannon are silent, and only a thing landing on the ice is heard, through
-    the ice.
+    cannon are silent, and so are things knocking each other; only a thing
+    landing on the ground (the ice or the beach) is heard, through it.
   - The water cannon's stream flashes: water at 0 °C has a vapour pressure of
     611 Pa and nothing outside holds it in, so bubbles of vapour grow in it
     at about 0.64 m/s and burst it into a widening cone of drops that freeze

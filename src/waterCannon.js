@@ -644,7 +644,7 @@ export class WaterCannon {
         const apart = Math.hypot(rock.position.x - x, rock.position.z - z), reach = footprint + rock.radius;
         if (apart >= reach) continue;
         const share = 1 - apart / reach;
-        const push = Math.min(IMPACT.pushCap, (WATER_DENSITY * water * speed * share) / Math.max(rock.mass, 1e-3));
+        const push = Math.min(IMPACT.pushCap, (WATER_DENSITY * water * speed * share * (cratering / IMPACT.push)) / Math.max(rock.mass, 1e-3));   // in vacuum, the share of the cone it meets
         rock.knock(directionX * push, 0, directionZ * push, 0, 0, 0);
       }
     }

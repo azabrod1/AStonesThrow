@@ -176,7 +176,8 @@ function makeView({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
     uniforms: probeUniforms, vertexShader: PROBE_VERTEX, fragmentShader: PROBE_FRAGMENT,
     defines: pass === 'mirror' ? { MIRROR: '' } : {}, transparent: pass !== 'mirror', depthWrite: pass === 'mirror', side: THREE.DoubleSide, toneMapped: false,
   });
-  // Bounded by a sphere about the body (its picture's farthest corner, once it has come), so a pass that does not see it does not draw it.
+  // Bounded by a sphere about the body, in the mesh's own frame (its centre the mesh's place: three moves it with the mesh), to its picture's
+  // farthest corner once it has come, so a pass that does not see it does not draw it.
   const probeBounds = new THREE.Sphere(new THREE.Vector3(), 30);
   const probeQuad = new THREE.BufferGeometry();
   probeQuad.setIndex(quad.index);
@@ -238,7 +239,6 @@ function makeView({ lighting, haze, mirrorLayer, onLoaded = () => {} }) {
       mesh.visible = probeSprite.shown;
       mesh.position.set(probe.x, probe.y, probe.z);
     }
-    probeBounds.center.set(probe.x, probe.y, probe.z);
     probeSprite.centre.set(probe.x, probe.y, probe.z);
     probeUniforms.uFade.value = probe.fade;
     probeUniforms.uRoll.value = probe.roll;

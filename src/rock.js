@@ -3377,7 +3377,7 @@ export class Rock {
     const material = this.thing.material;
     const surface = this.groundSurface;   // the ground's own (the header: ice)
     const fall = -this.velocity.y;
-    this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce, surface: surface?.kind });   // its knock on the ground (src/sound.js)
+    this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce, surface: surface?.kind, ground: true });   // its knock on the ground (src/sound.js)
     const bounce = (material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random()) * (surface?.give ?? 1);
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
@@ -3467,7 +3467,7 @@ export class Rock {
     if (!alongX && !alongZ) alongX = alongZ = true;
     if (alongX) { this.position.x = this.previous.x; this.velocity.x *= -this.collisionBounce; }
     if (alongZ) { this.position.z = this.previous.z; this.velocity.z *= -this.collisionBounce; }
-    this.heard.push({ speed: Math.hypot(alongX ? this.velocity.x : 0, alongZ ? this.velocity.z : 0) / Math.max(this.collisionBounce, 0.05), radius: this.radius, bounce: this.collisionBounce });
+    this.heard.push({ speed: Math.hypot(alongX ? this.velocity.x : 0, alongZ ? this.velocity.z : 0) / Math.max(this.collisionBounce, 0.05), radius: this.radius, bounce: this.collisionBounce, ground: true });
     return this.ground.at(this.position.x, this.position.z, this) ?? this.groundHeight;
   }
 

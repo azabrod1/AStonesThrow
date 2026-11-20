@@ -33,10 +33,10 @@
 //     of its own, outside the count below.
 //
 // Where there is no air (src/air.js: Europa, setAirless) nothing carries a
-// sound to the ear but the ground under it: a thing landing on the ice is
-// heard, through the ice, as is the ice's own crack and chirp; the slap and
-// plunk of the water, a skip, a floater and the cannon's roar, and things
-// knocking each other, are silent.
+// sound to the ear but the ground under it: a thing landing on the ice or
+// the beach is heard, through the ground, as is the ice's own crack and
+// chirp; the slap and plunk of the water, a skip, a floater and the cannon's
+// roar, and things knocking each other, are silent.
 //
 // Each is played when it is seen, not when the physics finds it: `after`,
 // the seconds until the frame that shows it reaches the screen (src/main.js
@@ -272,10 +272,11 @@ export function createSound() {
     /**
      * Two things knocking, or one on the deck: `speed` (m/s) they met at,
      * `radius` (m) and `bounce` (its material's, 0 to 1) of what rings, seen
-     * `after` seconds from now.
+     * `after` seconds from now; `ground` if it landed on the ground (the
+     * ice, a deck, a beach), all that is heard where there is no air.
      */
-    knock({ speed, radius, bounce, surface = null, thickness = 0, distance = 5 }, after = 0) {
-      if (airless && surface !== 'ice') return;   // heard only through the ground (the header)
+    knock({ speed, radius, bounce, surface = null, thickness = 0, distance = 5, ground = false }, after = 0) {
+      if (airless && !ground) return;   // heard only through the ground (the header)
       // On grass (the Koi pond's lawn, src/koiGarden.js) a dull thud: quieter, hardly ringing.
       if (surface === 'grass') { speed *= 0.5; bounce *= 0.2; }
       const loudness = clamp(speed * 0.12, 0, 0.9);
