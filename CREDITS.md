@@ -94,6 +94,8 @@ Europa's sky is computed (`tools/europa-sky.py`) from spacecraft images, all pub
 
 Its stars and the Milky Way are drawn by the tool, not taken from a catalogue.
 
+The probe crossing its sky is NASA/JPL-Caltech's rendering of Europa Clipper, [PIA20025: Europa Mission Spacecraft - Artist's Rendering](https://commons.wikimedia.org/wiki/File:Europa_Clipper_spacecraft_model.png) (public domain), cropped and scaled by `tools/europa-probe.py`.
+
 ## Textures
 
 From [Poly Haven](https://polyhaven.com), [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (`tools/tropics-textures.mjs`):

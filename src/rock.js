@@ -1000,19 +1000,25 @@ export function throwFlightTime(hand, target, power, radius) {
 /**
  * The flight time (s) under the place's gravity (src/gravity.js) of a throw
  * from `hand` to `target` that flies there in `earthTime` under Earth's
- * (throwFlightTime): the thrower's arm is the same, so it is let go as fast
- * (D²/T² + g·Δy + g²·T²/4, lowArcTime's), on the higher of the two arcs that
- * reach the tap at that speed, or the lower if `low` (a hard throw's, fast
- * and flat). Under Europa's gravity the medium toss to the reference tap goes
- * up 10 m and comes down 8 s later, nearly straight down, at the speed it was
- * let go; its lower arc would skim in at 16° under level. Earth's: `earthTime`.
+ * (throwFlightTime). A thrower aims by the arc, so under a weaker pull a toss
+ * or a lob flies Earth's arc, slower: let go sqrt(g/9.81) as fast, in the
+ * air sqrt(9.81/g) as long (2.73 times on Europa: the medium toss 2.2 s
+ * against 0.8), as high (1.2 m: in frame from every view) and in at the same
+ * angle and Froude number, so its splash is Earth's, in slow motion
+ * (src/cavity.js: the same hole in R, 2.73 times as late). Let go as fast as
+ * on Earth it would climb 11 m and come down 8 s later, out of sight.
+ * A hard toss (`low`) is let go as fast as on Earth (the arm's fastest) on
+ * the lower of the two arcs that reach the tap, flatter than on Earth, or,
+ * under a stronger pull that speed cannot reach, on Earth's arc, faster.
+ * Earth's: `earthTime`.
  */
 export function placeFlightTime(hand, target, earthTime, low = false) {
   if (GRAVITY === EARTH_GRAVITY) return earthTime;
+  const sameArc = earthTime * Math.sqrt(EARTH_GRAVITY / GRAVITY);
+  if (!low) return sameArc;
   const distanceSquared = hand.distanceToSquared(target);
   const speed = Math.sqrt(distanceSquared / earthTime ** 2 + EARTH_GRAVITY * (target.y - hand.y) + (EARTH_GRAVITY * earthTime) ** 2 / 4);
-  // A weaker pull always lets that speed reach; a stronger one may not: then the same arc as on Earth, faster.
-  return lowArcTime(hand, target, speed, GRAVITY, !low) ?? earthTime * Math.sqrt(EARTH_GRAVITY / GRAVITY);
+  return lowArcTime(hand, target, speed, GRAVITY) ?? sameArc;
 }
 
 /**

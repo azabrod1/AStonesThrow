@@ -499,10 +499,11 @@ const CEILING_TOLERANCE = 0.007;
 // skip's strength is its speed (src/rock.js SKIP_THROW). The normal toss is
 // the throw the splash is tuned to (CLAUDE.md's reference throw). Those are
 // Earth's flights: under a place's own gravity (src/gravity.js, Europa's) a
-// throw is let go as fast as it is on Earth (the arm is the same) and lands
-// at the tap the higher way round, a hard toss the lower (src/rock.js
-// placeFlightTime): a toss on Europa climbs ten metres and takes eight
-// seconds, a skip skims as fast and as low as ever.
+// toss or a lob flies Earth's arc, slower (src/rock.js placeFlightTime: the
+// medium toss 2.2 s on Europa against 0.8, as high and in at the same
+// angle, so its splash is Earth's in slow motion), and a hard toss is let go
+// as fast as on Earth, on the lower, flatter arc; a skip skims as fast and
+// as low as ever.
 const ARC = {
   toss: { soft: 1.18, normal: 1.0, hard: null },
   lob: { soft: 1.3, normal: 1.5, hard: 1.7 },
@@ -935,6 +936,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
   const sound = createSound();
   sound.setEnabled((pageParameters.get('sound') ?? storedChoice(SOUND_STORAGE_KEY)) !== 'off');
+  sound.setAirless(placeAirless(firstPlace));   // no air to carry a sound but through the ice (src/sound.js)
   // Browsers let audio start only on a gesture: the first press or key starts it (never the page's own throws, the
   // warm-up's among them).
   for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => sound.unlock(), { capture: true });
@@ -1218,7 +1220,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // And Europa's scenery in their place (src/europaScenery.js, drawn by src/europaSceneryMeshes.js): no bird has air to
   // fly in there, so with the birds on it has its plume and a probe crossing its sky instead, on the birds' seed.
   const europaScenery = new EuropaScenery({ seed: Number(birdSeed) });
-  const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
+  const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER, onLoaded: () => { viewChanged = true; } });
   sceneMain.add(europaSceneryView.above, europaSceneryView.mirror);
   // The frost the vapour of open water boiling in vacuum condenses into, over it (src/boilingVapour.js), posed a frame.
   const vapour = createBoilingVapour(lighting);
@@ -2175,7 +2177,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function throwVelocity(hand, target, powerName, radius, mannerName = manner) {
     const multiplier = (ARC[mannerName] ?? ARC.toss)[powerName];
     const earthTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
-    // Under another gravity (src/gravity.js: Europa's) as fast as on Earth, the higher way to the tap, a hard toss the lower.
+    // Under another gravity (src/gravity.js: Europa's) Earth's arc, slower; a hard toss as fast as on Earth, the lower way.
     const flightTime = placeFlightTime(hand, target, earthTime, multiplier === null);
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
     velocity.y += 0.5 * GRAVITY * flightTime;
@@ -2479,6 +2481,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Where the stream lands (src/waterCannon.js IMPACT.startleEvery): the fish there scatter, and a heron near it goes or, in sight of it, looks.
     startle: (x, z) => { fishes.startle(x, 0, z, FISH_ALARM.finger); birds.startle(stepsTime, x, z); },
     wetIce: (x, z, radius) => { if (!ice.on || ice.holeAt(x, z)) return false; ice.wetSpot(x, z, radius); return true; },
+    iceAt: (x, z) => ice.on && !ice.holeAt(x, z),
   });
   let cannonPointer = null;           // the press firing the cannon
   let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
@@ -3447,6 +3450,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     setGravity(next.gravity ?? EARTH_GRAVITY);
     // And of air (src/air.js): nothing in flight lives under two either.
     setAirDensity(placeAirless(place) ? 0 : EARTH_AIR);
+    sound.setAirless(placeAirless(place));
     if (geometryChanges || iceChanges || gravityChanges || airChanges) clearPond();
     placeName = place;
     pooled = Boolean(next.pool);
@@ -3931,6 +3935,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get sky() { return placeName; },
     /** Resolves when the sky's horizon strip is drawn, or has failed (src/sky.js, Horizon): the tools wait for it, the page never. */
     get horizonReady() { return environment.horizonReady; },
+    /** Resolves once Europa's probe's picture has come (src/europaSceneryMeshes.js), or at once where it was never asked for. */
+    get europaSceneryReady() { return europaSceneryView.ready; },
     /**
      * The hour of the place last asked for (a name from `hours`), its local
      * time remembered on this device as the time of day other places follow.

@@ -32,6 +32,12 @@
 //     the pressure (STREAM), faded out as the nozzle shuts. It is a voice
 //     of its own, outside the count below.
 //
+// Where there is no air (src/air.js: Europa, setAirless) nothing carries a
+// sound to the ear but the ground under it: a thing landing on the ice is
+// heard, through the ice, as is the ice's own crack and chirp; the slap and
+// plunk of the water, a skip, a floater and the cannon's roar, and things
+// knocking each other, are silent.
+//
 // Each is played when it is seen, not when the physics finds it: `after`,
 // the seconds until the frame that shows it reaches the screen (src/main.js
 // simulate), less the audio's own latency (its base and output latency,
@@ -58,6 +64,7 @@ const STREAM = { hiss: [1800, 3600], hissQ: 0.6, roar: [140, 420], gain: [0.08, 
 export function createSound() {
   let context = null, master = null, noise = null;
   let enabled = true;
+  let airless = false;   // no air to carry a sound (setAirless): only what comes through the ice is heard
   let playing = 0;
   let offset = 0;   // where in the noise the last burst began
 
@@ -206,12 +213,17 @@ export function createSound() {
       if (!enabled && context?.state === 'running') context.suspend().catch(() => {});
       if (enabled && context) ready();
     },
+    /** No air to carry a sound, or air again (the header): src/main.js, with the place's air (src/air.js). */
+    setAirless(none) {
+      airless = Boolean(none);
+      if (airless) streamStop();
+    },
     /**
      * The water cannon's stream at `strength`, 0 to 1 (its pressure's share of its slider; 0, or nothing, shuts it), once
      * a frame (src/main.js render): started when the audio is ready, its hiss, roar and loudness following the strength.
      */
     streamSet(strength) {
-      if (!(strength > 0) || !enabled) { streamStop(); return; }
+      if (!(strength > 0) || !enabled || airless) { streamStop(); return; }
       const audio = ready();
       if (!audio) return;
       stream ??= streamNodes(audio);
@@ -229,6 +241,7 @@ export function createSound() {
 
     /** A thing into the water (src/rock.js goIn's impact: speed, radius), seen `after` seconds from now (the header). */
     splash({ speed, radius }, after = 0) {
+      if (airless) return;
       const loudness = clamp(speed * Math.sqrt(radius) * SPLASH.slap, 0, 1);
       const sound = voice(loudness, after);
       if (!sound) return;
@@ -242,6 +255,7 @@ export function createSound() {
     },
     /** A skip off the water (src/rock.js skimReport: its speed in), seen `after` seconds from now. */
     skip({ velocity, radius }, after = 0) {
+      if (airless) return;
       const loudness = clamp(Math.abs(velocity.y) * 0.25, 0, 0.6);
       const sound = voice(loudness, after);
       if (!sound) return;
@@ -249,6 +263,7 @@ export function createSound() {
     },
     /** A floater coming up through the surface, or back down into it (src/rock.js startFloating's ripple), seen `after` seconds from now. */
     ripple({ speed, radius }, after = 0) {
+      if (airless) return;
       const loudness = clamp(speed * Math.sqrt(radius) * 0.08, 0, 0.3);
       const sound = voice(loudness, after);
       if (!sound) return;
@@ -260,6 +275,7 @@ export function createSound() {
      * `after` seconds from now.
      */
     knock({ speed, radius, bounce, surface = null, thickness = 0, distance = 5 }, after = 0) {
+      if (airless && surface !== 'ice') return;   // heard only through the ground (the header)
       // On grass (the Koi pond's lawn, src/koiGarden.js) a dull thud: quieter, hardly ringing.
       if (surface === 'grass') { speed *= 0.5; bounce *= 0.2; }
       const loudness = clamp(speed * 0.12, 0, 0.9);
