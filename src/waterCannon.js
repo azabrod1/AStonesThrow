@@ -963,10 +963,10 @@ export class WaterCannon {
     const piece = this.piece, count = piece.count, centre = piece.centre, axis = this.pieceAxis;
     for (let at = 0; at < count; at++) {
       const before = Math.max(at - 1, 0), after = Math.min(at + 1, count - 1);
-      let x = centre[after * 3] - centre[before * 3], y = centre[after * 3 + 1] - centre[before * 3 + 1], z = centre[after * 3 + 2] - centre[before * 3 + 2];
-      const length = Math.hypot(x, y, z);
-      if (length > 1e-6) { x /= length; y /= length; z /= length; } else { x = piece.flying[at * 3]; y = piece.flying[at * 3 + 1]; z = piece.flying[at * 3 + 2]; }
-      axis.x = x; axis.y = y; axis.z = z;
+      let wayX = centre[after * 3] - centre[before * 3], wayY = centre[after * 3 + 1] - centre[before * 3 + 1], wayZ = centre[after * 3 + 2] - centre[before * 3 + 2];
+      const length = Math.hypot(wayX, wayY, wayZ);
+      if (length > 1e-6) { wayX /= length; wayY /= length; wayZ /= length; } else { wayX = piece.flying[at * 3]; wayY = piece.flying[at * 3 + 1]; wayZ = piece.flying[at * 3 + 2]; }
+      axis.x = wayX; axis.y = wayY; axis.z = wayZ;
       const flown = Math.abs(piece.emitted[before] - piece.emitted[after]) * piece.pace[at];
       const stretch = flown > 1e-9 ? Math.min(Math.max(length / flown, 1), ROUGH.stretch) : 1;
       this.sheath.ring(centre[at * 3], centre[at * 3 + 1], centre[at * 3 + 2], axis, piece.radius[at], piece.emitted[at], piece.depth[at] / stretch, piece.broken[at]);

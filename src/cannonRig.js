@@ -40,7 +40,12 @@
 // left (an active set). A beam has no corners, even where it leaves a
 // support, so each hose rises off the ground in one curve into its
 // coupling; a delivery hose bends no tighter than some 10 cm, the suction
-// hose some 17. The rings follow a smooth curve through the points. The
+// hose some 17. Its heights are what lies under the way it is solved to
+// go sideways, not under the straight line between its ends. Under a gale
+// (show) what floats is drawn lifted by the waves, as the splash and the
+// stones are: each ring on open water by its share (lift: whole at its
+// float, none HOSE.rides above it), the strainer with it, the waves summed
+// at every HOSE.ridesEvery rings. The rings follow a smooth curve through the points. The
 // suction hose is laid when the place changes; the delivery hose when the
 // nozzle has moved, which costs well under a millisecond, and nothing while
 // it is still. Each is a tube of HOSE.segments rings of HOSE.sides, its
@@ -74,6 +79,8 @@ export const HOSE = {
                       // floats lower, but the water's surface would pare it to a sliver where it leaves the bank, so it is drawn on it)
   segments: 96,
   sides: 12,
+  rides: 0.1,         // m: under a gale a ring rides the waves wholly afloat, less the higher it lies over its float, none this high
+  ridesEvery: 4,      // the waves' height is summed at every this many rings afloat, the rest between them (the CPU's sum is dear)
   // Each hose's `load` is its weight over its bending stiffness, q/EI (m⁻³): lying on the ground and lifted by h at a
   // clamped end it leaves the ground (72 h EI / q)^(1/4) from there (the suction hose some 45 cm from its inlet, 14 cm
   // up; the delivery hose, charged and stiffer, a metre from the nozzle in the hand).
@@ -336,7 +343,11 @@ class Hose {
     this.mesh = mesh;
     this.radius = radius;
     this.load = load;   // its weight over its bending stiffness, q/EI (m⁻³)
-    this.points = new Float64Array((HOSE.segments + 1) * 3);
+    this.points = new Float64Array((HOSE.segments + 1) * 3);   // as drawn (lift)
+    this.still = new Float64Array((HOSE.segments + 1) * 3);    // as laid, on still water
+    this.afloat = new Float32Array(HOSE.segments + 1);         // each ring's share of the gale's lift (findAfloat)
+    this.floats = false;
+    this.lifted = false;
   }
 
   /**
@@ -357,10 +368,6 @@ class Hose {
     const hold = (at, point) => { xs[at] = point.x; ys[at] = point.y; zs[at] = point.z; fixed[at] = 1; };
     hold(0, start); hold(1, out); hold(last, end); if (endWay) hold(last - 1, into);
     const diving = dive > 0 ? Math.round(dive / spacing) : -1;
-    for (let at = 0; at < count; at++) {
-      const share = THREE.MathUtils.clamp((at - 1) / between, 0, 1);
-      lowest[at] = at >= last - diving ? -Infinity : restingAt(out.x + (into.x - out.x) * share, out.z + (into.z - out.z) * share, this.radius);
-    }
     // Its bending: the sum of its squared second differences, as a band matrix (the beam's stiffness, K).
     const stiffness = new Float64Array(count * 5);
     for (let middle = 1; middle < last; middle++) {
@@ -388,6 +395,8 @@ class Hose {
     };
     solve(xs, 0, fixed);
     solve(zs, 0, fixed);
+    // What it rests on, under the way it goes sideways (which bows off the straight line between its ends).
+    for (let at = 0; at < count; at++) lowest[at] = fixed[at] ? -Infinity : at >= last - diving ? -Infinity : restingAt(xs[at], zs[at], this.radius);
     // Its height: on what holds it up where it touches (an active set): touching everywhere it can at first, then
     // the point the ground pulls on hardest let go, and any that went under it put back on it, till neither is left.
     const touching = Uint8Array.from(fixed);
@@ -412,7 +421,57 @@ class Hose {
     const points = this.points;
     const curve = new THREE.CatmullRomCurve3(Array.from({ length: count }, (unused, at) => new THREE.Vector3(xs[at], ys[at], zs[at])), false, 'centripetal');
     curve.getSpacedPoints(HOSE.segments).forEach((point, ring) => { points[ring * 3] = point.x; points[ring * 3 + 1] = point.y; points[ring * 3 + 2] = point.z; });
+    this.still.set(points);
+    this.lifted = false;
     tubeAlong(this.mesh.geometry, points, this.radius, HOSE.sides);
+  }
+
+  /**
+   * How much of the gale's lift each ring takes (lift), where `floorAt`
+   * (x, z) is null (open water): wholly at its float or under it, less the
+   * higher over it, none HOSE.rides over it; none over land or ice.
+   */
+  findAfloat(floorAt) {
+    const float = -HOSE.afloat * this.radius;
+    let any = false;
+    for (let ring = 0; ring <= HOSE.segments; ring++) {
+      const height = this.still[ring * 3 + 1];
+      const share = floorAt(this.still[ring * 3], this.still[ring * 3 + 2]) === null ? THREE.MathUtils.clamp(1 - (height - float) / HOSE.rides, 0, 1) : 0;
+      this.afloat[ring] = share;
+      any ||= share > 0;
+    }
+    this.floats = any;
+  }
+
+  /**
+   * Under a gale, its rings afloat lifted by the water's height `surfaceAt`
+   * (x, z) as drawn (the splash and the stones are, src/shaders/gale.js
+   * galeLift), or put back on still water with none (surfaceAt null).
+   * Returns the lift at its last ring (the suction hose's strainer).
+   */
+  lift(surfaceAt) {
+    if (!this.floats || (!surfaceAt && !this.lifted)) return 0;
+    const points = this.points, still = this.still, every = HOSE.ridesEvery, last = HOSE.segments;
+    let end = 0;
+    if (surfaceAt) {
+      // Summed at every `every` rings (and the last), straight between: the rings afloat ride it, each by its share.
+      let before = 0, beforeHeight = this.afloat[0] > 0 ? surfaceAt(still[0], still[2]) : 0;
+      for (let after = Math.min(every, last); ; after = Math.min(after + every, last)) {
+        let needed = false;
+        for (let ring = before; ring <= after && !needed; ring++) needed = this.afloat[ring] > 0;
+        const afterHeight = needed ? surfaceAt(still[after * 3], still[after * 3 + 2]) : 0;
+        for (let ring = before + 1; ring <= after; ring++) {
+          const height = beforeHeight + ((afterHeight - beforeHeight) * (ring - before)) / (after - before);
+          points[ring * 3 + 1] = still[ring * 3 + 1] + this.afloat[ring] * height;
+        }
+        if (after === last) { end = afterHeight * this.afloat[last]; break; }
+        before = after; beforeHeight = afterHeight;
+      }
+      points[1] = still[1] + this.afloat[0] * (this.afloat[0] > 0 ? surfaceAt(still[0], still[2]) : 0);
+    } else points.set(still);
+    this.lifted = Boolean(surfaceAt);
+    tubeAlong(this.mesh.geometry, points, this.radius, HOSE.sides);
+    return end;
   }
 }
 
@@ -423,9 +482,11 @@ export class CannonRig {
    * @param landAt (x, z) → the land's height there (m over the still water), or null over the water
    * @param floorAt (x, z) → what a hose rests on there (the land's height, the ice's top), or null over open water
    * @param groundAt (x, z) → the ground's height there, or the bed's under the water (the stand's feet)
+   * @param surfaceAt () → under a gale, (x, z) → the water's height there (its CPU sum), else null: what lifts what floats
    */
-  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0 }) {
+  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0, surfaceAt = () => null }) {
     this.landAt = landAt;
+    this.surfaceAt = surfaceAt;
     this.floorAt = floorAt;
     this.groundAt = groundAt;
     this.pump = new THREE.Mesh(pumpGeometry(), material(0.42, 0.25, 0.8));
@@ -488,10 +549,12 @@ export class CannonRig {
     suction.lay(this.pumpPoint(PUMP.inlet), this.pumpWay(PUMP.inletWay), strainer.setY(frozen === null ? -sunk : frozen + HOSE.suction.radius * 1.7), null,
       { dive: frozen === null ? dive : 0, restingAt: this.restingAt });
     // The strainer on its end, along the way it comes.
-    const points = suction.points, last = HOSE.segments * 3, before = last - 3;
+    const points = suction.still, last = HOSE.segments * 3, before = last - 3;
     const way = new THREE.Vector3(points[last] - points[before], points[last + 1] - points[before + 1], points[last + 2] - points[before + 2]).normalize();
-    this.strainer.position.set(points[last], points[last + 1], points[last + 2]);
+    this.strainerAt = new THREE.Vector3(points[last], points[last + 1], points[last + 2]);
+    this.strainer.position.copy(this.strainerAt);
     this.strainer.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), way);
+    suction.findAfloat(this.floorAt);
     this.nozzleAt.elements[0] = NaN;   // the delivery hose laid to the nozzle again (show)
     // The stand under the hand, its legs parted where the hose goes down towards the pump.
     const towardPump = new THREE.Vector3(this.footing.x - hand.x, 0, this.footing.z - hand.z).normalize();
@@ -544,8 +607,13 @@ export class CannonRig {
       this.footing.x + shake * Math.sin(2 * Math.PI * PUMP.hum[0] * seconds),
       this.footing.y + shake * Math.sin(2 * Math.PI * PUMP.hum[1] * seconds + 1),
       this.footing.z + shake * Math.sin(2 * Math.PI * PUMP.hum[0] * seconds + 2));
+    // Under a gale what floats rides the waves as drawn (src/shaders/gale.js galeLift): the suction hose and its strainer,
+    // and the delivery hose wherever it lies on open water. Drawn only; nothing of the world changes.
+    const surfaceAt = this.surfaceAt();
+    const sunk = this.suction.lift(surfaceAt);
+    this.strainer.position.set(this.strainerAt.x, this.strainerAt.y + sunk, this.strainerAt.z);
     nozzle.updateMatrix();
-    if (nozzle.matrix.equals(this.nozzleAt)) return;
+    if (nozzle.matrix.equals(this.nozzleAt)) { this.delivery.lift(surfaceAt); return; }
     this.nozzleAt.copy(nozzle.matrix);
     const scale = nozzle.scale.x;
     const barrel = new THREE.Vector3(0, 0, 1).applyQuaternion(nozzle.quaternion);
@@ -557,6 +625,8 @@ export class CannonRig {
     const tail = nozzle.position.clone().addScaledVector(barrel, HOSE.delivery.tail * scale);
     this.delivery.radius = HOSE.delivery.radius * scale;
     this.delivery.lay(tail, barrel.negate(), this.pumpPoint(PUMP.outlet), this.pumpWay(PUMP.outletWay), { restingAt: this.restingAt });
+    this.delivery.findAfloat(this.floorAt);
+    this.delivery.lift(surfaceAt);
   }
 
   /** Hidden (the preview is gone, or another thing is in hand). */

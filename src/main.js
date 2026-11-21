@@ -1399,14 +1399,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       mesh.visible = true;
       mesh.material.opacity = 1;
       const aim = cannon.aim ?? (marker.visible ? { x: marker.position.x, z: marker.position.z } : null);
+      // While it fires, as big and as steep as the burst it fires (its pressure as the burst began, src/waterCannon.js
+      // fire), so the stream leaves its muzzle whatever the slider says meanwhile; otherwise as the slider says.
+      const burst = cannon.firing ? cannon.burst : null;
+      const made = burst ? burst.nozzle : nozzle(preview.pressure, preview.thing.stream);
+      mesh.scale.setScalar(burst ? burst.scale : nozzleScale(preview.radius, made.radius));
       if (aim) {
         // Along the launch from its muzzle (cannon.barrel), which is where the stream leaves it: the stream comes out of its bore's middle.
-        const launch = cannon.barrel(mesh.position, aim.x, aim.z, nozzle(preview.pressure, preview.thing.stream).speed, mesh.scale.x, previewMuzzle);
+        const launch = cannon.barrel(mesh.position, aim.x, aim.z, made.speed, mesh.scale.x, previewMuzzle);
         mesh.lookAt(mesh.position.x + launch.vx, mesh.position.y + launch.vy, mesh.position.z + launch.vz);
       }
       // Its pump, hoses and stand (src/cannonRig.js): set down on this place's land, the hose laid to the nozzle, humming as it fires.
-      if (!cannonRig) cannonRig = new CannonRig({ scene: sceneMain, material: rigMaterial, landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt });
-      const rigFor = `${placeName} ${ice.thickness} ${ice.opened}`;   // its hoses lie on the ice (laid again as it thickens or thins, or a hole opens), or float on open water
+      if (!cannonRig) cannonRig = new CannonRig({ scene: sceneMain, material: rigMaterial, landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt, surfaceAt: () => (galeWaves.on ? galeSurfaceAt : null) });
+      // Its hoses lie on the ice (laid again as it thickens or thins, a hole opens or skins over, or the pond is cleared), or
+      // float on open water; its stand stands under the hand (laid again if the hand moves).
+      const hand = mesh.position;
+      const rigFor = `${placeName} ${ice.thickness} ${ice.opened} ${ice.holes.length} ${ice.openHoles} ${hand.x.toFixed(4)} ${hand.y.toFixed(4)} ${hand.z.toFixed(4)}`;
       if (rigPlace !== rigFor) { cannonRig.place(shoreFrame, mesh.position); rigPlace = rigFor; }
       cannonRig.show(mesh, cannon.strength, now / 1000);
       preview.drawnAt = now;
