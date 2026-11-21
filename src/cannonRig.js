@@ -31,7 +31,8 @@
 // stub of hose (NOZZLE's back end in src/thingMeshes.js, as round as it), a
 // clamped end, to the pump's outlet, another; the suction hose (blue-grey)
 // from the inlet, clamped, to its strainer under the water, pinned, its
-// last HOSE.suction.dive free to go under. Each is cut into HOSE.spacing
+// last HOSE.suction.dive free to go under (on frozen water, unless a hole is
+// there, the strainer lies on the ice instead). Each is cut into HOSE.spacing
 // pieces and solved exactly at rest (lay): the bending is a band matrix, so
 // its sideways way is one solve, and its height is found with the points
 // that touch what holds it up held there, letting go each the ground would
@@ -162,32 +163,32 @@ function roundedBox(width, height, depth, round, segments = 5) {
 
 /** The pump's body (the header), in metres, its feet at y 0, the hand's way +z: built once. */
 function pumpGeometry() {
-  const { colours: c } = PUMP;
+  const { colours: colour } = PUMP;
   const parts = new Parts();
   const [halfWidth, halfLength] = PUMP.foot, tube = 0.013;
   // The carrying frame: a skid each side, and a handle arched over each end.
-  for (const side of [-1, 1]) parts.bar([side * halfWidth, tube, -halfLength], [side * halfWidth, tube, halfLength - 0.04], tube, c.frame);
+  for (const side of [-1, 1]) parts.bar([side * halfWidth, tube, -halfLength], [side * halfWidth, tube, halfLength - 0.04], tube, colour.frame);
   for (const z of [-halfLength + 0.02, 0.15]) {
-    for (const side of [-1, 1]) parts.bar([side * halfWidth, tube, z], [side * (halfWidth - 0.03), 0.42, z], tube, c.frame);
-    parts.bar([-(halfWidth - 0.03), 0.42, z], [halfWidth - 0.03, 0.42, z], tube, c.frame);
+    for (const side of [-1, 1]) parts.bar([side * halfWidth, tube, z], [side * (halfWidth - 0.03), 0.42, z], tube, colour.frame);
+    parts.bar([-(halfWidth - 0.03), 0.42, z], [halfWidth - 0.03, 0.42, z], tube, colour.frame);
   }
   // The housing over the engine, rounded, its fuel cap, the exhaust's grille on its side, the gauge at its front.
-  parts.add(roundedBox(0.31, 0.06, 0.38, 0.015, 3), place([0, 0.075, -0.04], null), c.base);   // the engine's base under it
-  parts.add(roundedBox(0.3, 0.24, 0.36, 0.05), place([0, 0.225, -0.04], null), c.housing);
+  parts.add(roundedBox(0.31, 0.06, 0.38, 0.015, 3), place([0, 0.075, -0.04], null), colour.base);   // the engine's base under it
+  parts.add(roundedBox(0.3, 0.24, 0.36, 0.05), place([0, 0.225, -0.04], null), colour.housing);
   // Its back: the control panel, the recoil starter's grip on it, the stop switch.
-  parts.add(roundedBox(0.2, 0.12, 0.012, 0.004, 2), place([0, 0.22, -0.224], null), c.panel);
-  parts.add(roundedBox(0.075, 0.018, 0.022, 0.008, 2), place([0.03, 0.2, -0.238], null), c.blue);
-  parts.cylinder(0.011, 0.016, [-0.06, 0.245, -0.233], 'z', c.housing, 12);
-  parts.cylinder(0.028, 0.03, [0.07, 0.35, -0.1], 'y', c.blue, 16);
-  parts.add(roundedBox(0.012, 0.11, 0.17, 0.005, 2), place([0.15, 0.23, -0.08], null), c.grille);
-  parts.cylinder(0.03, 0.012, [-0.08, 0.28, 0.14], 'z', c.frame, 20);
-  parts.cylinder(0.025, 0.004, [-0.08, 0.28, 0.147], 'z', c.dial, 20);
+  parts.add(roundedBox(0.2, 0.12, 0.012, 0.004, 2), place([0, 0.22, -0.224], null), colour.panel);
+  parts.add(roundedBox(0.075, 0.018, 0.022, 0.008, 2), place([0.03, 0.2, -0.238], null), colour.blue);
+  parts.cylinder(0.011, 0.016, [-0.06, 0.245, -0.233], 'z', colour.housing, 12);
+  parts.cylinder(0.028, 0.03, [0.07, 0.35, -0.1], 'y', colour.blue, 16);
+  parts.add(roundedBox(0.012, 0.11, 0.17, 0.005, 2), place([0.15, 0.23, -0.08], null), colour.grille);
+  parts.cylinder(0.03, 0.012, [-0.08, 0.28, 0.14], 'z', colour.frame, 20);
+  parts.cylinder(0.025, 0.004, [-0.08, 0.28, 0.147], 'z', colour.dial, 20);
   // The pump: its volute at the front, the suction coupling on its eye, the delivery pipe up to its coupling.
-  parts.cylinder(0.095, 0.08, [0, 0.17, 0.18], 'z', c.alloy, 28);
-  parts.cylinder(0.042, 0.06, [0, 0.17, PUMP.inlet[2] - 0.03], 'z', c.brass, 20);
-  parts.bar([0, 0.24, 0.19], [PUMP.outlet[0], PUMP.outlet[1] - 0.02, PUMP.outlet[2] - 0.015], 0.024, c.alloy);
+  parts.cylinder(0.095, 0.08, [0, 0.17, 0.18], 'z', colour.alloy, 28);
+  parts.cylinder(0.042, 0.06, [0, 0.17, PUMP.inlet[2] - 0.03], 'z', colour.brass, 20);
+  parts.bar([0, 0.24, 0.19], [PUMP.outlet[0], PUMP.outlet[1] - 0.02, PUMP.outlet[2] - 0.015], 0.024, colour.alloy);
   parts.add(new THREE.CylinderGeometry(0.033, 0.033, 0.045, 20), new THREE.Matrix4().compose(new THREE.Vector3(PUMP.outlet[0], PUMP.outlet[1] - 0.013, PUMP.outlet[2] - 0.018),
-    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...PUMP.outletWay).normalize()), new THREE.Vector3(1, 1, 1)), c.brass);
+    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...PUMP.outletWay).normalize()), new THREE.Vector3(1, 1, 1)), colour.brass);
   return parts.geometry();
 }
 
@@ -254,8 +255,8 @@ function tubeGeometry(segments, sides, colour) {
   const index = [];
   for (let ring = 0; ring < segments; ring++) {
     for (let side = 0; side < sides; side++) {
-      const a = ring * (sides + 1) + side, b = a + sides + 1;
-      index.push(a, a + 1, b, a + 1, b + 1, b);   // wound to face out (the ring goes round as T × N does)
+      const here = ring * (sides + 1) + side, next = here + sides + 1;
+      index.push(here, here + 1, next, here + 1, next + 1, next);   // wound to face out (the ring goes round as T × N does)
     }
   }
   geometry.setIndex(index);
@@ -472,8 +473,11 @@ export class CannonRig {
       for (; walked < most && this.landAt(edge.x, edge.z) !== null; walked += step) edge.addScaledVector(way, step);
       if (walked < nearest) { nearest = walked; strainer = edge.addScaledVector(way, out); }
     }
+    // Under ice (floorAt there, not a hole) the strainer lies on the sheet rather than going through it.
+    const frozen = this.floorAt(strainer.x, strainer.z);
     const suction = this.suction;
-    suction.lay(this.pumpPoint(PUMP.inlet), this.pumpWay(PUMP.inletWay), strainer.setY(-sunk), null, { dive, restingAt: this.restingAt });
+    suction.lay(this.pumpPoint(PUMP.inlet), this.pumpWay(PUMP.inletWay), strainer.setY(frozen === null ? -sunk : frozen + HOSE.suction.radius * 1.7), null,
+      { dive: frozen === null ? dive : 0, restingAt: this.restingAt });
     // The strainer on its end, along the way it comes.
     const points = suction.points, last = HOSE.segments * 3, before = last - 3;
     const way = new THREE.Vector3(points[last] - points[before], points[last + 1] - points[before + 1], points[last + 2] - points[before + 2]).normalize();

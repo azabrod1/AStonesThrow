@@ -83,7 +83,6 @@
 // water it churns) frightens every fish in that reach each step it lands,
 // and the rest keep out of twice that (STREAM_KEEP) and go deep near it, so
 // none swims back under it while it plays.
-
 //
 // Nothing ever passes through a fish (keepClear). Each thing in the water,
 // or coming down to it, or held in it (fishSee), is a rounded disc (`radius` its reach, `thickness`
@@ -946,7 +945,8 @@ export class FishPopulation {
       const keepOut = STREAM_KEEP.out * thing.stream;
       if (apart >= keepOut) continue;
       const urgency = 1 - apart / keepOut;
-      const awayX = apart > 1e-6 ? apartX / apart : -Math.cos(fish.heading), awayZ = apart > 1e-6 ? apartZ / apart : -Math.sin(fish.heading);
+      // Right under it, on the way it is going: the nearest way out, rather than turned back through the churn.
+      const awayX = apart > 1e-6 ? apartX / apart : Math.cos(fish.heading), awayZ = apart > 1e-6 ? apartZ / apart : Math.sin(fish.heading);
       const [outX, outZ] = this.alongWalls(fish, awayX, awayZ);
       wantX += outX * STREAM_KEEP.push * urgency; wantZ += outZ * STREAM_KEEP.push * urgency;
       if (ownBand) goalY += (ownBand[1] - goalY) * Math.sqrt(urgency);

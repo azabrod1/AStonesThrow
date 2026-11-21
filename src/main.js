@@ -1296,10 +1296,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const depth = floorDepthAt(x, z);
     return depth < -0.004 ? -depth : null;
   }
-  /** The ground's height at (x, z), or the bed's under the water, for the rig's stand (src/cannonRig.js groundAt). */
+  /** The ground's height at (x, z), else the ice's top, else the bed's under open water, for the rig's stand (src/cannonRig.js groundAt). */
   function rigGroundAt(x, z) {
-    if (pooled) return outsidePool(x, z) > 0 ? POOL.deck : -POOL.depth;
-    return -floorDepthAt(x, z);
+    if (pooled) {
+      if (outsidePool(x, z) > 0) return POOL.deck;
+    } else if (floorDepthAt(x, z) < 0) return -floorDepthAt(x, z);
+    return (ice.on ? ice.at(x, z) : null) ?? (pooled ? -POOL.depth : -floorDepthAt(x, z));
   }
   /** What the rig's hoses rest on at (x, z) (src/cannonRig.js floorAt): the land, else the ice (src/ice.js at: none in a hole), else null. */
   function rigFloorAt(x, z) {
@@ -1404,7 +1406,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       // Its pump, hoses and stand (src/cannonRig.js): set down on this place's land, the hose laid to the nozzle, humming as it fires.
       if (!cannonRig) cannonRig = new CannonRig({ scene: sceneMain, material: rigMaterial, landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt });
-      const rigFor = `${placeName} ${ice.on}`;   // its hoses lie on the ice, or float on open water
+      const rigFor = `${placeName} ${ice.thickness} ${ice.opened}`;   // its hoses lie on the ice (laid again as it thickens or thins, or a hole opens), or float on open water
       if (rigPlace !== rigFor) { cannonRig.place(shoreFrame, mesh.position); rigPlace = rigFor; }
       cannonRig.show(mesh, cannon.strength, now / 1000);
       preview.drawnAt = now;
