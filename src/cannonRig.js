@@ -1,6 +1,5 @@
 // The water cannon's rig (src/waterCannon.js): the pump on the bank that
-// makes its pressure, the hose from it to the nozzle in the hand, and the
-// suction hose it draws the pond's water up by. Scenery of the preview's
+// makes its pressure and the suction hose it draws the pond's water up by. Scenery of the preview's
 // (src/main.js buildPreview): shown while the cannon is in hand, left out
 // with the preview (?preview=off, so the harness's frames stay as they were
 // unless --preview=1).
@@ -19,20 +18,22 @@
 // fires (show: a shake of a fraction of a millimetre, by real time, as the
 // preview turns: no world state changes).
 //
-// The hoses (lay) are laid as a hose lies: out of each fitting straight
-// for a moment (HOSE.lead), then down in one smooth bend to
-// what it rests on, along it, and up the same way into the other fitting.
-// It rests on the land, on the ice where there is ice (the caller's
-// `floorAt`), and over open water it floats on it (HOSE.afloat), so it is
-// one hose from end to end; the suction hose's strainer alone goes under (HOSE.sunk). The bend from a fitting reaches as
-// far out as it hangs high (HOSE.hang), and the run along the ground is
-// smoothed where it goes in, so the whole is one curve, resampled to even
-// rings. The delivery hose runs from the nozzle's tail (its own hose stub,
-// NOZZLE's back end in src/thingMeshes.js, its radius the stub's) to the
-// outlet, rewritten only when the nozzle moves; the suction hose from the
-// inlet to its strainer in the water, laid when the place changes. Each is a
-// tube of HOSE.segments rings of HOSE.sides, its frames carried along it so
-// it never twists.
+// The suction hose (lay) is laid as a hose lies: a beam, clamped in the
+// inlet's coupling and pinned at its strainer under the water, bent by its
+// weight against its stiffness (HOSE.load, q/EI), resting on the land, on
+// the ice where there is ice (the caller's `floorAt`), and over open water
+// floating on it (HOSE.afloat) until it goes down to the strainer
+// (HOSE.dive). It starts as a rough path (out of the inlet, straight to the
+// strainer over what it rests on) cut into HOSE.spacing pieces and is
+// relaxed to rest: each free point in turn goes where its bending and its
+// weight are least, then back onto what it rests on. A beam has no corners,
+// even where it leaves a support, so it rises off the ground in one curve
+// into the coupling and goes down into the water the same way; the rings
+// follow a smooth curve through the points. Laid when the place changes,
+// never a frame (some milliseconds): a tube of HOSE.segments rings of
+// HOSE.sides, its frames carried along it so it never twists. The nozzle's
+// own stub of hose is all of the delivery hose there is to see. Its end
+// wears a strainer (strainerGeometry), seen where the water is clear.
 //
 // One program for all of it: the nozzle's (src/main.js passes a material
 // maker that gives the nozzle's program, its parameters alike, so nothing
@@ -54,24 +55,21 @@ export const PUMP = {
   },
 };
 export const HOSE = {
-  radius: 0.7,        // in the nozzle's drawn radii (NOZZLE's hose stub: the hose is the stub's own)
-  tail: -3.9,         // where the hose takes over from the stub, in its radii along its barrel (inside the stub's end)
-  lead: 0.02,         // m: straight out of each fitting before it bends
-  bend: [0.33, 0.5],   // a bend's arms, shares of its chord: at a fitting, and where it comes to rest (lay)
-  hang: 0.55,         // the bend from a fitting reaches out this many times as far as the fitting is over what the hose rests on...
-  reach: 0.08,        // ...and this much more (m)
-  span: 0.8,          // m: the most of open water it spans to come down on a walled bank rather than in front of it...
-  wall: 0.05,         // ...one this high over the water (m)
+  radius: 0.026,      // m
+  spacing: 0.05,      // m: the pieces it is relaxed in, the first the coupling's own way
+  load: 250,          // m⁻³: its weight over its bending stiffness, q/EI: lying on the ground and lifted by h at a clamped end it
+                      // leaves the ground (72 h EI / q)^(1/4) from there (some 45 cm for the inlet's 14 cm)
+  passes: 1500,       // relaxing passes
   drape: 1.5,         // it rests on the highest of what is within this many of its radii (restingAt)
-  afloat: -1,         // over open water it floats on it, its middle this many of its radii under (-1: on the surface; a filled hose floats lower, but the water's
-                      // surface would pare it to a sliver where it leaves the bank, so it is drawn on it)...
-  sunk: 0.15,         // ...but the suction hose's strainer this far under (m)...
-  dive: 0.35,         // ...going down to it over this much (m)
-  smooth: 6,          // passes smoothing the run along the ground (each a three-point mean)
-  segments: 72,
+  afloat: -1,         // over open water it floats on it, its middle this many of its radii under (-1: on the surface; a filled hose
+                      // floats lower, but the water's surface would pare it to a sliver where it leaves the bank, so it is drawn on it)
+  sunk: 0.15,         // m: its strainer this far under the water...
+  dive: 0.45,         // ...going down to it over the last this much of it (m)
+  out: 0.9,           // m: the strainer this far out from the water's edge...
+  aside: 0.75,        // ...the hose laid this far (rad) aside of the way the pump faces, to whichever side reaches the water sooner
+  segments: 96,
   sides: 12,
-  colour: [0.6, 0.08, 0.06],
-  suction: { radius: 0.026, colour: [0.16, 0.2, 0.26], out: 0.9, aside: 0.75 },   // the blue-grey suction hose: its strainer this far out from the water's edge, laid this far (rad) aside of the way the pump faces
+  colour: [0.16, 0.2, 0.26],   // blue-grey
 };
 
 /** Triangles (position, normal, colour) collected from primitives, then made one geometry (Parts.geometry). */
@@ -167,6 +165,15 @@ function pumpGeometry() {
   return parts.geometry();
 }
 
+/** The suction hose's strainer, in metres, from the hose's end along +y: a brass coupling, then a grey perforated drum, capped. */
+function strainerGeometry() {
+  const parts = new Parts(), { brass, grille } = PUMP.colours;
+  parts.cylinder(HOSE.radius * 1.25, 0.03, [0, 0.015, 0], 'y', brass, 16);
+  parts.cylinder(HOSE.radius * 1.7, 0.1, [0, 0.08, 0], 'y', grille, 16);
+  for (let band = 0; band < 4; band++) parts.cylinder(HOSE.radius * 1.75, 0.006, [0, 0.042 + band * 0.025, 0], 'y', brass, 16);
+  return parts.geometry();
+}
+
 /** A tube's mesh of `segments` rings of `sides` (its triangles indexed once), its rings written by `tubeAlong`. */
 function tubeGeometry(segments, sides, colour) {
   const rings = segments + 1, count = rings * (sides + 1);
@@ -218,12 +225,6 @@ function tubeAlong(geometry, points, radius, sides) {
   geometry.computeBoundingSphere();
 }
 
-/** A point of the cubic from a to d by b and c, at t, into `out`. */
-function cubicAt(a, b, c, d, t, out) {
-  const s = 1 - t;
-  return out.set(0, 0, 0).addScaledVector(a, s * s * s).addScaledVector(b, 3 * s * s * t).addScaledVector(c, 3 * s * t * t).addScaledVector(d, t * t * t);
-}
-
 export class CannonRig {
   /**
    * @param scene the main scene
@@ -235,14 +236,14 @@ export class CannonRig {
     this.landAt = landAt;
     this.floorAt = floorAt;
     this.pump = new THREE.Mesh(pumpGeometry(), material(0.42, 0.25, 0.8));
-    this.hose = new THREE.Mesh(tubeGeometry(HOSE.segments, HOSE.sides, HOSE.colour), material(0.55, 0, 0.6));
-    this.suction = new THREE.Mesh(tubeGeometry(HOSE.segments, HOSE.sides, HOSE.suction.colour), this.hose.material);
-    for (const mesh of [this.pump, this.hose, this.suction]) { mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh); }
+    this.suction = new THREE.Mesh(tubeGeometry(HOSE.segments, HOSE.sides, HOSE.colour), material(0.55, 0, 0.6));
+    this.strainer = new THREE.Mesh(strainerGeometry(), this.pump.material);   // on the hose's end (lay)
+    this.meshes = [this.pump, this.suction, this.strainer];
+    for (const mesh of this.meshes) { mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh); }
     this.scene = scene;
     this.points = new Float64Array((HOSE.segments + 1) * 3);
     this.footing = new THREE.Vector3();   // where the pump stands (place)
     this.facing = 0;                      // its turn about the vertical
-    this.drawn = new THREE.Matrix4();     // the nozzle as the hose was last drawn to it
     this.placed = false;
   }
 
@@ -269,21 +270,19 @@ export class CannonRig {
     this.pump.position.copy(this.footing);
     this.pump.rotation.set(0, this.facing, 0);
     this.pump.updateMatrix();
-    // The suction hose: out of the inlet, down to the ground, along it to where the water starts and into it.
-    // It goes off aside (HOSE.suction.aside), so it lies clear of the delivery hose, which runs straight at the hand:
-    // to whichever side reaches the water sooner.
+    // The suction hose: out of the inlet, down to the ground, along it to the water and down to its strainer. It goes off
+    // aside (HOSE.aside), to whichever side reaches the water sooner.
     let strainer = null, nearest = Infinity;
     for (const side of [-1, 1]) {
-      const turn = this.facing + side * HOSE.suction.aside;
+      const turn = this.facing + side * HOSE.aside;
       const way = new THREE.Vector3(Math.sin(turn), 0, Math.cos(turn));
       const edge = this.footing.clone().addScaledVector(way, PUMP.foot[1]);
       let walked = 0;
       for (; walked < most && this.landAt(edge.x, edge.z) !== null; walked += step) edge.addScaledVector(way, step);
-      if (walked < nearest) { nearest = walked; strainer = edge.addScaledVector(way, HOSE.suction.out); }
+      if (walked < nearest) { nearest = walked; strainer = edge.addScaledVector(way, HOSE.out); }
     }
-    this.lay(this.suction.geometry, this.pumpPoint(PUMP.inlet), this.pumpWay(PUMP.inletWay), strainer, null, HOSE.suction.radius);
+    this.lay(this.pumpPoint(PUMP.inlet), this.pumpWay(PUMP.inletWay), strainer.setY(-HOSE.sunk));
     this.placed = true;
-    this.drawn.elements[0] = NaN;   // the hose to be drawn again
   }
 
   /** The land's height under all of the pump's feet at (x, z) turned by `facing` (the highest), or null if any is over the water. */
@@ -303,131 +302,91 @@ export class CannonRig {
   /** A way in the pump's frame in the world. */
   pumpWay(local) { return new THREE.Vector3(...local).normalize().applyQuaternion(this.pump.quaternion); }
 
-  /** Where the middle of a hose of `radius` lies at (x, z): on what it rests on, or afloat in open water (the header). */
-  restingAt(x, z, radius) {
+  /** Where the hose's middle lies at (x, z): on what it rests on, or afloat on open water (the header). */
+  restingAt(x, z) {
     // The highest of what lies under it and just round it, so it drapes over a wall's edge rather than through it.
     let highest = null;
-    const near = HOSE.drape * radius;
+    const near = HOSE.drape * HOSE.radius;
     for (const [dx, dz] of [[0, 0], [near, 0], [-near, 0], [0, near], [0, -near]]) {
       const floor = this.floorAt(x + dx, z + dz);
       if (floor !== null && (highest === null || floor > highest)) highest = floor;
     }
-    return highest === null ? -HOSE.afloat * radius : highest + radius;
+    return highest === null ? -HOSE.afloat * HOSE.radius : highest + HOSE.radius;
   }
 
   /**
-   * Lay a hose of `radius` into `geometry` (the header): from `start` out
-   * along `startWay`, down to rest, along, and up into `end` along the way
-   * `endWay` points out of it; with no `endWay` it ends lying at `end`.
+   * Lay the suction hose (the header) from the inlet's mouth `start`, out
+   * along `startWay`, to its strainer at `end` under the water: a rough path
+   * relaxed to rest, then cut into even rings.
    */
-  lay(geometry, start, startWay, end, endWay, radius) {
-    const path = [];
-    const push = (point) => path.push(point.clone());
-    const out = start.clone().addScaledVector(startWay, HOSE.lead);
-    const into = endWay ? end.clone().addScaledVector(endWay, HOSE.lead) : end.clone().setY(this.floorAt(end.x, end.z) === null ? -HOSE.sunk : this.restingAt(end.x, end.z, radius));
-    const along = new THREE.Vector3(into.x - out.x, 0, into.z - out.z);
-    if (along.lengthSq() < 1e-8) along.set(startWay.x, 0, startWay.z);
-    along.normalize();
-    // How far out each bend reaches: as far as its fitting hangs over where the hose comes to rest.
-    const bendReach = (from) => HOSE.hang * Math.max(from.y - this.restingAt(from.x, from.z, radius), 0) + HOSE.reach;
-    const outReach = bendReach(out), intoReach = endWay ? bendReach(into) : HOSE.dive;
-    const gap = (into.x - out.x) * along.x + (into.z - out.z) * along.z;
-    // Too near to rest between them (a short span): one bend from fitting to fitting.
-    const down = gap > outReach + intoReach + 0.02 ? out.clone().addScaledVector(along, outReach) : null;
-    const up = down ? into.clone().addScaledVector(along, -intoReach) : null;
-    const point = new THREE.Vector3();
-    // A bend: a cubic leaving `from` along `fromWay` and coming into `to` along `toWay`, its arms shares of its chord,
-    // short at a fitting (HOSE.bend[0]: the hose turns down soon after it, as its weight pulls) and long where it comes to
-    // rest (HOSE.bend[1]: it lies down gently).
-    const bend = (from, fromWay, to, toWay, fromArm, toArm) => {
-      const chord = from.distanceTo(to);
-      const first = from.clone().addScaledVector(fromWay, fromArm * chord), second = to.clone().addScaledVector(toWay, -toArm * chord);
-      for (let step = 1; step <= 24; step++) push(cubicAt(from, first, second, to, step / 24, point));
+  lay(start, startWay, end) {
+    const spacing = HOSE.spacing;
+    // The rough path: out of the coupling, then straight to the strainer, over what it rests on.
+    const out = start.clone().addScaledVector(startWay, spacing);
+    const count = 2 + Math.max(Math.ceil(out.distanceTo(end) / spacing), 3);
+    const xs = new Float64Array(count), ys = new Float64Array(count), zs = new Float64Array(count), lowest = new Float64Array(count);
+    xs[0] = start.x; ys[0] = start.y; zs[0] = start.z;
+    for (let at = 1; at < count; at++) {
+      const share = (at - 1) / (count - 2);
+      xs[at] = out.x + (end.x - out.x) * share; zs[at] = out.z + (end.z - out.z) * share;
+      ys[at] = at === 1 ? out.y : at === count - 1 ? end.y : this.restingAt(xs[at], zs[at]);
+    }
+    // What holds each point up: what it rests on, but along its last HOSE.dive nothing (it goes down to the strainer).
+    const diving = Math.round(HOSE.dive / spacing);
+    for (let at = 0; at < count; at++) lowest[at] = at >= count - 1 - diving ? -Infinity : this.restingAt(xs[at], zs[at]);
+    // Relaxed to rest as a beam (the header): each free point in turn moved to where its bending (the squared second
+    // differences that touch it) and its weight are least, then lifted back onto what it rests on. The first two points
+    // are the coupling's (clamped: it leaves along it), the last the strainer's (pinned: any way it comes).
+    const load = 0.5 * HOSE.load * spacing ** 4;
+    const relax = (values, at, weight) => {
+      let pulled = weight, squares = 0;
+      for (let middle = at - 1; middle <= at + 1; middle++) {
+        if (middle < 1 || middle > count - 2) continue;
+        const own = middle === at ? -2 : 1;
+        // The second difference at `middle` without this point's own part.
+        const rest = values[middle - 1] - 2 * values[middle] + values[middle + 1] - own * values[at];
+        pulled += own * rest; squares += own * own;
+      }
+      return -pulled / squares;
     };
-    push(start);
-    push(out);
-    if (!down) {
-      bend(out, startWay, into, endWay ? endWay.clone().negate() : along, HOSE.bend[0], endWay ? HOSE.bend[0] : HOSE.bend[1]);
-    } else {
-      down.y = this.restingAt(down.x, down.z, radius);
-      // Come down in open water just short of a walled bank (the Reflecting Pool's coping over its water), it would climb the
-      // wall: it comes down on the bank instead, spanning the water (HOSE.span at most).
-      if (this.floorAt(down.x, down.z) === null) {
-        const probe = down.clone();
-        for (let walked = 0; walked < HOSE.span && probe.distanceTo(up) > 0.05; walked += 0.02) {
-          probe.addScaledVector(along, 0.02);
-          const floor = this.floorAt(probe.x, probe.z);
-          if (floor === null) continue;
-          if (floor > HOSE.wall) { down.copy(probe).addScaledVector(along, HOSE.drape * radius); down.y = this.restingAt(down.x, down.z, radius); }
-          break;
-        }
+    for (let pass = 0; pass < HOSE.passes; pass++) {
+      for (let at = 2; at < count - 1; at++) {
+        xs[at] = relax(xs, at, 0);
+        zs[at] = relax(zs, at, 0);
+        ys[at] = Math.max(relax(ys, at, load), lowest[at]);
       }
-      up.y = this.restingAt(up.x, up.z, radius);
-      bend(out, startWay, down, along, HOSE.bend[0], HOSE.bend[1]);
-      // Along what it rests on, smoothed where it goes from land or ice to the water's bed.
-      const run = Math.max(Math.ceil(down.distanceTo(up) / 0.02), 1), first = path.length;
-      for (let step = 1; step <= run; step++) {
-        point.lerpVectors(down, up, step / run);
-        point.y = this.restingAt(point.x, point.z, radius);
-        push(point);
-      }
-      for (let pass = 0; pass < HOSE.smooth; pass++) {
-        for (let at = first; at < path.length - 1; at++) path[at].y = (path[at - 1].y + path[at].y + path[at + 1].y) / 3;
-      }
-      for (let at = first; at < path.length; at++) {
-        const floor = this.floorAt(path[at].x, path[at].z);
-        if (floor !== null) path[at].y = Math.max(path[at].y, this.restingAt(path[at].x, path[at].z, radius));
-      }
-      if (endWay) bend(up, along, into, endWay.clone().negate(), HOSE.bend[1], HOSE.bend[0]);
-      else bend(up, along, into, along.clone().setY(-0.5).normalize(), HOSE.bend[1], HOSE.bend[1]);   // down to its strainer
     }
-    if (endWay) push(end);
-    // Nowhere through the land or the ice.
-    for (const at of path) { const floor = this.floorAt(at.x, at.z); if (floor !== null) at.y = Math.max(at.y, floor + radius); }
-    // Even rings along it.
-    const lengths = [0];
-    for (let at = 1; at < path.length; at++) lengths.push(lengths[at - 1] + path[at].distanceTo(path[at - 1]));
-    const total = lengths[lengths.length - 1];
-    let segment = 1;
-    for (let ring = 0; ring <= HOSE.segments; ring++) {
-      const wanted = (total * ring) / HOSE.segments;
-      while (segment < path.length - 1 && lengths[segment] < wanted) segment++;
-      const share = (wanted - lengths[segment - 1]) / Math.max(lengths[segment] - lengths[segment - 1], 1e-9);
-      point.lerpVectors(path[segment - 1], path[segment], THREE.MathUtils.clamp(share, 0, 1));
-      this.points[ring * 3] = point.x; this.points[ring * 3 + 1] = point.y; this.points[ring * 3 + 2] = point.z;
-    }
-    tubeAlong(geometry, this.points, radius, HOSE.sides);
+    // Even rings along it, along a smooth curve through its points.
+    const curve = new THREE.CatmullRomCurve3(Array.from({ length: count }, (unused, at) => new THREE.Vector3(xs[at], ys[at], zs[at])), false, 'centripetal');
+    curve.getSpacedPoints(HOSE.segments).forEach((point, ring) => { this.points[ring * 3] = point.x; this.points[ring * 3 + 1] = point.y; this.points[ring * 3 + 2] = point.z; });
+    tubeAlong(this.suction.geometry, this.points, HOSE.radius, HOSE.sides);
+    // The strainer on its end, along the way it comes.
+    const last = HOSE.segments * 3, before = last - 3;
+    const way = new THREE.Vector3(this.points[last] - this.points[before], this.points[last + 1] - this.points[before + 1], this.points[last + 2] - this.points[before + 2]).normalize();
+    this.strainer.position.set(this.points[last], this.points[last + 1], this.points[last + 2]);
+    this.strainer.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), way);
   }
 
   /**
    * Once a frame: shown with the `nozzle` mesh (the preview, or null for
-   * none), the hose drawn to its tail if it moved, and the pump humming by
-   * `strength` (the cannon's pressure share while firing) at the real time
-   * `seconds`.
+   * none), the pump humming by `strength` (the cannon's pressure share while
+   * firing) at the real time `seconds`.
    */
   show(nozzle, strength, seconds) {
     const visible = Boolean(nozzle?.visible) && this.placed;
-    for (const mesh of [this.pump, this.hose, this.suction]) mesh.visible = visible;
+    for (const mesh of this.meshes) mesh.visible = visible;
     if (!visible) return;
     const shake = PUMP.shake * strength;
     this.pump.position.set(
       this.footing.x + shake * Math.sin(2 * Math.PI * PUMP.hum[0] * seconds),
       this.footing.y + shake * Math.sin(2 * Math.PI * PUMP.hum[1] * seconds + 1),
       this.footing.z + shake * Math.sin(2 * Math.PI * PUMP.hum[0] * seconds + 2));
-    nozzle.updateMatrix();
-    if (nozzle.matrix.equals(this.drawn)) return;
-    this.drawn.copy(nozzle.matrix);
-    const scale = nozzle.scale.x;
-    const barrel = new THREE.Vector3(0, 0, 1).applyQuaternion(nozzle.quaternion);
-    const tail = nozzle.position.clone().addScaledVector(barrel, HOSE.tail * scale);
-    this.lay(this.hose.geometry, tail, barrel.negate(), this.pumpPoint(PUMP.outlet), this.pumpWay(PUMP.outletWay), HOSE.radius * scale);
   }
 
   /** Hidden (the preview is gone, or another thing is in hand). */
-  hide() { for (const mesh of [this.pump, this.hose, this.suction]) mesh.visible = false; }
+  hide() { for (const mesh of this.meshes) mesh.visible = false; }
 
   dispose() {
-    for (const mesh of [this.pump, this.hose, this.suction]) { this.scene.remove(mesh); mesh.geometry.dispose(); }
-    this.pump.material.dispose(); this.hose.material.dispose();
+    for (const mesh of this.meshes) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
   }
 }

@@ -1296,7 +1296,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const depth = floorDepthAt(x, z);
     return depth < -0.004 ? -depth : null;
   }
-  /** What the rig's hoses rest on at (x, z) (src/cannonRig.js floorAt): the land, else the ice (src/ice.js at: none in a hole), else null. */
+  /** What the rig's suction hose rests on at (x, z) (src/cannonRig.js floorAt): the land, else the ice (src/ice.js at: none in a hole), else null. */
   function rigFloorAt(x, z) {
     return rigLandAt(x, z) ?? (ice.on ? ice.at(x, z) : null);
   }
@@ -1397,9 +1397,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         const launch = cannon.barrel(mesh.position, aim.x, aim.z, nozzle(preview.pressure, preview.thing.stream).speed, mesh.scale.x, previewMuzzle);
         mesh.lookAt(mesh.position.x + launch.vx, mesh.position.y + launch.vy, mesh.position.z + launch.vz);
       }
-      // Its pump and hoses (src/cannonRig.js): set down on this place's land, the hose drawn to the nozzle, humming as it fires.
+      // Its pump and suction hose (src/cannonRig.js): set down on this place's land, humming as it fires.
       if (!cannonRig) cannonRig = new CannonRig({ scene: sceneMain, material: rigMaterial, landAt: rigLandAt, floorAt: rigFloorAt });
-      const rigFor = `${placeName} ${ice.on}`;   // its hoses lie on the ice, or sink in open water
+      const rigFor = `${placeName} ${ice.on}`;   // its hose lies on the ice, or floats on open water
       if (rigPlace !== rigFor) { cannonRig.place(shoreFrame, mesh.position); rigPlace = rigFor; }
       cannonRig.show(mesh, cannon.strength, now / 1000);
       preview.drawnAt = now;
@@ -1791,7 +1791,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     visitor.setEnvironment(environment.envTexture);
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
-    if (cannonRig) for (const mesh of [cannonRig.pump, cannonRig.hose]) mesh.material.envMap = environment.envTexture;
+    if (cannonRig) for (const mesh of cannonRig.meshes) mesh.material.envMap = environment.envTexture;
     applyWaterColor();
     ice.setGlow(environment.glow ?? 0);   // Europa's night ice glows (src/sky.js `glow`), and its frost beach
     setShoreGlow(environment.glow ?? 0);
