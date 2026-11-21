@@ -375,7 +375,8 @@ class Hose {
         for (const [other, otherWeight] of [[middle - 1, 1], [middle, -2], [middle + 1, 1]]) stiffness[one * 5 + other - one + 2] += oneWeight * otherWeight;
       }
     }
-    const weight = 0.5 * this.load * spacing ** 4;   // its weight on each point, against its stiffness
+    // Its weight on each point, against its stiffness: K is Dᵀ·D, the beam's energy (EI / 2h³)·yᵀKy + q·h·Σy, so K·y = −(q/EI)·h⁴.
+    const weight = this.load * spacing ** 4;
     // Least bending (and, upward, least height) with the held points held: K_free · free = −K_held · held (− weight).
     const solve = (values, load, held) => {
       const free = [];
@@ -455,17 +456,19 @@ class Hose {
     let end = 0;
     if (surfaceAt) {
       // Summed at every `every` rings (and the last), straight between: the rings afloat ride it, each by its share.
-      let before = 0, beforeHeight = this.afloat[0] > 0 ? surfaceAt(still[0], still[2]) : 0;
+      let before = 0, beforeSummed = this.afloat[0] > 0, beforeHeight = beforeSummed ? surfaceAt(still[0], still[2]) : 0;
       for (let after = Math.min(every, last); ; after = Math.min(after + every, last)) {
         let needed = false;
         for (let ring = before; ring <= after && !needed; ring++) needed = this.afloat[ring] > 0;
+        // Its start summed too where the last stretch had no need of it, so the rings afloat ride the water there, not 0.
+        if (needed && !beforeSummed) beforeHeight = surfaceAt(still[before * 3], still[before * 3 + 2]);
         const afterHeight = needed ? surfaceAt(still[after * 3], still[after * 3 + 2]) : 0;
         for (let ring = before + 1; ring <= after; ring++) {
           const height = beforeHeight + ((afterHeight - beforeHeight) * (ring - before)) / (after - before);
           points[ring * 3 + 1] = still[ring * 3 + 1] + this.afloat[ring] * height;
         }
         if (after === last) { end = afterHeight * this.afloat[last]; break; }
-        before = after; beforeHeight = afterHeight;
+        before = after; beforeHeight = afterHeight; beforeSummed = needed;
       }
       points[1] = still[1] + this.afloat[0] * (this.afloat[0] > 0 ? surfaceAt(still[0], still[2]) : 0);
     } else points.set(still);

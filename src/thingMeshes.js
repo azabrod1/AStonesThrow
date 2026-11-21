@@ -1032,12 +1032,13 @@ function turnedMesh(attributes, radii, segments) {
 // The water cannon's nozzle (src/things.js 'cannon', src/waterCannon.js): a
 // fire monitor's smooth-bore tip, a lathe about +z in unit radii (its
 // coupling's radius 1, 4 cm), back to front: a stub of red hose, its cut end
-// dark, a chrome
-// coupling, a black rubber grip with its grooves, the brass barrel tapering
-// to a chrome tip band and a black bumper, the bore a dark well set into the
+// capped in blue rubber, a chrome
+// coupling, a blue rubber grip with its grooves, the brass barrel tapering
+// to a chrome tip band and a blue rubber bumper, the bore a dark well set into the
 // end; one closed hull of separate triangles, its colours per vertex (its
 // metal from the material's `look.metalness`), so it shares the stone's
-// program. It is of one size.
+// program. It is drawn at its thing's size, or bigger for a bigger bore
+// (src/waterCannon.js nozzleScale).
 const NOZZLE = {
   length: 6.4,
   // The profile, back to front: [radius, z, colour], each stretch a ring of NOZZLE.sides.
