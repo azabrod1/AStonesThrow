@@ -186,13 +186,18 @@ function pumpGeometry() {
   // The pump: its volute at the front, the suction coupling on its eye, the delivery pipe up to its coupling.
   parts.cylinder(0.095, 0.08, [0, 0.17, 0.18], 'z', colour.alloy, 28);
   parts.cylinder(0.042, 0.06, [0, 0.17, PUMP.inlet[2] - 0.03], 'z', colour.brass, 20);
-  // The delivery coupling's mouth is the outlet itself, where the hose is clamped (lay), and the pipe meets its back.
+  // The delivery coupling's mouth is the outlet itself, where the hose is clamped (lay). The delivery pipe rises out of
+  // the volute's top and bends round into the coupling's back (a quadratic curve whose ends point up and along it).
   const outletWay = new THREE.Vector3(...PUMP.outletWay).normalize(), couplingLength = 0.045;
-  const couplingBack = new THREE.Vector3(...PUMP.outlet).addScaledVector(outletWay, -couplingLength);
-  parts.bar([0, 0.24, 0.19], couplingBack.toArray(), 0.024, colour.alloy);
-  parts.add(new THREE.SphereGeometry(0.024, 16, 8), new THREE.Matrix4().makeTranslation(couplingBack.x, couplingBack.y, couplingBack.z), colour.alloy);   // the elbow
-  parts.add(new THREE.CylinderGeometry(0.033, 0.033, couplingLength, 20), new THREE.Matrix4().compose(new THREE.Vector3(...PUMP.outlet).addScaledVector(outletWay, -couplingLength / 2),
+  const along = (distance) => new THREE.Vector3(...PUMP.outlet).addScaledVector(outletWay, distance);
+  const couplingBack = along(-couplingLength), pipeFoot = new THREE.Vector3(0, 0.22, 0.15);
+  const bendCorner = couplingBack.clone().addScaledVector(outletWay, -(couplingBack.z - pipeFoot.z) / outletWay.z);
+  const pipeEnd = couplingBack.clone().addScaledVector(outletWay, 0.01);   // a little into the coupling, so no seam shows
+  parts.add(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(pipeFoot, bendCorner.setX(0), pipeEnd), 24, 0.024, 20), new THREE.Matrix4(), colour.alloy);
+  const onOutlet = (radius, length, middle) => parts.add(new THREE.CylinderGeometry(radius, radius, length, 24), new THREE.Matrix4().compose(along(middle),
     new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), outletWay), new THREE.Vector3(1, 1, 1)), colour.brass);
+  onOutlet(0.033, couplingLength, -couplingLength / 2);   // the coupling
+  onOutlet(0.037, 0.008, -couplingLength + 0.004);        // its collar on the pipe
   return parts.geometry();
 }
 
