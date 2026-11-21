@@ -23,9 +23,8 @@
 // for a moment (HOSE.lead), then down in one smooth bend to
 // what it rests on, along it, and up the same way into the other fitting.
 // It rests on the land, on the ice where there is ice (the caller's
-// `floorAt`), and over open water it floats, low (HOSE.afloat: a hose full
-// of water weighs little more than the water), so it is one hose from end to
-// end; the suction hose's strainer alone goes under (HOSE.sunk). The bend from a fitting reaches as
+// `floorAt`), and over open water it floats on it (HOSE.afloat), so it is
+// one hose from end to end; the suction hose's strainer alone goes under (HOSE.sunk). The bend from a fitting reaches as
 // far out as it hangs high (HOSE.hang), and the run along the ground is
 // smoothed where it goes in, so the whole is one curve, resampled to even
 // rings. The delivery hose runs from the nozzle's tail (its own hose stub,
@@ -64,13 +63,15 @@ export const HOSE = {
   span: 0.8,          // m: the most of open water it spans to come down on a walled bank rather than in front of it...
   wall: 0.05,         // ...one this high over the water (m)
   drape: 1.5,         // it rests on the highest of what is within this many of its radii (restingAt)
-  afloat: 0.1,        // over open water it floats, its middle this many of its radii under (a filled fire hose is near the water's own weight)...
-  sunk: 0.15,         // ...but the suction hose's strainer this far under (m)
+  afloat: -1,         // over open water it floats on it, its middle this many of its radii under (-1: on the surface; a filled hose floats lower, but the water's
+                      // surface would pare it to a sliver where it leaves the bank, so it is drawn on it)...
+  sunk: 0.15,         // ...but the suction hose's strainer this far under (m)...
+  dive: 0.35,         // ...going down to it over this much (m)
   smooth: 6,          // passes smoothing the run along the ground (each a three-point mean)
   segments: 72,
   sides: 12,
   colour: [0.6, 0.08, 0.06],
-  suction: { radius: 0.026, colour: [0.16, 0.2, 0.26], out: 0.4, aside: 0.75 },   // the blue-grey suction hose: its strainer this far out from the water's edge, laid this far (rad) aside of the way the pump faces
+  suction: { radius: 0.026, colour: [0.16, 0.2, 0.26], out: 0.9, aside: 0.75 },   // the blue-grey suction hose: its strainer this far out from the water's edge, laid this far (rad) aside of the way the pump faces
 };
 
 /** Triangles (position, normal, colour) collected from primitives, then made one geometry (Parts.geometry). */
@@ -329,7 +330,7 @@ export class CannonRig {
     along.normalize();
     // How far out each bend reaches: as far as its fitting hangs over where the hose comes to rest.
     const bendReach = (from) => HOSE.hang * Math.max(from.y - this.restingAt(from.x, from.z, radius), 0) + HOSE.reach;
-    const outReach = bendReach(out), intoReach = endWay ? bendReach(into) : 0;
+    const outReach = bendReach(out), intoReach = endWay ? bendReach(into) : HOSE.dive;
     const gap = (into.x - out.x) * along.x + (into.z - out.z) * along.z;
     // Too near to rest between them (a short span): one bend from fitting to fitting.
     const down = gap > outReach + intoReach + 0.02 ? out.clone().addScaledVector(along, outReach) : null;
@@ -361,7 +362,7 @@ export class CannonRig {
           break;
         }
       }
-      if (endWay) up.y = this.restingAt(up.x, up.z, radius);
+      up.y = this.restingAt(up.x, up.z, radius);
       bend(out, startWay, down, along, HOSE.bend[0], HOSE.bend[1]);
       // Along what it rests on, smoothed where it goes from land or ice to the water's bed.
       const run = Math.max(Math.ceil(down.distanceTo(up) / 0.02), 1), first = path.length;
@@ -378,6 +379,7 @@ export class CannonRig {
         if (floor !== null) path[at].y = Math.max(path[at].y, this.restingAt(path[at].x, path[at].z, radius));
       }
       if (endWay) bend(up, along, into, endWay.clone().negate(), HOSE.bend[1], HOSE.bend[0]);
+      else bend(up, along, into, along.clone().setY(-0.5).normalize(), HOSE.bend[1], HOSE.bend[1]);   // down to its strainer
     }
     if (endWay) push(end);
     // Nowhere through the land or the ice.
