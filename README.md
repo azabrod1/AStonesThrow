@@ -175,10 +175,12 @@ full screen, which only a press or a key may ask for):
   and lands after), and moving the pointer sweeps it (the nozzle turns
   after the pointer as a critically damped spring, so a sweep is smooth
   whatever the frame rate, and its landing follows a flight later); it is
-  worked by a portable pump on the bank behind the hand, whose suction hose
-  curves down from its inlet, lies on the land, the ice or afloat on the
-  water and dips to its strainer, laid as a stiff hose rests (`src/cannonRig.js`,
-  scenery drawn with the nozzle on its program); with it in hand the view turns by the mouse's right button
+  fed by a portable pump on the bank behind the hand: a delivery hose from
+  its outlet to the nozzle and a suction hose from its inlet to a strainer
+  in the water, each laid as a stiff, heavy hose rests (solved as a beam,
+  so it curves out of its couplings and down onto the land, the ice or the
+  water with no corners; `src/cannonRig.js`, scenery drawn with the nozzle
+  on its program); with it in hand the view turns by the mouse's right button
   or by two fingers moved together (spread, they still zoom). The slider is
   its pressure, 0.5 to 10 bar: the exit speed is Bernoulli's, sqrt(2P/ρ),
   10 to 45 m/s, and the bore grows with it, 5 to 25 mm in radius, so the

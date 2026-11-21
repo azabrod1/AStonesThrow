@@ -953,7 +953,7 @@ defineBuiltIn('roses', {
 // the exit speed is Bernoulli's, sqrt(2P/ρ), 10 to 45 m/s, and the bore grows with it, 5 to 25 mm in radius, so the
 // flow runs from under a litre a second to some ninety, a deck gun's. The nozzle itself (src/thingMeshes.js
 // createNozzleGeometry) is a brass monitor tip on a stub of red hose, 26 cm long, 8 cm across its coupling, drawn bigger
-// above some 5.7 bar so its jet fits its bore (src/waterCannon.js nozzleScale); its pump stands on the bank
+// above some 5.7 bar so its jet fits its bore (src/waterCannon.js nozzleScale); its hose runs to a pump on the bank
 // (src/cannonRig.js).
 defineBuiltIn('cannon', {
   name: 'Water cannon', short: 'Cannon', group: 'Other', note: 'Hold to fire; the slider is its pressure', called: 'a jet of water',

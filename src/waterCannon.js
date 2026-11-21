@@ -17,7 +17,7 @@
 // critically damped spring (CANNON.follow), a step at a time: the aim comes
 // a frame at a time, and a stream aimed at it straight would be a staircase
 // of jets, one a frame, fractured as soon as it is swept. Its pump and its
-// suction hose are src/cannonRig.js's.
+// hoses are src/cannonRig.js's.
 //
 // The stream is no solver (CLAUDE.md: the jet column is the one solver). Each
 // physics step while it fires records a parcel let out then: its launch
