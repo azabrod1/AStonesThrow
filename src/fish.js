@@ -78,7 +78,12 @@
 // BURST_MOST), diving, turned along a wall it meets rather than into it
 // (alongWalls; and no fish's nose ever goes into a wall, keepFromWalls), and its group takes fright from it a moment
 // later. Afterwards it stays wary for a few seconds, and will not feed. A
-// thing lying still on the bed is only an obstacle to swim round.
+// thing lying still on the bed is only an obstacle to swim round. A stream
+// coming down (the water cannon's: a threat's `stream`, the reach of the
+// water it churns) frightens every fish in that reach each step it lands,
+// and the rest keep out of twice that (STREAM_KEEP) and go deep near it, so
+// none swims back under it while it plays.
+
 //
 // Nothing ever passes through a fish (keepClear). Each thing in the water,
 // or coming down to it, or held in it (fishSee), is a rounded disc (`radius` its reach, `thickness`
@@ -182,6 +187,7 @@ export const FISH_BY_PLACE = {
 
 const ANTICIPATE = 0.5;        // s: a thing coming down sooner than this frightens the fish under where it will land
 const ALARM = { least: 0.5, perRadius: 11, impact: 1.25, moving: 0.35 };   // m and m per m of the thing's radius: how far a thing frightens (times the kind's shy)
+const STREAM_KEEP = { out: 2, push: 5, dive: 1 };   // a stream's churn kept out of to this many of its reach, pushed and dived from the harder the nearer
 const FRIGHT = { seconds: [0.7, 1.4], wary: [3, 6], spread: 0.7, dive: 0.5, passOn: [0.08, 0.22], passReach: 1.5 };   // s; rad of scatter; how far down it dives; how its group takes fright
 const REST = { chance: 0.06, seconds: [2, 6], speed: 0.15 };   // a group's rests: a chance a second, how long, at what share of its cruise
 const GOAL = { reach: 0.5, seconds: [6, 16], wander: [0.8, 3.2], tries: 12 };   // when a goal is reached or given up, and how far the next is
@@ -742,7 +748,7 @@ export class FishPopulation {
         if (until > ANTICIPATE) continue;
         this.startle(threat.x + threat.vx * until, 0, threat.z + threat.vz * until, (ALARM.least + ALARM.perRadius * threat.radius));
       } else if (!threat.still) {
-        this.startle(threat.x, threat.y, threat.z, ALARM.moving + 3 * threat.radius);
+        this.startle(threat.x, threat.y, threat.z, Math.max(ALARM.moving + 3 * threat.radius, threat.stream ?? 0));
       }
     }
     // A group's goal, and its rests.
@@ -931,6 +937,20 @@ export class FishPopulation {
       const clear = this.clearOf(fish, thing, thing.x, thing.y, thing.z, fish.x, fish.y, fish.z, fish.heading, fish.pitch, awayWorst);
       const near = length;
       if (clear < near) { const push = 3 * (1 - Math.max(clear, 0) / near); wantX += awayWorst.x * push; wantZ += awayWorst.z * push; wantY += awayWorst.y * push * 0.5; }
+    }
+    // A stream coming down (a threat's `stream`, the reach of the water it churns): kept out of, by as much again, and
+    // under it, down to the bottom of its depths, the nearer the deeper (its bubbles and eddies reach down, not far).
+    for (const thing of threats) {
+      if (!thing.stream) continue;
+      const apartX = fish.x - thing.x, apartZ = fish.z - thing.z, apart = Math.hypot(apartX, apartZ);
+      const keepOut = STREAM_KEEP.out * thing.stream;
+      if (apart >= keepOut) continue;
+      const urgency = 1 - apart / keepOut;
+      const awayX = apart > 1e-6 ? apartX / apart : -Math.cos(fish.heading), awayZ = apart > 1e-6 ? apartZ / apart : -Math.sin(fish.heading);
+      const [outX, outZ] = this.alongWalls(fish, awayX, awayZ);
+      wantX += outX * STREAM_KEEP.push * urgency; wantZ += outZ * STREAM_KEEP.push * urgency;
+      if (ownBand) goalY += (ownBand[1] - goalY) * Math.sqrt(urgency);
+      wantY -= STREAM_KEEP.dive * urgency;
     }
     // The water's sides: turned back from them, and from where its heading would take it within a second.
     const { bounds } = this.water;

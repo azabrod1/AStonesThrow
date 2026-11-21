@@ -175,8 +175,9 @@ full screen, which only a press or a key may ask for):
   and lands after), and moving the pointer sweeps it (the nozzle turns
   after the pointer as a critically damped spring, so a sweep is smooth
   whatever the frame rate, and its landing follows a flight later); it is
-  fed by a hose from a portable pump on the bank behind the hand, whose
-  suction hose dips into the water (`src/cannonRig.js`, scenery drawn with
+  fed by a hose from a portable pump on the bank behind the hand (the hose
+  bends down from the nozzle and lies on the land, the ice or afloat on the
+  water to the pump), whose suction hose dips into the water (`src/cannonRig.js`, scenery drawn with
   the nozzle on its program); with it in hand the view turns by the mouse's right button
   or by two fingers moved together (spread, they still zoom). The slider is
   its pressure, 0.5 to 10 bar: the exit speed is Bernoulli's, sqrt(2P/ρ),
@@ -207,7 +208,9 @@ full screen, which only a press or a key may ask for):
   which stream off the tongues, fly on and within half a second
   rain into the water: a chop of small ripples there, and froth that
   gathers in a second or so and goes as slowly),
-  rings the water about with stray drops, frightens the fish and shoves a
+  rings the water about with stray drops, frightens the fish (they flee the
+  water it churns, `CHURN` of its boil's scale, keep out of twice that and
+  go deep near it while it plays: `src/fish.js`) and shoves a
   floater in its way along the stream; the Throw button, Space and the
   harness fire a 1.5 s burst of it. On ice it wets the ice and the sheet
   bounces. Its sound is the one that lasts: a hiss and a roar following the

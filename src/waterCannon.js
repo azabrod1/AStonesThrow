@@ -183,6 +183,9 @@ export const IMPACT = {
   pushCap: 0.015,        // m/s a step: the most a floater is shoved
   boilFade: 1.0,         // s after the last landing the stream still counts as active (its boil)
 };
+// How far the water a landing stream stirs reaches, in its boil's scales L (WHITE): its bubble plume and the eddies round
+// it (some 0.8 m at 3 bar, 2.2 m for the deck gun), which the fish flee and keep out of (src/fish.js `stream` threats).
+export const CHURN = 3;
 // The stream's skin (the header): where it goes rough and white, and the sheath of drops it then wears (src/streamSheath.js).
 export const ROUGH = {
   onset: 1.6e4,       // rough from this · d · We^power metres from the nozzle...
@@ -595,7 +598,8 @@ export class WaterCannon {
     this.lastLanding = time;
     const handle = records.handle[index];
     if (handle && handle.landedAt === null) { handle.landedAt = time; handle.position.set(x, 0, z); }
-    this.landing = { x, z, radius, speed, directionX, directionZ };
+    // `churn`: the reach of the water it stirs (CHURN times its boil's scale, L = (QU/g)^(1/3): WHITE), which the fish keep out of.
+    this.landing = { x, z, radius, speed, directionX, directionZ, churn: IMPACT.footprint * radius + CHURN * Math.cbrt((water / dt) * speed / GRAVITY) };
     const onIce = this.wetIce ? this.wetIce(x, z, IMPACT.footprint * radius) : false;
     const random = this.random;
     const footprint = IMPACT.footprint * radius;
