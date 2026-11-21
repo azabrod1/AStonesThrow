@@ -172,8 +172,12 @@ full screen, which only a press or a key may ask for):
   thing with a `stream`) is held, not thrown: a fire truck's monitor nozzle,
   and a press fires a stream of water at the spot under the pointer for as
   long as it lasts, so a tap is a squirt (the water already out flies on
-  and lands after), and moving the pointer sweeps it (its landing follows a
-  flight later); with it in hand the view turns by the mouse's right button
+  and lands after), and moving the pointer sweeps it (the nozzle turns
+  after the pointer as a critically damped spring, so a sweep is smooth
+  whatever the frame rate, and its landing follows a flight later); it is
+  fed by a hose from a portable pump on the bank behind the hand, whose
+  suction hose dips into the water (`src/cannonRig.js`, scenery drawn with
+  the nozzle on its program); with it in hand the view turns by the mouse's right button
   or by two fingers moved together (spread, they still zoom). The slider is
   its pressure, 0.5 to 10 bar: the exit speed is Bernoulli's, sqrt(2P/ρ),
   10 to 45 m/s, and the bore grows with it, 5 to 25 mm in radius, so the

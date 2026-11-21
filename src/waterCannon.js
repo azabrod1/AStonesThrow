@@ -10,6 +10,15 @@
 // rated for more carries more), so the flow Q = πr²V runs from under a
 // litre a second to some ninety.
 //
+// The nozzle (barrel, turn) is held at the hand and points along the launch,
+// so the stream leaves its muzzle, CANNON.muzzle of its drawn radius out
+// along the barrel, from the middle of its bore; it is drawn bigger for a
+// bigger bore (nozzleScale), so the jet fits it. It turns after the aim as a
+// critically damped spring (CANNON.follow), a step at a time: the aim comes
+// a frame at a time, and a stream aimed at it straight would be a staircase
+// of jets, one a frame, fractured as soon as it is swept. Its pump and hoses
+// are src/cannonRig.js's.
+//
 // The stream is no solver (CLAUDE.md: the jet column is the one solver). Each
 // physics step while it fires records a parcel let out then: its launch
 // velocity (aimVelocity: the low parabola from the nozzle to the aim, the
@@ -116,9 +125,11 @@
 // by src/shaders/stream.js) along each piece of the stream in the air, from
 // the muzzle while the nozzle is on (whatever the last parcel's head start)
 // to the water where its head has landed, each ring where a parcel is or
-// between two (sampleAt), with the skin's radius and depth there; a free
-// end (a slug's tail after the nozzle shuts, a new stream's head) thins to
-// nothing over ROUGH.taper. The fan is a grid of its own (drawFan,
+// between two (sampleAt), with the skin's radius and depth there, each ring
+// square to the rope as it lies (not to the water's flight, which a sweep
+// sets across it) and seen through as much more as a sweep has stretched it
+// (writePiece); a free end (a slug's tail after the nozzle shuts, a new
+// stream's head) thins to nothing over ROUGH.taper. The fan is a grid of its own (drawFan,
 // src/sprayFan.js) on the same program, shaded as a sheet of spray. The stream's randomness is its own (seededRandom
 // of the nozzle's place, its start and its pressure), never Math.random.
 //
@@ -138,7 +149,11 @@ export const CANNON = {
   burstSeconds: 1.5,     // s: a throw's burst (throwAt, Space, the Throw button, the harness)
   longestFlight: 2.5,    // s: no parcel is kept in the air longer (the records' room)
   capacity: 1024,        // parcels in flight at most (longestFlight × 240 steps, with room)
-  muzzle: 2.4,           // the stream leaves this many of the thing's radii from the hand, along the aim (the nozzle's length)
+  muzzle: 2.4,           // the stream leaves this many of the nozzle's drawn radii from the hand, along its barrel (src/thingMeshes.js NOZZLE: its tip's face)
+  bore: 0.46,            // the drawn nozzle's bore, in its radii (NOZZLE's)...
+  boreRoom: 1.15,        // ...drawn at least this many times the jet's own bore (nozzleScale: a deck gun's tip is a bigger one)
+  follow: 22,            // rad/s: the nozzle turns after the aim as a critically damped spring of this rate (step: a hand or a monitor has
+                         // inertia, and the aim comes a frame at a time, so a stream aimed at it straight would be a staircase of jets)
 };
 export const BREAKUP = { length: 35, power: 0.2, widen: 2.5, drawn: 1.5, mist: 0.1, mistRadius: 0.0005, samples: 2, kick: 0.03, drops: 30, dropRadius: [0.002, 0.004] };
 export const IMPACT = {
@@ -180,6 +195,7 @@ export const ROUGH = {
   taper: 0.012,       // s: a free end (a slug's tail, a new stream's head) thins over the water let out in this long
   veil: 0.4,          // from the muzzle the stream wears this share of the sheath already (the air a stream under pressure carries: a thin jet of clear water would hardly be seen)
   shed: 0.01,         // the share of the flow the rough skin throws off as mist (BREAKUP.mist where it has broken up)
+  stretch: 6,         // a swept rope is seen through as many times more as it is stretched (writePiece), up to this
 };
 // The fan of spray the stream throws off the water where it lands (the header; src/sprayFan.js draws it).
 // The fan's ring's room under the place's gravity (FAN.capacity): its flights, 2·vy/g, as many times longer as g is weaker.
@@ -265,6 +281,11 @@ export function nozzle(pressure, stream) {
   return { radius, speed, flow, breakup: BREAKUP.length * diameter * weber ** BREAKUP.power, onset: ROUGH.onset * diameter * weber ** ROUGH.power };
 }
 
+/** How big the nozzle is drawn (its radius, m) for a thing of `radius` firing a jet of bore `bore` (m): its own, or bigger, so the jet fits its bore (CANNON.boreRoom). */
+export function nozzleScale(radius, bore) {
+  return Math.max(radius, (CANNON.boreRoom * bore) / CANNON.bore);
+}
+
 /**
  * The launch velocity from `hand` ({x, y, z}, over the water at y 0) to the
  * aim (x, z) on it at `speed`: the low parabola, or, out of reach, the
@@ -338,6 +359,9 @@ export class WaterCannon {
     this.fan = fan;
     this.sample = { centre: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 1 }, age: 0, along: 0 };
     this.skinScratch = {};
+    // A piece of the rope's rings before they are written (drawSheath, writePiece), and the way each lies.
+    this.piece = { count: 0, centre: new Float64Array(SHEATH.rings * 3), flying: new Float64Array(SHEATH.rings * 3), pace: new Float64Array(SHEATH.rings), radius: new Float64Array(SHEATH.rings), emitted: new Float64Array(SHEATH.rings), depth: new Float64Array(SHEATH.rings), broken: new Float64Array(SHEATH.rings) };
+    this.pieceAxis = { x: 0, y: 0, z: 1 };
     this.water = water;
     this.splash = splash;
     this.dropRings = dropRings;
@@ -407,8 +431,8 @@ export class WaterCannon {
   get fanInAir() { return this.tail.count - this.tail.head; }
   /** A parcel has met the water since the last reset (the harness's hasImpacted). */
   get landed() { return this.landings > 0; }
-  /** Where the nozzle is aimed ({ x, z }), or null. */
-  get aim() { return this.burst ? { ...this.burst.aim } : null; }
+  /** Where the nozzle points now ({ x, z }: it turns after the aim, step), or null. */
+  get aim() { return this.burst ? { x: this.burst.pointing.x, z: this.burst.pointing.z } : null; }
   /** The pressure's share of its slider while firing, else 0 (the sound's strength). */
   get strength() { return this.firing ? this.burst.share : 0; }
 
@@ -430,7 +454,8 @@ export class WaterCannon {
     this.whitePhases = [this.whiteRandom() * Math.PI * 2, this.whiteRandom() * Math.PI * 2];
     this.tail.drift.fill(0);
     for (let part = 0; part < this.tail.comb.length; part++) this.tail.comb[part] = 2 * (this.whiteRandom() + this.whiteRandom() + this.whiteRandom() - 1.5);
-    this.burst = { tOn: time, tOff: time + seconds, hand: { x: hand.x, y: hand.y, z: hand.z }, aim: { x, z }, nozzle: made, radius, share, handle };
+    // `aim` is where it is asked to point, `pointing` where it points (step: it turns after the aim), `scale` the nozzle's drawn radius.
+    this.burst = { tOn: time, tOff: time + seconds, hand: { x: hand.x, y: hand.y, z: hand.z }, aim: { x, z }, pointing: { x, z, vx: 0, vz: 0 }, nozzle: made, radius, scale: nozzleScale(radius, made.radius), share, handle };
     this.lastTime = time;
     return handle;
   }
@@ -445,13 +470,34 @@ export class WaterCannon {
     if (this.burst) this.burst.tOff = Math.min(this.burst.tOff, time);
   }
 
-  /** The exit: the hand, out along the aim by the nozzle's length (CANNON.muzzle radii). */
-  exitPoint(hand, x, z, radius, out) {
-    const dx = x - hand.x, dz = z - hand.z;
-    const distance = Math.hypot(dx, dz) || 1;
-    const along = CANNON.muzzle * radius;
-    out.x = hand.x + (dx / distance) * along; out.y = hand.y; out.z = hand.z + (dz / distance) * along;
-    return out;
+  /**
+   * The nozzle held at `hand` (its middle) and pointed to put a jet of
+   * `speed` on (x, z): its muzzle `out` ({ x, y, z }), CANNON.muzzle of its
+   * drawn radius `scale` out along the barrel, and the launch from there
+   * (aimVelocity, into this.aimScratch, returned). The barrel points along
+   * the launch, which is the muzzle's, so the two are found together: the
+   * launch from the hand, the muzzle along it, the launch from there, twice
+   * (the second turn moves the muzzle by microradians).
+   */
+  barrel(hand, x, z, speed, scale, out) {
+    const along = CANNON.muzzle * scale;
+    let aim = aimVelocity(hand, x, z, speed, this.aimScratch);
+    for (let turn = 0; turn < 2; turn++) {
+      const pace = Math.hypot(aim.vx, aim.vy, aim.vz) || 1;
+      out.x = hand.x + (aim.vx / pace) * along; out.y = hand.y + (aim.vy / pace) * along; out.z = hand.z + (aim.vz / pace) * along;
+      aim = aimVelocity(out, x, z, speed, this.aimScratch);
+    }
+    return aim;
+  }
+
+  /** The nozzle turned a step `dt` after the aim (CANNON.follow): a critically damped spring, stepped exactly. */
+  turn(burst, dt) {
+    const pointing = burst.pointing, rate = CANNON.follow, fade = Math.exp(-rate * dt);
+    for (const [place, pace, target] of [['x', 'vx', burst.aim.x], ['z', 'vz', burst.aim.z]]) {
+      const off = pointing[place] - target, rising = pointing[pace] + rate * off;
+      pointing[place] = target + (off + rising * dt) * fade;
+      pointing[pace] = (pointing[pace] - rate * rising * dt) * fade;
+    }
   }
 
   /**
@@ -466,9 +512,10 @@ export class WaterCannon {
     this.landing = null;
     const burst = this.burst;
     const records = this.records, capacity = CANNON.capacity;
+    if (burst) this.turn(burst, dt);
     if (burst && time >= burst.tOn && time < burst.tOff && this.inAir < capacity) {
-      const exit = this.exitPoint(burst.hand, burst.aim.x, burst.aim.z, burst.radius, this.exitScratch);
-      const aim = aimVelocity(exit, burst.aim.x, burst.aim.z, burst.nozzle.speed, this.aimScratch);
+      const exit = this.exitScratch;
+      const aim = this.barrel(burst.hand, burst.pointing.x, burst.pointing.z, burst.nozzle.speed, burst.scale, exit);
       const flight = Math.min(aim.flight, CANNON.longestFlight);
       const index = this.count % capacity;
       records.time[index] = time;
@@ -788,8 +835,8 @@ export class WaterCannon {
   previewArc(hand, x, z, pressure, thing, out) {
     const made = nozzle(pressure, thing.stream);
     const { radius } = thing.measure(pressure);
-    const exit = this.exitPoint(hand, x, z, radius, { x: 0, y: 0, z: 0 });
-    const aim = aimVelocity(exit, x, z, made.speed, this.aimScratch);
+    const exit = { x: 0, y: 0, z: 0 };
+    const aim = this.barrel(hand, x, z, made.speed, nozzleScale(radius, made.radius), exit);
     for (let point = 0; point < 25; point++) {
       const t = (aim.flight * point) / 24;
       out[point * 3] = exit.x + aim.vx * t;
@@ -818,6 +865,7 @@ export class WaterCannon {
     sample.centre.x = sample.x + sample.vx * flown; sample.centre.y = sample.y + sample.vy * flown - 0.5 * GRAVITY * flown * flown; sample.centre.z = sample.z + sample.vz * flown;
     const vy = sample.vy - GRAVITY * flown;
     const speed = Math.hypot(sample.vx, vy, sample.vz) || 1;
+    sample.pace = speed;
     sample.axis.x = sample.vx / speed; sample.axis.y = vy / speed; sample.axis.z = sample.vz / speed;
     sample.along = arcLength(Math.hypot(sample.vx, sample.vz), sample.vy, flown);
     return sample;
@@ -845,7 +893,7 @@ export class WaterCannon {
    */
   drawSheath(time, attached) {
     const sheath = this.sheath, records = this.records, capacity = CANNON.capacity;
-    const sample = this.sample, made = this.skinScratch;
+    const sample = this.sample, made = this.skinScratch, piece = this.piece;
     const inAir = this.inAir;
     const parcel = (back) => (this.count - 1 - back) % capacity;
     let first = 0;   // the piece's newest parcel, counted back from the newest of all
@@ -858,28 +906,66 @@ export class WaterCannon {
       const rows = Math.min(Math.max(Math.round((SHEATH.rings * (last - first + 1)) / inAir) - ends, 2), sheath.room - ends);
       if (rows < 2) break;
       const tailTime = records.time[parcel(first)], headTime = records.time[parcel(last)];
+      piece.count = 0;
       if (joinsMuzzle) {
         // From the muzzle: the newest parcel has a step's head start.
         const burst = this.burst;
-        const exit = this.exitPoint(burst.hand, burst.aim.x, burst.aim.z, burst.radius, this.exitScratch);
+        const exit = this.exitScratch;
+        this.barrel(burst.hand, burst.pointing.x, burst.pointing.z, burst.nozzle.speed, burst.scale, exit);
         this.sampleAt(0, time, sample, 0);
         skin(sample.radius, sample.onset, sample.breakup, 0, made);
-        sheath.ring(exit.x, exit.y, exit.z, sample.axis, made.radius, time, made.depth, made.broken);
+        this.pieceRing(exit.x, exit.y, exit.z, sample.axis, sample.pace, made.radius, time, made.depth, made.broken);
       }
       for (let row = 0; row < rows; row++) {
         this.sampleAt(first + ((last - first) * row) / (rows - 1), time, sample);
         skin(sample.radius, sample.onset, sample.breakup, sample.along, made);
         const whole = (joinsMuzzle ? 1 : smoothstep(0, ROUGH.taper, tailTime - sample.time)) * (reachesWater ? 1 : smoothstep(0, ROUGH.taper, sample.time - headTime));
-        sheath.ring(sample.centre.x, sample.centre.y, sample.centre.z, sample.axis, made.radius * (0.5 + 0.5 * whole), sample.time, made.depth * whole, made.broken);
+        this.pieceRing(sample.centre.x, sample.centre.y, sample.centre.z, sample.axis, sample.pace, made.radius * (0.5 + 0.5 * whole), sample.time, made.depth * whole, made.broken);
       }
       if (reachesWater) {
         // Down to the water: where the oldest parcel comes down, the water there now let out a flight ago.
         const flight = records.flight[parcel(last)];
         this.sampleAt(last, time, sample, flight);
         skin(sample.radius, sample.onset, sample.breakup, sample.along, made);
-        sheath.ring(sample.centre.x, sample.centre.y, sample.centre.z, sample.axis, made.radius, time - flight, made.depth, made.broken);
+        this.pieceRing(sample.centre.x, sample.centre.y, sample.centre.z, sample.axis, sample.pace, made.radius, time - flight, made.depth, made.broken);
       }
+      this.writePiece();
       first = last + 1;
+    }
+  }
+
+  /** A ring of the piece being drawn (drawSheath), kept until the piece is whole (writePiece). */
+  pieceRing(x, y, z, axis, pace, radius, emitted, depth, broken) {
+    const piece = this.piece, at = piece.count++;
+    piece.pace[at] = pace;
+    piece.centre[at * 3] = x; piece.centre[at * 3 + 1] = y; piece.centre[at * 3 + 2] = z;
+    piece.flying[at * 3] = axis.x; piece.flying[at * 3 + 1] = axis.y; piece.flying[at * 3 + 2] = axis.z;
+    piece.radius[at] = radius; piece.emitted[at] = emitted; piece.depth[at] = depth; piece.broken[at] = broken;
+  }
+
+  /**
+   * The piece's rings to the sheath, each square to the rope as it lies now:
+   * the way from the ring before to the ring after. That is the water's own
+   * way while the nozzle is still; swept, the parcels let out one after
+   * another fly apart sideways, so the rope lies across their flight, and
+   * rings square to the flight would be cut slantwise through it (the rope
+   * pinched to a ribbon where it swings). Where two rings meet, the water's.
+   * And it is stretched there: water let out a moment apart lies farther
+   * apart along the rope than it flies in that moment, so the same water is
+   * spread over more rope, and the rope is thinner to see through (its depth
+   * over the stretch, ROUGH.stretch at most).
+   */
+  writePiece() {
+    const piece = this.piece, count = piece.count, centre = piece.centre, axis = this.pieceAxis;
+    for (let at = 0; at < count; at++) {
+      const before = Math.max(at - 1, 0), after = Math.min(at + 1, count - 1);
+      let x = centre[after * 3] - centre[before * 3], y = centre[after * 3 + 1] - centre[before * 3 + 1], z = centre[after * 3 + 2] - centre[before * 3 + 2];
+      const length = Math.hypot(x, y, z);
+      if (length > 1e-6) { x /= length; y /= length; z /= length; } else { x = piece.flying[at * 3]; y = piece.flying[at * 3 + 1]; z = piece.flying[at * 3 + 2]; }
+      axis.x = x; axis.y = y; axis.z = z;
+      const flown = Math.abs(piece.emitted[before] - piece.emitted[after]) * piece.pace[at];
+      const stretch = flown > 1e-9 ? Math.min(Math.max(length / flown, 1), ROUGH.stretch) : 1;
+      this.sheath.ring(centre[at * 3], centre[at * 3 + 1], centre[at * 3 + 2], axis, piece.radius[at], piece.emitted[at], piece.depth[at] / stretch, piece.broken[at]);
     }
   }
 
