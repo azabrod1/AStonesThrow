@@ -19,7 +19,8 @@
 // land behind the hand (place: a little to the right of the shore view's eye
 // and back, walked back until all of its feet are on land: the beach, the
 // Koi pond's bank, the pool's deck or the Reflecting Pool's coping, the
-// caller's `landAt`), turned to face the hand. It hums while the cannon
+// caller's `landAt`; where no land within PUMP.place.most holds them all,
+// there is no rig at all), turned to face the hand. It hums while the cannon
 // fires (show: a shake of a fraction of a millimetre, by real time, as the
 // preview turns: no world state changes).
 //
@@ -47,8 +48,9 @@
 // float, none HOSE.rides above it), the strainer with it, the waves summed
 // at every HOSE.ridesEvery rings. The rings follow a smooth curve through the points. The
 // suction hose is laid when the place changes; the delivery hose when the
-// nozzle has moved, which costs well under a millisecond, and nothing while
-// it is still. Each is a tube of HOSE.segments rings of HOSE.sides, its
+// nozzle has moved, which costs well under a millisecond and makes no
+// garbage (each hose keeps its working buffers and its curve), and nothing
+// while it is still. Each is a tube of HOSE.segments rings of HOSE.sides, its
 // frames carried along it so it never twists; the suction hose's end wears
 // a strainer (strainerGeometry), seen where the water is clear.
 //
@@ -284,10 +286,11 @@ function tubeGeometry(segments, sides, colour) {
  * x, y, z), `radius` round: each ring square to the way there, its frame
  * carried from the last (parallel transport), so it never twists.
  */
+const TUBE_FRAME = { tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), last: new THREE.Vector3() };
 function tubeAlong(geometry, points, radius, sides) {
   const positions = geometry.attributes.position.array, normals = geometry.attributes.normal.array;
   const rings = points.length / 3;
-  const tangent = new THREE.Vector3(), normal = new THREE.Vector3(), binormal = new THREE.Vector3(), last = new THREE.Vector3();
+  const { tangent, normal, binormal, last } = TUBE_FRAME;
   for (let ring = 0; ring < rings; ring++) {
     const before = Math.max(ring - 1, 0) * 3, after = Math.min(ring + 1, rings - 1) * 3;
     tangent.set(points[after] - points[before], points[after + 1] - points[before + 1], points[after + 2] - points[before + 2]).normalize();
@@ -348,6 +351,30 @@ class Hose {
     this.afloat = new Float32Array(HOSE.segments + 1);         // each ring's share of the gale's lift (findAfloat)
     this.floats = false;
     this.lifted = false;
+    // What laying it works in, kept from one lay to the next (grown when a longer hose wants more), so that laying the
+    // delivery hose each frame the nozzle moves makes no garbage for a phone to collect.
+    this.capacity = 0;
+    this.curve = new THREE.CatmullRomCurve3([], false, 'centripetal');
+    this.curve.cacheArcLengths = new Float64Array(this.curve.arcLengthDivisions + 1);
+    this.pool = [];   // the curve's points, each a Vector3 kept for good
+    this.ring = new THREE.Vector3();
+    this.previous = new THREE.Vector3();
+    this.out = new THREE.Vector3();
+    this.into = new THREE.Vector3();
+  }
+
+  /** Its working buffers, at least `count` points long. */
+  room(count) {
+    if (count <= this.capacity) return;
+    const capacity = Math.max(count, Math.ceil(this.capacity * 1.5), 16);
+    this.capacity = capacity;
+    this.xs = new Float64Array(capacity); this.ys = new Float64Array(capacity); this.zs = new Float64Array(capacity);
+    this.lowest = new Float64Array(capacity);
+    this.fixed = new Uint8Array(capacity); this.touching = new Uint8Array(capacity);
+    this.stiffness = new Float64Array(capacity * 5);
+    this.free = new Int32Array(capacity); this.rowOf = new Int32Array(capacity);
+    this.matrix = new Float64Array(capacity * 5); this.right = new Float64Array(capacity);
+    while (this.pool.length < capacity) this.pool.push(new THREE.Vector3());
   }
 
   /**
@@ -357,42 +384,45 @@ class Hose {
    * draw it.
    */
   lay(start, startWay, end, endWay, { dive = 0, restingAt }) {
-    const out = start.clone().addScaledVector(startWay, HOSE.spacing);
-    const into = endWay ? end.clone().addScaledVector(endWay, HOSE.spacing) : end;
+    const out = this.out.copy(start).addScaledVector(startWay, HOSE.spacing);
+    const into = endWay ? this.into.copy(end).addScaledVector(endWay, HOSE.spacing) : end;
     const between = Math.max(Math.ceil(out.distanceTo(into) / HOSE.spacing), 3);
     const spacing = out.distanceTo(into) / between;
     const count = between + 2 + (endWay ? 1 : 0), last = count - 1;
-    const xs = new Float64Array(count), ys = new Float64Array(count), zs = new Float64Array(count), lowest = new Float64Array(count);
-    const fixed = new Uint8Array(count);
+    this.room(count);
+    const { xs, ys, zs, lowest, fixed, touching, stiffness, free, rowOf, matrix, right } = this;
+    fixed.fill(0, 0, count);
     // Its ends, held; between them, a straight way over the ground to find what it rests on along it.
     const hold = (at, point) => { xs[at] = point.x; ys[at] = point.y; zs[at] = point.z; fixed[at] = 1; };
     hold(0, start); hold(1, out); hold(last, end); if (endWay) hold(last - 1, into);
     const diving = dive > 0 ? Math.round(dive / spacing) : -1;
     // Its bending: the sum of its squared second differences, as a band matrix (the beam's stiffness, K).
-    const stiffness = new Float64Array(count * 5);
+    stiffness.fill(0, 0, count * 5);
     for (let middle = 1; middle < last; middle++) {
-      for (const [one, oneWeight] of [[middle - 1, 1], [middle, -2], [middle + 1, 1]]) {
-        for (const [other, otherWeight] of [[middle - 1, 1], [middle, -2], [middle + 1, 1]]) stiffness[one * 5 + other - one + 2] += oneWeight * otherWeight;
+      for (let oneStep = -1; oneStep <= 1; oneStep++) {
+        const one = middle + oneStep, oneWeight = oneStep === 0 ? -2 : 1;
+        for (let otherStep = -1; otherStep <= 1; otherStep++) stiffness[one * 5 + otherStep - oneStep + 2] += oneWeight * (otherStep === 0 ? -2 : 1);
       }
     }
     // Its weight on each point, against its stiffness: K is Dᵀ·D, the beam's energy (EI / 2h³)·yᵀKy + q·h·Σy, so K·y = −(q/EI)·h⁴.
     const weight = this.load * spacing ** 4;
     // Least bending (and, upward, least height) with the held points held: K_free · free = −K_held · held (− weight).
+    // (The free points' rows: those within two points of each other are within two rows, so the band holds.)
     const solve = (values, load, held) => {
-      const free = [];
-      for (let at = 0; at < count; at++) if (!held[at]) free.push(at);
-      const size = free.length, matrix = new Float64Array(size * 5), right = new Float64Array(size);
+      let size = 0;
+      for (let at = 0; at < count; at++) if (!held[at]) { rowOf[at] = size; free[size++] = at; }
+      matrix.fill(0, 0, size * 5);
       for (let row = 0; row < size; row++) {
         const at = free[row];
         right[row] = -load;
         for (let other = Math.max(at - 2, 0); other <= Math.min(at + 2, last); other++) {
           const entry = stiffness[at * 5 + other - at + 2];
           if (held[other]) right[row] -= entry * values[other];
-          else matrix[row * 5 + free.indexOf(other, Math.max(row - 2, 0)) - row + 2] = entry;
+          else matrix[row * 5 + rowOf[other] - row + 2] = entry;
         }
       }
       solveBand(matrix, right, size);
-      free.forEach((at, row) => { values[at] = right[row]; });
+      for (let row = 0; row < size; row++) values[free[row]] = right[row];
     };
     solve(xs, 0, fixed);
     solve(zs, 0, fixed);
@@ -400,7 +430,7 @@ class Hose {
     for (let at = 0; at < count; at++) lowest[at] = fixed[at] ? -Infinity : at >= last - diving ? -Infinity : restingAt(xs[at], zs[at], this.radius);
     // Its height: on what holds it up where it touches (an active set): touching everywhere it can at first, then
     // the point the ground pulls on hardest let go, and any that went under it put back on it, till neither is left.
-    const touching = Uint8Array.from(fixed);
+    touching.set(fixed.subarray(0, count));
     for (let at = 0; at < count; at++) if (!fixed[at] && lowest[at] > -Infinity) { touching[at] = 1; ys[at] = lowest[at]; }
     for (let round = 0; round < 4 * count; round++) {
       solve(ys, weight, touching);
@@ -419,9 +449,25 @@ class Hose {
       touching[letGo] = 0;
     }
     // Even rings along a smooth curve through its points.
-    const points = this.points;
-    const curve = new THREE.CatmullRomCurve3(Array.from({ length: count }, (unused, at) => new THREE.Vector3(xs[at], ys[at], zs[at])), false, 'centripetal');
-    curve.getSpacedPoints(HOSE.segments).forEach((point, ring) => { points[ring * 3] = point.x; points[ring * 3 + 1] = point.y; points[ring * 3 + 2] = point.z; });
+    // (three's getSpacedPoints, on the one curve and its own arc-length table filled in place, as getLengths would.)
+    const points = this.points, curve = this.curve, ring = this.ring, previous = this.previous, lengths = curve.cacheArcLengths;
+    curve.points.length = count;
+    for (let at = 0; at < count; at++) curve.points[at] = this.pool[at].set(xs[at], ys[at], zs[at]);
+    const divisions = lengths.length - 1;
+    let sum = 0;
+    lengths[0] = 0;
+    curve.getPoint(0, previous);
+    for (let step = 1; step <= divisions; step++) {
+      curve.getPoint(step / divisions, ring);
+      sum += ring.distanceTo(previous);
+      lengths[step] = sum;
+      previous.copy(ring);
+    }
+    curve.needsUpdate = false;
+    for (let at = 0; at <= HOSE.segments; at++) {
+      curve.getPointAt(at / HOSE.segments, ring);
+      points[at * 3] = ring.x; points[at * 3 + 1] = ring.y; points[at * 3 + 2] = ring.z;
+    }
     this.still.set(points);
     this.lifted = false;
     tubeAlong(this.mesh.geometry, points, this.radius, HOSE.sides);
@@ -506,6 +552,9 @@ export class CannonRig {
     this.scene = scene;
     this.nozzleAt = new THREE.Matrix4();   // the nozzle as the delivery hose was last laid to it
     this.restingAt = (x, z, radius) => this.restOf(x, z, radius);
+    // What laying the delivery hose again works in (show), kept so a sweep of the nozzle makes no garbage.
+    this.relay = { barrel: new THREE.Vector3(), tail: new THREE.Vector3(), outlet: new THREE.Vector3(), outletWay: new THREE.Vector3() };
+    this.deliveryLay = { restingAt: this.restingAt };
     this.footing = new THREE.Vector3();   // where the pump stands (place)
     this.facing = 0;                      // its turn about the vertical
     this.placed = false;
@@ -528,9 +577,12 @@ export class CannonRig {
     }
     // A little farther up the bank, where there is bank: room for the suction hose to lie on it.
     const away = new THREE.Vector3(0, 0, PUMP.place.inland).transformDirection(frame).setY(0).normalize().multiplyScalar(PUMP.place.inland);
-    const farther = height === null ? null : this.footingAt(spot.x + away.x, spot.z + away.z, this.facing);
+    // No land behind the hand wide enough for all its feet within `most`: no rig at all here (show draws none), rather
+    // than a pump standing on the water.
+    if (height === null) { this.placed = false; this.hide(); return; }
+    const farther = this.footingAt(spot.x + away.x, spot.z + away.z, this.facing);
     if (farther !== null) { spot.add(away); height = farther; this.facing = Math.atan2(hand.x - spot.x, hand.z - spot.z); }
-    this.footing.set(spot.x, height ?? 0, spot.z);
+    this.footing.set(spot.x, height, spot.z);
     this.pump.position.copy(this.footing);
     this.pump.rotation.set(0, this.facing, 0);
     this.pump.updateMatrix();
@@ -579,9 +631,9 @@ export class CannonRig {
   }
 
   /** A point of the pump's frame (PUMP's) in the world. */
-  pumpPoint(local) { return new THREE.Vector3(...local).applyMatrix4(this.pump.matrix); }
+  pumpPoint(local, target = new THREE.Vector3()) { return target.set(...local).applyMatrix4(this.pump.matrix); }
   /** A way in the pump's frame in the world. */
-  pumpWay(local) { return new THREE.Vector3(...local).normalize().applyQuaternion(this.pump.quaternion); }
+  pumpWay(local, target = new THREE.Vector3()) { return target.set(...local).normalize().applyQuaternion(this.pump.quaternion); }
 
   /** Where the middle of a hose of `radius` lies at (x, z): on what it rests on, or afloat on open water (the header). */
   restOf(x, z, radius) {
@@ -619,15 +671,16 @@ export class CannonRig {
     if (nozzle.matrix.equals(this.nozzleAt)) { this.delivery.lift(surfaceAt); return; }
     this.nozzleAt.copy(nozzle.matrix);
     const scale = nozzle.scale.x;
-    const barrel = new THREE.Vector3(0, 0, 1).applyQuaternion(nozzle.quaternion);
+    const { barrel, tail, outlet, outletWay } = this.relay;
+    barrel.set(0, 0, 1).applyQuaternion(nozzle.quaternion);
     // The clamp goes with the nozzle; the yoke turns with its heading, as wide as its pins.
     this.clamp.position.copy(nozzle.position); this.clamp.quaternion.copy(nozzle.quaternion); this.clamp.scale.copy(nozzle.scale);
     if (Math.abs(this.yokeReach - STAND.pins * scale) > 1e-6) { this.yokeReach = STAND.pins * scale; this.yoke.geometry.dispose(); this.yoke.geometry = yokeGeometry(this.yokeReach); }
     this.yoke.position.copy(nozzle.position);
     this.yoke.rotation.set(0, Math.atan2(barrel.x, barrel.z), 0);
-    const tail = nozzle.position.clone().addScaledVector(barrel, HOSE.delivery.tail * scale);
+    tail.copy(nozzle.position).addScaledVector(barrel, HOSE.delivery.tail * scale);
     this.delivery.radius = HOSE.delivery.radius * scale;
-    this.delivery.lay(tail, barrel.negate(), this.pumpPoint(PUMP.outlet), this.pumpWay(PUMP.outletWay), { restingAt: this.restingAt });
+    this.delivery.lay(tail, barrel.negate(), this.pumpPoint(PUMP.outlet, outlet), this.pumpWay(PUMP.outletWay, outletWay), this.deliveryLay);
     this.delivery.findAfloat(this.floorAt);
     this.delivery.lift(surfaceAt);
   }

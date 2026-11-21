@@ -1280,8 +1280,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0 };
   const previewMuzzle = { x: 0, y: 0, z: 0 };   // the nozzle's muzzle (updatePreview), worked out in place
   // The water cannon's pump and hoses (src/cannonRig.js), made the first time the cannon is in hand, shown with its
-  // nozzle; set down again for each place (its land) and when the water freezes or thaws, `rigPlace` what it was set down for.
-  let cannonRig = null, rigPlace = null;
+  // nozzle; set down again for each place (its land) and when the water freezes or thaws, `rigFor` what it was set down for.
+  let cannonRig = null;
+  const rigFor = { place: null, thickness: NaN, opened: NaN, holes: NaN, openHoles: NaN, x: NaN, y: NaN, z: NaN };
   /** A material of the nozzle's own program (buildPreview's for a stream: solid, coloured by vertex), its look given. */
   function rigMaterial(roughness, metalness, reflection) {
     const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness, metalness, envMap: environment.envTexture, envMapIntensity: reflection, transparent: false, opacity: 1, depthWrite: true });
@@ -1414,8 +1415,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // Its hoses lie on the ice (laid again as it thickens or thins, a hole opens or skins over, or the pond is cleared), or
       // float on open water; its stand stands under the hand (laid again if the hand moves).
       const hand = mesh.position;
-      const rigFor = `${placeName} ${ice.thickness} ${ice.opened} ${ice.holes.length} ${ice.openHoles} ${hand.x.toFixed(4)} ${hand.y.toFixed(4)} ${hand.z.toFixed(4)}`;
-      if (rigPlace !== rigFor) { cannonRig.place(shoreFrame, mesh.position); rigPlace = rigFor; }
+      // (Compared field by field, not as a key string, so a frame with the cannon in hand makes no garbage.)
+      const moved = Math.abs(hand.x - rigFor.x) >= 5e-5 || Math.abs(hand.y - rigFor.y) >= 5e-5 || Math.abs(hand.z - rigFor.z) >= 5e-5;
+      if (moved || rigFor.place !== placeName || rigFor.thickness !== ice.thickness || rigFor.opened !== ice.opened
+        || rigFor.holes !== ice.holes.length || rigFor.openHoles !== ice.openHoles) {
+        cannonRig.place(shoreFrame, mesh.position);
+        Object.assign(rigFor, { place: placeName, thickness: ice.thickness, opened: ice.opened, holes: ice.holes.length, openHoles: ice.openHoles, x: hand.x, y: hand.y, z: hand.z });
+      }
       cannonRig.show(mesh, cannon.strength, now / 1000);
       preview.drawnAt = now;
       return;
