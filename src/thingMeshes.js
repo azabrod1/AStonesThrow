@@ -1052,7 +1052,7 @@ const NOZZLE = {
     [0.46, 2.4, 'bore'], [0.46, 1.9, 'bore'], [0, 1.9, 'bore'],
   ],
   sides: 32,
-  colours: { hose: [0.5, 0.06, 0.05], chrome: [0.82, 0.84, 0.86], rubber: [0.06, 0.06, 0.065], brass: [0.78, 0.55, 0.22], bore: [0.02, 0.02, 0.02] },
+  colours: { hose: [0.62, 0.08, 0.06], chrome: [0.82, 0.84, 0.86], rubber: [0.1, 0.24, 0.52], brass: [0.78, 0.55, 0.22], bore: [0.12, 0.12, 0.13] },   // its grips and bumper a blue rubber
 };
 export function createNozzleGeometry() {
   const { profile, sides, colours } = NOZZLE;

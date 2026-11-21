@@ -175,8 +175,8 @@ full screen, which only a press or a key may ask for):
   and lands after), and moving the pointer sweeps it (the nozzle turns
   after the pointer as a critically damped spring, so a sweep is smooth
   whatever the frame rate, and its landing follows a flight later); it is
-  fed by a portable pump on the bank behind the hand: a delivery hose from
-  its outlet to the nozzle and a suction hose from its inlet to a strainer
+  held on a tripod stand and fed by a portable pump on the bank behind the
+  hand: a delivery hose from its outlet to the nozzle and a suction hose from its inlet to a strainer
   in the water, each laid as a stiff, heavy hose rests (solved as a beam,
   so it curves out of its couplings and down onto the land, the ice or the
   water with no corners; `src/cannonRig.js`, scenery drawn with the nozzle

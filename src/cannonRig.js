@@ -1,6 +1,10 @@
 // The water cannon's rig (src/waterCannon.js): the pump on the bank that
-// makes its pressure, the hose from it to the nozzle in the hand, and the
-// suction hose it draws the pond's water up by. Scenery of the preview's
+// makes its pressure, the hose from it to the nozzle in the hand, the
+// suction hose it draws the pond's water up by, and the stand that holds the
+// nozzle (STAND: a portable monitor's tripod under the hand, its feet on the
+// ground or the bed, its yoke turned with the nozzle's heading and holding
+// a clamp band round the nozzle on pins at its middle, so the nozzle and its
+// hose are held up, never in the air). Scenery of the preview's
 // (src/main.js buildPreview): shown while the cannon is in hand, left out
 // with the preview (?preview=off, so the harness's frames stay as they were
 // unless --preview=1).
@@ -42,7 +46,8 @@
 // frames carried along it so it never twists; the suction hose's end wears
 // a strainer (strainerGeometry), seen where the water is clear.
 //
-// One program for all of it: the nozzle's (src/main.js passes a material
+// Nothing of it is black: red, blue, brass and grey. One program for all of
+// it: the nozzle's (src/main.js passes a material
 // maker that gives the nozzle's program, its parameters alike, so nothing
 // here compiles a program of its own), each part's colour by vertex.
 import * as THREE from 'three';
@@ -58,7 +63,7 @@ export const PUMP = {
   inletWay: [0, 0, 1],        // ...and its way
   colours: {
     housing: [0.72, 0.09, 0.06], frame: [0.7, 0.71, 0.72], alloy: [0.58, 0.6, 0.62], brass: [0.74, 0.53, 0.22],
-    grille: [0.22, 0.22, 0.23], dial: [0.92, 0.91, 0.86], base: [0.3, 0.31, 0.33], panel: [0.82, 0.82, 0.8],
+    grille: [0.46, 0.47, 0.5], dial: [0.92, 0.91, 0.86], base: [0.56, 0.58, 0.62], panel: [0.82, 0.82, 0.8], blue: [0.1, 0.3, 0.62],
   },
 };
 export const HOSE = {
@@ -71,12 +76,26 @@ export const HOSE = {
   // Each hose's `load` is its weight over its bending stiffness, q/EI (m⁻³): lying on the ground and lifted by h at a
   // clamped end it leaves the ground (72 h EI / q)^(1/4) from there (the suction hose some 45 cm from its inlet, 14 cm
   // up; the delivery hose, charged and stiffer, a metre from the nozzle in the hand).
-  // The suction hose: blue-grey, its strainer `sunk` under the water, going down to it over its last `dive`, `out` from
+  // The suction hose: blue, its strainer `sunk` under the water, going down to it over its last `dive`, `out` from
   // the water's edge, laid `aside` (rad) of the way the pump faces, to whichever side reaches the water sooner.
-  suction: { radius: 0.026, load: 250, colour: [0.16, 0.2, 0.26], sunk: 0.15, dive: 0.45, out: 0.9, aside: 0.75 },
+  suction: { radius: 0.026, load: 250, colour: [0.12, 0.36, 0.7], sunk: 0.15, dive: 0.45, out: 0.9, aside: 0.75 },
   // The delivery hose: red, as round as the nozzle's stub (NOZZLE's, in the nozzle's drawn radii), from where it takes
   // over from the stub (`tail`, its radii along the barrel) to the outlet.
-  delivery: { radius: 0.7, load: 130, tail: -3.9, colour: [0.6, 0.08, 0.06] },
+  delivery: { radius: 0.7, load: 130, tail: -3.9, colour: [0.8, 0.12, 0.08] },
+};
+
+// The nozzle's stand (standGeometry, yokeGeometry, clampGeometry): a portable monitor's tripod under the hand. Its post
+// rises from three splayed legs to a swivel; on it a yoke turns with the nozzle's heading and holds a clamp band round the
+// nozzle at its middle (its origin, which the aim turns it about) on two pins across it, so the nozzle pitches in the yoke.
+export const STAND = {
+  pins: 1.18,         // the pins' ends, in the nozzle's drawn radii from its axis (the band round it is `band`)...
+  band: [0.9, 0.17],  // ...the band's radius and half width, in its radii
+  yoke: 0.1,          // m: the yoke's arms reach this far down from the pins to its crossbar...
+  swivel: 0.06,       // ...and the swivel under it this far, onto the post
+  splay: 0.34,        // m: the legs' feet this far out from the post...
+  knee: 0.3,          // ...from a collar this far below the pins
+  tube: [0.012, 0.016, 0.01],   // m: the yoke's, the post's and the legs' tubes' radii
+  colours: { yoke: [0.78, 0.11, 0.07], post: [0.7, 0.71, 0.72], feet: [0.1, 0.3, 0.62] },
 };
 
 /** Triangles (position, normal, colour) collected from primitives, then made one geometry (Parts.geometry). */
@@ -157,9 +176,9 @@ function pumpGeometry() {
   parts.add(roundedBox(0.3, 0.24, 0.36, 0.05), place([0, 0.225, -0.04], null), c.housing);
   // Its back: the control panel, the recoil starter's grip on it, the stop switch.
   parts.add(roundedBox(0.2, 0.12, 0.012, 0.004, 2), place([0, 0.22, -0.224], null), c.panel);
-  parts.add(roundedBox(0.075, 0.018, 0.022, 0.008, 2), place([0.03, 0.2, -0.238], null), c.grille);
+  parts.add(roundedBox(0.075, 0.018, 0.022, 0.008, 2), place([0.03, 0.2, -0.238], null), c.blue);
   parts.cylinder(0.011, 0.016, [-0.06, 0.245, -0.233], 'z', c.housing, 12);
-  parts.cylinder(0.028, 0.03, [0.07, 0.35, -0.1], 'y', c.grille, 16);
+  parts.cylinder(0.028, 0.03, [0.07, 0.35, -0.1], 'y', c.blue, 16);
   parts.add(roundedBox(0.012, 0.11, 0.17, 0.005, 2), place([0.15, 0.23, -0.08], null), c.grille);
   parts.cylinder(0.03, 0.012, [-0.08, 0.28, 0.14], 'z', c.frame, 20);
   parts.cylinder(0.025, 0.004, [-0.08, 0.28, 0.147], 'z', c.dial, 20);
@@ -181,6 +200,48 @@ function strainerGeometry() {
   return parts.geometry();
 }
 
+/** The clamp band round the nozzle and its two pins, in the nozzle's own units (drawn with its transform): its axis z, its pins along x. */
+function clampGeometry() {
+  const parts = new Parts(), [radius, half] = STAND.band, red = STAND.colours.yoke;
+  parts.cylinder(radius, 2 * half, [0, 0, 0], 'z', red, 32);
+  for (const side of [-1, 1]) parts.cylinder(0.14, STAND.pins - radius + 0.04, [side * (radius + STAND.pins) / 2, 0, 0], 'x', red, 12);
+  return parts.geometry();
+}
+
+/** The yoke (the header), in metres about the pins' axis, turned with the nozzle's heading (+z), for pins `reach` (m) out either side. */
+function yokeGeometry(reach) {
+  const parts = new Parts(), { yoke: down, swivel } = STAND, tube = STAND.tube[0], red = STAND.colours.yoke;
+  const arm = reach + tube;
+  for (const side of [-1, 1]) {
+    parts.cylinder(tube * 1.6, 0.02, [side * arm, 0, 0], 'x', red, 12);   // the boss each pin turns in
+    parts.bar([side * arm, 0, 0], [side * arm, -down, 0], tube, red);
+  }
+  parts.bar([-arm, -down, 0], [arm, -down, 0], tube, red);
+  parts.cylinder(STAND.tube[1] * 1.5, swivel, [0, -down - swivel / 2, 0], 'y', STAND.colours.post, 16);
+  return parts.geometry();
+}
+
+/**
+ * The tripod (the header) in the world: its post from `top` (a Vector3, the swivel's foot) down past its collar, and
+ * three legs out from the collar to feet on `groundAt`, the gap between two of them facing `away` (unit, level: the
+ * way the hose goes, so it drops between them).
+ */
+function standGeometry(top, away, groundAt) {
+  const parts = new Parts(), [, postTube, legTube] = STAND.tube, { post, feet } = STAND.colours;
+  const collar = top.clone().setY(top.y - (STAND.knee - STAND.yoke - STAND.swivel));
+  const facing = Math.atan2(away.z, away.x);
+  for (const turn of [Math.PI / 3, Math.PI, -Math.PI / 3]) {
+    const angle = facing + turn;
+    const footX = collar.x + Math.cos(angle) * STAND.splay, footZ = collar.z + Math.sin(angle) * STAND.splay;
+    const foot = new THREE.Vector3(footX, groundAt(footX, footZ) + 0.012, footZ);
+    parts.bar(collar.toArray(), foot.toArray(), legTube, post);
+    parts.cylinder(0.022, 0.024, foot.toArray(), 'y', feet, 12);
+  }
+  parts.bar(top.toArray(), [collar.x, collar.y - 0.05, collar.z], postTube, post);
+  parts.cylinder(postTube * 1.8, 0.04, collar.toArray(), 'y', STAND.colours.yoke, 16);
+  return parts.geometry();
+}
+
 /** A tube's mesh of `segments` rings of `sides` (its triangles indexed once), its rings written by `tubeAlong`. */
 function tubeGeometry(segments, sides, colour) {
   const rings = segments + 1, count = rings * (sides + 1);
@@ -194,7 +255,7 @@ function tubeGeometry(segments, sides, colour) {
   for (let ring = 0; ring < segments; ring++) {
     for (let side = 0; side < sides; side++) {
       const a = ring * (sides + 1) + side, b = a + sides + 1;
-      index.push(a, b, a + 1, a + 1, b, b + 1);
+      index.push(a, a + 1, b, a + 1, b + 1, b);   // wound to face out (the ring goes round as T × N does)
     }
   }
   geometry.setIndex(index);
@@ -351,16 +412,22 @@ export class CannonRig {
    * @param material (roughness, metalness, reflection) → a material of the nozzle's program (the header)
    * @param landAt (x, z) → the land's height there (m over the still water), or null over the water
    * @param floorAt (x, z) → what a hose rests on there (the land's height, the ice's top), or null over open water
+   * @param groundAt (x, z) → the ground's height there, or the bed's under the water (the stand's feet)
    */
-  constructor({ scene, material, landAt, floorAt = landAt }) {
+  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0 }) {
     this.landAt = landAt;
     this.floorAt = floorAt;
+    this.groundAt = groundAt;
     this.pump = new THREE.Mesh(pumpGeometry(), material(0.42, 0.25, 0.8));
     const rubber = material(0.55, 0, 0.6);
     this.suction = new Hose(new THREE.Mesh(tubeGeometry(HOSE.segments, HOSE.sides, HOSE.suction.colour), rubber), HOSE.suction.radius, HOSE.suction.load);
     this.delivery = new Hose(new THREE.Mesh(tubeGeometry(HOSE.segments, HOSE.sides, HOSE.delivery.colour), rubber), 0, HOSE.delivery.load);
     this.strainer = new THREE.Mesh(strainerGeometry(), this.pump.material);   // on the suction hose's end
-    this.meshes = [this.pump, this.suction.mesh, this.delivery.mesh, this.strainer];
+    this.stand = new THREE.Mesh(new THREE.BufferGeometry(), this.pump.material);    // its tripod (place)
+    this.yoke = new THREE.Mesh(new THREE.BufferGeometry(), this.pump.material);     // its yoke, turned with the nozzle (show)
+    this.clamp = new THREE.Mesh(clampGeometry(), this.pump.material);               // the band round the nozzle, with it
+    this.yokeReach = 0;
+    this.meshes = [this.pump, this.suction.mesh, this.delivery.mesh, this.strainer, this.stand, this.yoke, this.clamp];
     for (const mesh of this.meshes) { mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh); }
     this.scene = scene;
     this.nozzleAt = new THREE.Matrix4();   // the nozzle as the delivery hose was last laid to it
@@ -413,6 +480,10 @@ export class CannonRig {
     this.strainer.position.set(points[last], points[last + 1], points[last + 2]);
     this.strainer.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), way);
     this.nozzleAt.elements[0] = NaN;   // the delivery hose laid to the nozzle again (show)
+    // The stand under the hand, its legs parted where the hose goes down towards the pump.
+    const towardPump = new THREE.Vector3(this.footing.x - hand.x, 0, this.footing.z - hand.z).normalize();
+    this.stand.geometry.dispose();
+    this.stand.geometry = standGeometry(hand.clone().setY(hand.y - STAND.yoke - STAND.swivel), towardPump, this.groundAt);
     this.placed = true;
   }
 
@@ -465,6 +536,11 @@ export class CannonRig {
     this.nozzleAt.copy(nozzle.matrix);
     const scale = nozzle.scale.x;
     const barrel = new THREE.Vector3(0, 0, 1).applyQuaternion(nozzle.quaternion);
+    // The clamp goes with the nozzle; the yoke turns with its heading, as wide as its pins.
+    this.clamp.position.copy(nozzle.position); this.clamp.quaternion.copy(nozzle.quaternion); this.clamp.scale.copy(nozzle.scale);
+    if (Math.abs(this.yokeReach - STAND.pins * scale) > 1e-6) { this.yokeReach = STAND.pins * scale; this.yoke.geometry.dispose(); this.yoke.geometry = yokeGeometry(this.yokeReach); }
+    this.yoke.position.copy(nozzle.position);
+    this.yoke.rotation.set(0, Math.atan2(barrel.x, barrel.z), 0);
     const tail = nozzle.position.clone().addScaledVector(barrel, HOSE.delivery.tail * scale);
     this.delivery.radius = HOSE.delivery.radius * scale;
     this.delivery.lay(tail, barrel.negate(), this.pumpPoint(PUMP.outlet), this.pumpWay(PUMP.outletWay), { restingAt: this.restingAt });
