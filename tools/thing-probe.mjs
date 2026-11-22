@@ -620,14 +620,15 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
     }
   }
   // Aimed just inside a hole's edge, only the stream's centre is in the hole: what it lays off that centre (the
-  // crater, its foam, the stray drops' rings) must not land on the ice round about (iceAt). In vacuum (Europa's
-  // lead) it comes down as wide as its flashed cone, so the crater wanders farther; in air it leaves foam too.
+  // crater, its foam, the stray drops' rings) must not land on the ice round about (iceAt). Aimed just outside,
+  // the footprint still reaches the water, and what is laid there must be. In vacuum (Europa's lead) it comes
+  // down as wide as its flashed cone, so the crater wanders farther; in air it leaves foam too.
   {
     setGravity(PLACES.europa.gravity);
     try {
-      const hole = { x: 0.1, z: -1.21, radius: 0.5 };   // aimed at (0.1, -0.74): 3 cm inside its edge
+      const hole = { x: 0.1, z: -1.21, radius: 0.5 };   // its edge at (0.1, -0.71)
       const iceAt = (x, z) => Math.hypot(x - hole.x, z - hole.z) > hole.radius;
-      for (const airless of [true, false]) {
+      for (const [aimZ, side] of [[-0.74, '3 cm inside'], [-0.709, '1 mm outside']]) for (const airless of [true, false]) {
         const laid = { splats: 0, foam: 0, rings: 0 }, onIce = { splats: 0, foam: 0, rings: 0 };
         const count = (kind, x, z) => { laid[kind]++; if (iceAt(x, z)) onIce[kind]++; return true; };
         const own = new WaterCannon({
@@ -636,12 +637,12 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
           wetIce: (x, z) => iceAt(x, z), iceAt,
         });
         setAirDensity(airless ? 0 : EARTH_AIR);
-        own.start({ hand: handFor(0.025, thing), x: 0.1, z: -0.74, pressure: 3, thing, radius: 0.025, time: 0, seconds: 3 });
+        own.start({ hand: handFor(0.025, thing), x: 0.1, z: aimZ, pressure: 3, thing, radius: 0.025, time: 0, seconds: 3 });
         for (let step = 0; step < 6 * 240; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, []); }
         const where = airless ? 'in vacuum' : 'in air';
-        console.log(`  ${where}, aimed 3 cm inside a hole's edge for 3 s: ${laid.splats} splats, ${laid.foam} foam stamps and ${laid.rings} rings laid, ${onIce.splats}, ${onIce.foam} and ${onIce.rings} of them on the ice`);
+        console.log(`  ${where}, aimed ${side} a hole's edge for 3 s: ${laid.splats} splats, ${laid.foam} foam stamps and ${laid.rings} rings laid, ${onIce.splats}, ${onIce.foam} and ${onIce.rings} of them on the ice`);
         check(laid.splats > 100 && laid.rings > 0 && onIce.splats + onIce.foam + onIce.rings === 0,
-          `${where}, aimed just inside a hole's edge the cannon laid ${onIce.splats} of ${laid.splats} splats, ${onIce.foam} of ${laid.foam} foam stamps and ${onIce.rings} of ${laid.rings} rings on the ice`);
+          `${where}, aimed ${side} a hole's edge the cannon laid ${onIce.splats} of ${laid.splats} splats, ${onIce.foam} of ${laid.foam} foam stamps and ${onIce.rings} of ${laid.rings} rings on the ice`);
       }
     } finally {
       setGravity(EARTH_GRAVITY);

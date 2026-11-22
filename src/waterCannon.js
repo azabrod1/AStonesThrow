@@ -597,9 +597,11 @@ export class WaterCannon {
     const footprint = IMPACT.footprint * radius;
     const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch, records.flash[index]).radius;
     this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce);
-    if (!onIce) {
-      // Only the stream's centre is tested above: near a hole's edge what is laid off it may be over ice, and there
-      // it does nothing, its draws drawn all the same, so the rest are as they were (as the fan's, throwFan).
+    {
+      // Only the stream's centre is tested above (onIce), but near a hole's edge its footprint straddles it, on
+      // either side: each thing laid off the centre is tested where it is laid, and over ice does nothing, its draws
+      // drawn all the same, so the rest are as they were (as the fan's, throwFan). Off ice (iceAt null or false)
+      // it is all as it always was.
       const iceAt = this.iceAt;
       // The crater, its centre wandering within the footprint.
       let angle = random() * Math.PI * 2, out = IMPACT.jitter * radius * Math.sqrt(random());
@@ -617,8 +619,9 @@ export class WaterCannon {
         const amount = Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1);
         if (!iceAt?.(stampX, stampZ)) this.water.addFoam({ x: stampX, z: stampZ, radius: stampRadius, amount, lifetime: IMPACT.boilLife, boil: true });
       }
-      // A speck of foam drifting out of it, now and then.
-      if (!airless && this.splash.foamSpecks && random() < IMPACT.specks) {
+      // A speck of foam drifting out of it, now and then: only off a centre on water (a speck's own draws are
+      // the spawn's, so it is kept or skipped whole, as it always was).
+      if (!onIce && !airless && this.splash.foamSpecks && random() < IMPACT.specks) {
         angle = random() * Math.PI * 2;
         const drift = IMPACT.speckDrift[0] + (IMPACT.speckDrift[1] - IMPACT.speckDrift[0]) * random();
         this.splash.foamSpecks.spawn(x + Math.cos(angle) * footprint, z + Math.sin(angle) * footprint, Math.cos(angle) * drift, Math.sin(angle) * drift, splashTime, undefined, random);
@@ -629,8 +632,8 @@ export class WaterCannon {
         const ringX = x + Math.cos(turn) * reach, ringZ = z + Math.sin(turn) * reach;
         if (!iceAt?.(ringX, ringZ)) this.dropRings.add({ x: ringX, z: ringZ, radius: 0.002, fallSpeed: 3 }, splashTime);
       }
-      // Its white water heaping up and rolling on.
-      if (!airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
+      // Its white water heaping up and rolling on, from the centre: only where that is on water.
+      if (!onIce && !airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
     }
     // The drops torn off as it glances, off the water or the ice: they go with the fan's middle, kicked about, pulsing from step to step.
     const pulse = IMPACT.pulse[0] + (IMPACT.pulse[1] - IMPACT.pulse[0]) * random();
