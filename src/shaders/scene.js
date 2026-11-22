@@ -1825,8 +1825,8 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVarian
   vec4 raised = coord + 0.01 * horizontal * uReflectionMatrix[1];
   vec2 perClimb = (raised.xy / max(raised.w, 1e-4) - coord.xy / max(coord.w, 1e-4)) / 0.01;   // uv per unit of climb
   // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d).
-  // Outside nearReflection's reach the cached image's near things (the boulders, the reeds, the koi's garden, the
-  // lagoon's palms) spread as the sky does (on near land's bearings, as that land does), as the sharp lookup moves
+  // Outside nearReflection's reach the cached image's near things (the boulders, the reeds, the lagoon's palms; the
+  // koi's garden writes no nearness at all, src/koiGarden.js) spread as the sky does (on near land's bearings, as that land does), as the sharp lookup moves
   // them: spread by their own nearness there, the garden's image by the bank stood as the sharp lookup's shards, and
   // the spread had smoothed them.
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);

@@ -11,7 +11,8 @@
 // gives the place's birds their meshes and fetches the images of the kinds
 // about at its hour; update(camera) poses them, each frame;
 // mirrorChanges(into, frustum) is asked once for each frame drawn
-// (src/birdDrawing.js); warmUp() draws a bird of each view in front of the
+// (src/birdDrawing.js), and mirrorBounds(into, frustum) joins the bounds of
+// every shown bird the mirror sees; warmUp() draws a bird of each view in front of the
 // camera, so their programs are built under the veil (its done() takes them
 // away); drawCalls counts the draws they take now.
 import * as THREE from 'three';
@@ -35,6 +36,7 @@ export function createBirdViews({ lighting, haze, mirrorLayer, onLoaded }) {
       pictures.update(camera);
     },
     mirrorChanges: (into, frustum) => models.mirrorChanges(into, frustum) + pictures.mirrorChanges(into, frustum),
+    mirrorBounds: (into, frustum) => models.mirrorBounds(into, frustum) + pictures.mirrorBounds(into, frustum),
     warmUp() {
       const started = [models.warmUp(), pictures.warmUp()];
       return { done() { for (const one of started) one.done(); } };
