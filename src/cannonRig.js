@@ -7,7 +7,9 @@
 // hose are held up, never in the air). Scenery of the preview's
 // (src/main.js buildPreview): shown while the cannon is in hand, left out
 // with the preview (?preview=off, so the harness's frames stay as they were
-// unless --preview=1).
+// unless --preview=1). Like the preview it has no image in the water: its
+// meshes are on the main scene's layer only, never the mirror's (a pump by
+// the water's edge would need mirror twins of its own, another program).
 //
 // The pump (PUMP, pumpGeometry) is a portable fire pump of the kind carried
 // to a pond, as few parts as make one: its engine under a rounded red

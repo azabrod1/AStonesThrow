@@ -378,7 +378,7 @@ export class WaterCannon {
     this.landings = 0;        // parcels landed since the last reset
     this.lastLanding = -Infinity;
     this.lastStartle = -Infinity;
-    this.landing = null;      // where the last parcel landed, this step: { x, z, radius, speed, directionX, directionZ }
+    this.landing = null;      // where the last parcel landed, this step: { x, z, radius, speed, directionX, directionZ, churn }
     this.aimScratch = { vx: 0, vy: 0, vz: 0, flight: 0, short: false };
     this.exitScratch = { x: 0, y: 0, z: 0 };
     // The parcels: a ring of records, `head` the oldest still in the air, `count` all ever recorded.
@@ -496,11 +496,13 @@ export class WaterCannon {
   /** The nozzle turned a step `dt` after the aim (CANNON.follow): a critically damped spring, stepped exactly. */
   turn(burst, dt) {
     const pointing = burst.pointing, rate = CANNON.follow, fade = Math.exp(-rate * dt);
-    for (const [place, pace, target] of [['x', 'vx', burst.aim.x], ['z', 'vz', burst.aim.z]]) {
-      const off = pointing[place] - target, rising = pointing[pace] + rate * off;
-      pointing[place] = target + (off + rising * dt) * fade;
-      pointing[pace] = (pointing[pace] - rate * rising * dt) * fade;
-    }
+    // Each way written out, so a step allocates nothing while it sweeps.
+    const offX = pointing.x - burst.aim.x, risingX = pointing.vx + rate * offX;
+    pointing.x = burst.aim.x + (offX + risingX * dt) * fade;
+    pointing.vx = (pointing.vx - rate * risingX * dt) * fade;
+    const offZ = pointing.z - burst.aim.z, risingZ = pointing.vz + rate * offZ;
+    pointing.z = burst.aim.z + (offZ + risingZ * dt) * fade;
+    pointing.vz = (pointing.vz - rate * risingZ * dt) * fade;
   }
 
   /**
@@ -598,9 +600,10 @@ export class WaterCannon {
     this.lastLanding = time;
     const handle = records.handle[index];
     if (handle && handle.landedAt === null) { handle.landedAt = time; handle.position.set(x, 0, z); }
-    // `churn`: the reach of the water it stirs (CHURN times its boil's scale, L = (QU/g)^(1/3): WHITE), which the fish keep out of.
-    this.landing = { x, z, radius, speed, directionX, directionZ, churn: IMPACT.footprint * radius + CHURN * Math.cbrt((water / dt) * speed / GRAVITY) };
     const onIce = this.wetIce ? this.wetIce(x, z, IMPACT.footprint * radius) : false;
+    // `churn`: the reach of the water it stirs (CHURN times its boil's scale, L = (QU/g)^(1/3): WHITE), which the fish keep
+    // out of; none where it comes down on ice, which stirs no water (the fish under it are left as a thrown thing leaves them).
+    this.landing = { x, z, radius, speed, directionX, directionZ, churn: onIce ? 0 : IMPACT.footprint * radius + CHURN * Math.cbrt((water / dt) * speed / GRAVITY) };
     const random = this.random;
     const footprint = IMPACT.footprint * radius;
     const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch).radius;

@@ -607,6 +607,16 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   const inAir = churn(false), inVacuum = churn(true);
   check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
     `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
+  // The water it churns, which the fish keep out of (landing.churn, src/fish.js): none where it comes down on ice.
+  const churnOf = (wetIce) => {
+    const own = new WaterCannon({ water, splash, wetIce });
+    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
+    let most = 0;
+    for (let step = 0; step < 240; step++) { own.step(step * STEP, STEP, []); most = Math.max(most, own.landing?.churn ?? 0); }
+    return most;
+  };
+  const inWater = churnOf(() => false), onTheIce = churnOf(() => true);
+  check(inWater > 0.3 && onTheIce === 0, `a squirt churns ${inWater.toFixed(2)} m of water for the fish to keep out of, on ice ${onTheIce.toFixed(2)} m (none)`);
   // Under Europa's gravity the fan flies as many times longer, and its ring has room for it (src/waterCannon.js
   // fanCapacity): over a long burst every landing still throws its moment of the fan.
   {
