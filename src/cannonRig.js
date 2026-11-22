@@ -62,8 +62,14 @@
 // Nothing of it is black: red, blue, brass and grey. One program for all of
 // it: the nozzle's (src/main.js passes a material
 // maker that gives the nozzle's program, its parameters alike, so nothing
-// here compiles a program of its own), each part's colour by vertex. Every
-// mesh is culled by each pass's view.
+// here compiles a program of its own), each part's colour by vertex. What can
+// reach under the water (the suction hose, the strainer, the stand's legs)
+// has a twin in the under-water pass (`under`, sharing its geometry, of the
+// material src/main.js gives for it: clipped to under the still surface and
+// drawn where the surface shows it, as a boulder's under-water part is), the
+// pass the water refracts, so seen from above what is under the surface is
+// not cut off at the waterline; each twin is drawn only while its bounds
+// reach under the water. Every mesh is culled by each pass's view.
 import * as THREE from 'three';
 
 export const PUMP = {
@@ -540,8 +546,10 @@ export class CannonRig {
    * @param floorAt (x, z) → what a hose rests on there (the land's height, the ice's top), or null over open water
    * @param groundAt (x, z) → the ground's height there, or the bed's under the water (the stand's feet)
    * @param surfaceAt () → under a gale, (x, z) → the water's height there (its CPU sum), else null: what lifts what floats
+   * @param under the under-water pass's scene, and `underMaterial` its material maker (as `material`'s): what of the rig
+   *   can be under the water is drawn there too (the header), or nothing if either is missing
    */
-  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0, surfaceAt = () => null }) {
+  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0, surfaceAt = () => null, under = null, underMaterial = null }) {
     this.landAt = landAt;
     this.surfaceAt = surfaceAt;
     this.floorAt = floorAt;
@@ -559,6 +567,21 @@ export class CannonRig {
     // Culled by each pass's view (each geometry's sphere: the hoses' made again whenever they are laid or lifted, tubeAlong).
     for (const mesh of this.meshes) { mesh.visible = false; scene.add(mesh); }
     this.scene = scene;
+    // Twins in the under-water pass of what can reach under the water (the suction hose, its strainer, the stand's legs),
+    // sharing their geometry: the water refracts that pass, so without them what is under the surface would be cut off
+    // at the waterline seen from above. Each is drawn only when its bounds reach under the still surface (showBelow).
+    this.under = under && underMaterial ? under : null;
+    this.below = [];
+    if (this.under) {
+      const rubberBelow = underMaterial(0.55, 0, 0.35), metalBelow = underMaterial(0.42, 0.25, 0.35);
+      for (const [mesh, made] of [[this.suction.mesh, rubberBelow], [this.strainer, metalBelow], [this.stand, metalBelow]]) {
+        const twin = new THREE.Mesh(mesh.geometry, made);
+        twin.visible = false;
+        this.under.add(twin);
+        this.below.push({ mesh, twin });
+      }
+    }
+    this.lowest = new THREE.Vector3();
     this.nozzleAt = new THREE.Matrix4();   // the nozzle as the delivery hose was last laid to it
     this.restingAt = (x, z, radius) => this.restOf(x, z, radius);
     // What laying the delivery hose again works in (show), kept so a sweep of the nozzle makes no garbage.
@@ -629,6 +652,7 @@ export class CannonRig {
     const towardPump = new THREE.Vector3(this.footing.x - hand.x, 0, this.footing.z - hand.z).normalize();
     this.stand.geometry.dispose();
     this.stand.geometry = standGeometry(hand.clone().setY(hand.y - STAND.yoke - STAND.swivel), towardPump, this.groundAt);
+    for (const { mesh, twin } of this.below) twin.geometry = mesh.geometry;
     this.placed = true;
   }
 
@@ -690,7 +714,7 @@ export class CannonRig {
   show(nozzle, strength, seconds) {
     const visible = Boolean(nozzle?.visible) && this.placed;
     for (const mesh of this.meshes) mesh.visible = visible;
-    if (!visible) return;
+    if (!visible) { this.showBelow(false); return; }
     const shake = PUMP.shake * strength;
     this.pump.position.set(
       this.footing.x + shake * Math.sin(2 * Math.PI * PUMP.hum[0] * seconds),
@@ -701,6 +725,7 @@ export class CannonRig {
     const surfaceAt = this.surfaceAt();
     const sunk = this.suction.lift(surfaceAt);
     this.strainer.position.set(this.strainerAt.x, this.strainerAt.y + sunk, this.strainerAt.z);
+    this.showBelow(true);
     nozzle.updateMatrix();
     if (nozzle.matrix.equals(this.nozzleAt)) { this.delivery.lift(surfaceAt); return; }
     this.nozzleAt.copy(nozzle.matrix);
@@ -719,10 +744,31 @@ export class CannonRig {
     this.delivery.lift(surfaceAt);
   }
 
+  /**
+   * The under-water twins (the constructor's) where their meshes are, each shown with `shown` only if its bounds reach
+   * under the still surface (a hose on the land or the ice, or a stand on the deck, draws nothing there).
+   */
+  showBelow(shown) {
+    const lowest = this.lowest;
+    for (const { mesh, twin } of this.below) {
+      twin.position.copy(mesh.position); twin.quaternion.copy(mesh.quaternion); twin.scale.copy(mesh.scale);
+      const sphere = mesh.geometry.boundingSphere ?? (mesh.geometry.attributes.position ? (mesh.geometry.computeBoundingSphere(), mesh.geometry.boundingSphere) : null);
+      if (!shown || !sphere || sphere.radius < 0) { twin.visible = false; continue; }
+      twin.updateMatrix();
+      lowest.copy(sphere.center).applyMatrix4(twin.matrix);
+      twin.visible = lowest.y - sphere.radius * twin.scale.x < 0;
+    }
+  }
+
+  /** For the warm-up (src/main.js warmUp): its under-water twins shown whatever they hold, so their program is built; then hidden. */
+  warmUp(on) { for (const { twin } of this.below) twin.visible = on; }
+
   /** Hidden (the preview is gone, or another thing is in hand). */
-  hide() { for (const mesh of this.meshes) mesh.visible = false; }
+  hide() { for (const mesh of this.meshes) mesh.visible = false; this.showBelow(false); }
 
   dispose() {
     for (const mesh of this.meshes) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+    for (const { twin } of this.below) this.under.remove(twin);
+    for (const made of new Set(this.below.map(({ twin }) => twin.material))) made.dispose();
   }
 }
