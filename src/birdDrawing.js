@@ -58,6 +58,12 @@ export function boundedGeometry(source, bounds) {
 const textureRandom = parkMiller(11);
 
 /**
+ * `make`'s result, its three objects made on the textures' own stream (textureRandom): for what is made whenever a
+ * download comes (a bird model's geometry, src/birdMeshes.js), so no seeded throw's draws depend on when it came.
+ */
+export const madeOnOwnStream = (make) => withRandom(textureRandom, make);
+
+/**
  * A bird's image (a WebP in assets/birds/, its rows as they lie: uv from its top left), fetched and made a mipmapped
  * sRGB texture, filtered `anisotropy` times; made on a stream of its own (textureRandom).
  */

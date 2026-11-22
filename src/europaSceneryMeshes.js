@@ -96,7 +96,11 @@ void main() {
   // Fading, it grows clearer, never darker: a dark picture would show black against Jupiter or the ice.
   float alpha = picture.a * uFade;
   #ifdef MIRROR
-    if (alpha < 0.5 || vWorld.y < 0.0) discard;
+    // The mirror is drawn opaque (its alpha the nearness), so it fades by a dither instead: each pixel kept as often as
+    // uFade (interleaved gradient noise), which the mirror's blur reads as a fade, never a pop at half (and at uFade 1,
+    // none discarded: as before).
+    float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    if (picture.a < 0.5 || dither >= uFade || vWorld.y < 0.0) discard;
     gl_FragColor = vec4(birdHazed(radiance, vWorld), 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05));
   #else
     if (alpha < 0.02) discard;

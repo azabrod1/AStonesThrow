@@ -620,29 +620,50 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
     }
   }
   // Aimed just inside a hole's edge, only the stream's centre is in the hole: what it lays off that centre (the
-  // crater, its foam, the stray drops' rings) must not land on the ice round about (iceAt). Aimed just outside,
-  // the footprint still reaches the water, and what is laid there must be. In vacuum (Europa's lead) it comes
-  // down as wide as its flashed cone, so the crater wanders farther; in air it leaves foam too.
+  // crater, its foam, the stray drops' rings, foam specks, white water) must not land on the ice round about (iceAt).
+  // Aimed just outside, the footprint still reaches the water, and what is laid there must be: the water beside the
+  // edge gets about as much from a stream 1 mm outside as from one 1 mm inside (the fan's rain, the specks, the white
+  // water and the shove on a floater there included), never nothing. In vacuum (Europa's lead) it comes down as wide
+  // as its flashed cone, so the crater wanders farther; in air it leaves foam, specks and white water too.
   {
     setGravity(PLACES.europa.gravity);
     try {
       const hole = { x: 0.1, z: -1.21, radius: 0.5 };   // its edge at (0.1, -0.71)
       const iceAt = (x, z) => Math.hypot(x - hole.x, z - hole.z) > hole.radius;
-      for (const [aimZ, side] of [[-0.74, '3 cm inside'], [-0.709, '1 mm outside']]) for (const airless of [true, false]) {
-        const laid = { splats: 0, foam: 0, rings: 0 }, onIce = { splats: 0, foam: 0, rings: 0 };
+      const kinds = ['splats', 'foam', 'rings', 'specks', 'puffs', 'shoves'];
+      const burst = (aimZ, airless) => {
+        const laid = Object.fromEntries(kinds.map((kind) => [kind, 0])), onIce = { ...laid };
         const count = (kind, x, z) => { laid[kind]++; if (iceAt(x, z)) onIce[kind]++; return true; };
         const own = new WaterCannon({
           water: { ...water, addSplat: (splat) => count('splats', splat.x, splat.z), addFoam: (foam) => count('foam', foam.x, foam.z) },
-          splash: { ...splash, airless }, dropRings: { add: (ring) => count('rings', ring.x, ring.z) },
+          splash: { ...splash, airless, foamSpecks: { spawn: (x, z) => count('specks', x, z) }, whiteWater: { puff: (puff) => count('puffs', puff.x, puff.z) } },
+          dropRings: { add: (ring) => count('rings', ring.x, ring.z) },
           wetIce: (x, z) => iceAt(x, z), iceAt,
         });
+        // A floater afloat in the hole 1 cm in from the edge, in the stream's footprint whichever side it lands.
+        const floater = { floats: true, state: 'float', position: new THREE.Vector3(0.1, 0, -0.72), radius: 0.03, mass: 0.05, knock: () => count('shoves', floater.position.x, floater.position.z) };
         setAirDensity(airless ? 0 : EARTH_AIR);
         own.start({ hand: handFor(0.025, thing), x: 0.1, z: aimZ, pressure: 3, thing, radius: 0.025, time: 0, seconds: 3 });
-        for (let step = 0; step < 6 * 240; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, []); }
+        for (let step = 0; step < 6 * 240; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, [floater]); }
+        const onWater = Object.fromEntries(kinds.map((kind) => [kind, laid[kind] - onIce[kind]]));
+        return { laid, onIce, onWater };
+      };
+      const describe = (counts) => kinds.map((kind) => `${counts[kind]} ${kind}`).join(', ');
+      for (const airless of [true, false]) {
         const where = airless ? 'in vacuum' : 'in air';
-        console.log(`  ${where}, aimed ${side} a hole's edge for 3 s: ${laid.splats} splats, ${laid.foam} foam stamps and ${laid.rings} rings laid, ${onIce.splats}, ${onIce.foam} and ${onIce.rings} of them on the ice`);
-        check(laid.splats > 100 && laid.rings > 0 && onIce.splats + onIce.foam + onIce.rings === 0,
-          `${where}, aimed ${side} a hole's edge the cannon laid ${onIce.splats} of ${laid.splats} splats, ${onIce.foam} of ${laid.foam} foam stamps and ${onIce.rings} of ${laid.rings} rings on the ice`);
+        const runs = {};
+        for (const [aimZ, side] of [[-0.74, '3 cm inside'], [-0.711, '1 mm inside'], [-0.709, '1 mm outside']]) {
+          const run = runs[side] = burst(aimZ, airless);
+          console.log(`  ${where}, aimed ${side} a hole's edge for 3 s: laid ${describe(run.laid)}; on the ice ${describe(run.onIce)}`);
+          check(run.laid.splats > 100 && run.laid.rings > 0 && kinds.every((kind) => run.onIce[kind] === 0),
+            `${where}, aimed ${side} a hole's edge the cannon laid on the ice ${describe(run.onIce)} (of ${describe(run.laid)})`);
+        }
+        // Across the edge, the water beside it gets about as much either way: each kind on water from 1 mm outside at
+        // least a third of what 1 mm inside lays (the footprint is a few centimetres across, so it is mostly a draw).
+        const inside = runs['1 mm inside'].onWater, outside = runs['1 mm outside'].onWater;
+        const present = kinds.filter((kind) => inside[kind] > 0);
+        check(present.includes('shoves') && present.every((kind) => outside[kind] >= inside[kind] / 3),
+          `${where}, across a hole's edge the water beside it gets ${describe(inside)} from 1 mm inside but ${describe(outside)} from 1 mm outside`);
       }
     } finally {
       setGravity(EARTH_GRAVITY);
