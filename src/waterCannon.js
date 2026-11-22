@@ -73,7 +73,9 @@
 // stream (Rock.knock, the stream's momentum on it, no more than
 // IMPACT.pushCap a step), and the fish are frightened (the caller's
 // startle). On ice the landing wets it instead (the caller's wetIce) and
-// the sheet bounces. Everything is computed on still water; the rope's
+// the sheet bounces; landing in open water by a hole's edge, the crater,
+// foam and rings laid off its centre do nothing where they fall on the ice
+// (iceAt). Everything is computed on still water; the rope's
 // shader lifts it under a gale (galeLift), as the spray's and the white
 // water's do.
 //
@@ -596,9 +598,13 @@ export class WaterCannon {
     const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch, records.flash[index]).radius;
     this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce);
     if (!onIce) {
+      // Only the stream's centre is tested above: near a hole's edge what is laid off it may be over ice, and there
+      // it does nothing, its draws drawn all the same, so the rest are as they were (as the fan's, throwFan).
+      const iceAt = this.iceAt;
       // The crater, its centre wandering within the footprint.
       let angle = random() * Math.PI * 2, out = IMPACT.jitter * radius * Math.sqrt(random());
-      this.water.addSplat({ x: x + Math.cos(angle) * out, z: z + Math.sin(angle) * out, radius: footprint, velocity: -cratering * speed * dt, rim: IMPACT.rim });
+      const craterX = x + Math.cos(angle) * out, craterZ = z + Math.sin(angle) * out;
+      if (!iceAt?.(craterX, craterZ)) this.water.addSplat({ x: craterX, z: craterZ, radius: footprint, velocity: -cratering * speed * dt, rim: IMPACT.rim });
       // Its churn: a stamp of foam each step, each its own size, place and strength (the header).
       // Laid along the way the stream glances on (IMPACT.trail), wider and so thinner the farther: a streak, never a disc.
       // With no air (src/splash.js `airless`: Europa) none is driven under, so it leaves no foam, specks or white water.
@@ -606,7 +612,11 @@ export class WaterCannon {
       const onward = random() ** 2, trail = IMPACT.trail * across * onward;
       angle = random() * Math.PI * 2; out = IMPACT.boilReach * radius * Math.sqrt(random()) * (1 + IMPACT.trailWiden * onward);
       const stampRadius = (radius * (IMPACT.boilRadii[0] + (IMPACT.boilRadii[1] - IMPACT.boilRadii[0]) * random()) + 0.01) * (1 + IMPACT.trailWiden * onward);
-      if (!airless) this.water.addFoam?.({ x: x + directionX * trail + Math.cos(angle) * out, z: z + directionZ * trail + Math.sin(angle) * out, radius: stampRadius, amount: Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1), lifetime: IMPACT.boilLife, boil: true });
+      const stampX = x + directionX * trail + Math.cos(angle) * out, stampZ = z + directionZ * trail + Math.sin(angle) * out;
+      if (!airless && this.water.addFoam) {   // its strength drawn only here, as it always was (no foam in vacuum)
+        const amount = Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1);
+        if (!iceAt?.(stampX, stampZ)) this.water.addFoam({ x: stampX, z: stampZ, radius: stampRadius, amount, lifetime: IMPACT.boilLife, boil: true });
+      }
       // A speck of foam drifting out of it, now and then.
       if (!airless && this.splash.foamSpecks && random() < IMPACT.specks) {
         angle = random() * Math.PI * 2;
@@ -616,7 +626,8 @@ export class WaterCannon {
       // A stray drop's ring round about.
       if (this.dropRings && random() < IMPACT.rings) {
         const reach = radius * (IMPACT.ringReach[0] + (IMPACT.ringReach[1] - IMPACT.ringReach[0]) * random()), turn = random() * Math.PI * 2;
-        this.dropRings.add({ x: x + Math.cos(turn) * reach, z: z + Math.sin(turn) * reach, radius: 0.002, fallSpeed: 3 }, splashTime);
+        const ringX = x + Math.cos(turn) * reach, ringZ = z + Math.sin(turn) * reach;
+        if (!iceAt?.(ringX, ringZ)) this.dropRings.add({ x: ringX, z: ringZ, radius: 0.002, fallSpeed: 3 }, splashTime);
       }
       // Its white water heaping up and rolling on.
       if (!airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
