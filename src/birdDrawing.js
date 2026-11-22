@@ -102,6 +102,18 @@ export function kindsAbout(birds, dark) {
 }
 
 const boundsSphere = new THREE.Sphere(), boundsBox = new THREE.Box3();
+/** The bounds of every shown bird of `sprites` that the mirror's camera sees (`frustum`), joined into `into`: how many. */
+export function mirrorBounds(sprites, into, frustum) {
+  let seen = 0;
+  for (const sprite of sprites) {
+    if (!sprite.shown) continue;
+    boundsSphere.set(sprite.centre, sprite.radius);
+    if (!frustum.intersectsSphere(boundsSphere)) continue;
+    into.union(boundsSphere.getBoundingBox(boundsBox));
+    seen++;
+  }
+  return seen;
+}
 /**
  * The bounds (each `centre` and `radius`) of every shown bird of `sprites` that is not as the mirror last drew it
  * and that the mirror's camera sees (`frustum`), joined into `into`: how many (src/main.js draws the mirror image

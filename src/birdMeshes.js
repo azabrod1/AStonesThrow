@@ -62,7 +62,7 @@ import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
 import { JOINTS, JOINT_COUNT, NECK_SHARES, FLIGHT, poseJoints, poseStanding } from './birdRig.js';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
-import { BIRDS_FOLDER, BIRD_HAZE, SUN_SHARE, SKY_SHARE, MIRROR_NEARNESS_SCALE, boundedGeometry, loadBirdTexture, madeOnOwnStream, spritesFor, kindsAbout, mirrorChanges as mirrorChangesOf } from './birdDrawing.js';
+import { BIRDS_FOLDER, BIRD_HAZE, SUN_SHARE, SKY_SHARE, MIRROR_NEARNESS_SCALE, boundedGeometry, loadBirdTexture, madeOnOwnStream, spritesFor, kindsAbout, mirrorChanges as mirrorChangesOf, mirrorBounds as mirrorBoundsOf } from './birdDrawing.js';
 
 /** The kinds drawn as models (each with its flight, src/birdRig.js, and its model in models.json); src/birdViews.js has the rest drawn as pictures. */
 export const MODELLED_KINDS = new Set(Object.keys(FLIGHT));
@@ -825,6 +825,7 @@ export function createBirdModels({ lighting, haze, mirrorLayer, onLoaded = () =>
   }
 
   const mirrorChanges = (into, frustum) => mirrorChangesOf(sprites, into, frustum, changed);
+  const mirrorBounds = (into, frustum) => mirrorBoundsOf(sprites, into, frustum);
 
   /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so its programs are built. */
   function warmUp() {
@@ -844,7 +845,7 @@ export function createBirdModels({ lighting, haze, mirrorLayer, onLoaded = () =>
 
   return {
     above, below, mirror,
-    show, update, mirrorChanges, warmUp,
+    show, update, mirrorChanges, mirrorBounds, warmUp,
     get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0) + (sprite.under.visible ? 1 : 0), 0); },
   };
 }
