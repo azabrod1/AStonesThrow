@@ -33,7 +33,12 @@
 // clamped end, to the pump's outlet, another; the suction hose (blue-grey)
 // from the inlet, clamped, to its strainer under the water, pinned, its
 // last HOSE.suction.dive free to go under (on frozen water, unless a hole is
-// there, the strainer lies on the ice instead). Each is cut into HOSE.spacing
+// there, the strainer lies on the ice instead). It goes to the water off to
+// one side of the pump (HOSE.suction.aside), whichever reaches it sooner, or,
+// where neither does (the Pool, its basin off both ways from the pump on its
+// deck), the nearest way round the pump that does (HOSE.search); the
+// strainer goes HOSE.suction.out into the water, or midway across water
+// narrower than twice that, so it is never on the land. Each is cut into HOSE.spacing
 // pieces and solved exactly at rest (lay): the bending is a band matrix, so
 // its sideways way is one solve, and its height is found with the points
 // that touch what holds it up held there, letting go each the ground would
@@ -89,6 +94,8 @@ export const HOSE = {
   // The suction hose: blue, its strainer `sunk` under the water, going down to it over its last `dive`, `out` from
   // the water's edge, laid `aside` (rad) of the way the pump faces, to whichever side reaches the water sooner.
   suction: { radius: 0.026, load: 250, colour: [0.12, 0.36, 0.7], sunk: 0.15, dive: 0.45, out: 0.9, aside: 0.75 },
+  // Where neither way aside finds the water: this many headings round the pump, each walked up to `reach` (m) of land.
+  search: { headings: 24, reach: 6 },
   // The delivery hose: red, as round as the nozzle's stub (NOZZLE's, in the nozzle's drawn radii), from where it takes
   // over from the stub (`tail`, its radii along the barrel) to the outlet.
   delivery: { radius: 0.7, load: 130, tail: -3.9, colour: [0.8, 0.12, 0.08] },
@@ -587,17 +594,22 @@ export class CannonRig {
     this.pump.rotation.set(0, this.facing, 0);
     this.pump.updateMatrix();
     // The suction hose: out of the inlet, down to the ground, along it to the water and down to its strainer. It goes off
-    // aside (HOSE.aside), to whichever side reaches the water sooner.
-    let strainer = null, nearest = Infinity;
-    const { aside, out, sunk, dive } = HOSE.suction;
+    // aside (HOSE.aside), to whichever side reaches the water sooner; where neither does within `most` (the Pool's deck,
+    // its basin off both ways), straight for the nearest water round about (HOSE.search). The strainer always goes into
+    // water, then: only with none within reach does it lie on the land, ahead of the pump.
+    const { aside, sunk, dive } = HOSE.suction;
+    let found = null;
     for (const side of [-1, 1]) {
-      const turn = this.facing + side * aside;
-      const way = new THREE.Vector3(Math.sin(turn), 0, Math.cos(turn));
-      const edge = this.footing.clone().addScaledVector(way, PUMP.foot[1]);
-      let walked = 0;
-      for (; walked < most && this.landAt(edge.x, edge.z) !== null; walked += step) edge.addScaledVector(way, step);
-      if (walked < nearest) { nearest = walked; strainer = edge.addScaledVector(way, out); }
+      const along = this.waterAlong(this.facing + side * aside, most);
+      if (along && (!found || along.walked < found.walked)) found = along;
     }
+    if (!found) {
+      for (let heading = 0; heading < HOSE.search.headings; heading++) {
+        const along = this.waterAlong(this.facing + (2 * Math.PI * heading) / HOSE.search.headings, HOSE.search.reach);
+        if (along && (!found || along.walked < found.walked)) found = along;
+      }
+    }
+    const strainer = found ? found.strainer : this.footing.clone().add(new THREE.Vector3(Math.sin(this.facing), 0, Math.cos(this.facing)).multiplyScalar(PUMP.foot[1] + most));
     // Under ice (floorAt there, not a hole) the strainer lies on the sheet rather than going through it.
     const frozen = this.floorAt(strainer.x, strainer.z);
     const suction = this.suction;
@@ -616,6 +628,26 @@ export class CannonRig {
     this.stand.geometry.dispose();
     this.stand.geometry = standGeometry(hand.clone().setY(hand.y - STAND.yoke - STAND.swivel), towardPump, this.groundAt);
     this.placed = true;
+  }
+
+  /**
+   * Where the suction hose finds the water going `turn` (rad about the vertical, as `facing`) from the pump's front,
+   * over no more than `reach` of land: { walked, the land it crossed (m); strainer, HOSE.suction.out on into the
+   * water, or midway across where the water is narrower than twice that }; null if it finds none.
+   */
+  waterAlong(turn, reach) {
+    const { step } = PUMP.place, { out } = HOSE.suction;
+    const wayX = Math.sin(turn), wayZ = Math.cos(turn);
+    const edge = this.footing.clone().add(new THREE.Vector3(wayX, 0, wayZ).multiplyScalar(PUMP.foot[1]));
+    let walked = 0;
+    for (; this.landAt(edge.x, edge.z) !== null; walked += step) {
+      if (walked >= reach) return null;
+      edge.x += wayX * step; edge.z += wayZ * step;
+    }
+    let across = 0;
+    while (across < 2 * out && this.landAt(edge.x + wayX * (across + step), edge.z + wayZ * (across + step)) === null) across += step;
+    const into = across >= 2 * out ? out : across / 2;
+    return { walked, strainer: edge.set(edge.x + wayX * into, 0, edge.z + wayZ * into) };
   }
 
   /** The land's height under all of the pump's feet at (x, z) turned by `facing` (the highest), or null if any is over the water. */
