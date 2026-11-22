@@ -47,6 +47,19 @@
 // and, where it has broken up, now and then a drop big enough to land and
 // ring on its own (src/splash.js spawnDroplet).
 //
+// In vacuum (src/air.js: Europa's surface) nothing drags on it or strips it,
+// but nothing holds its vapour in either: water at 0 °C has a vapour
+// pressure of 611 Pa, and outside there is none, so it flashes. Bubbles of
+// vapour grow in it at u = sqrt(2/3 · p_v/ρ), 0.64 m/s (FLASH: inertia-
+// limited, as Rayleigh's; water from the ocean below, its gas unknown, so
+// its vapour alone), and burst it across its bore r by FLASH's r·V/u from
+// the muzzle: 8 cm for the weakest jet, some 40 at 3 bar, 1.8 m for the deck
+// gun. So it is white with bubbles almost at once, and goes on as a cone of
+// drops widening by u/V (1.5° at 3 bar), the same water over a wider way:
+// thinner the farther it flies (skin), and lands as wide, its push on the
+// water spread over the cone (land). What it sheds freezes as it flies
+// (src/splash.js `airless`), and lands as grains of ice.
+//
 // The landing, each step for each parcel that lands in it (so a seeded game
 // goes alike at any frame rate, and 240 of them a second sum to the flow):
 // a stream really drills metres down; what shows is a boiling crater a few
@@ -69,7 +82,11 @@
 // stream (Rock.knock, the stream's momentum on it, no more than
 // IMPACT.pushCap a step), and the fish are frightened (the caller's
 // startle). On ice the landing wets it instead (the caller's wetIce) and
-// the sheet bounces. Everything is computed on still water; the rope's
+// the sheet bounces; by a hole's edge, whichever side of it the centre
+// comes down, each crater, foam stamp, speck, ring, puff of white water and
+// floater shoved is tested where it is (iceAt: landedOnIce), so what falls
+// on the ice does nothing and what falls in the water does its part.
+// Everything is computed on still water; the rope's
 // shader lifts it under a gale (galeLift), as the spray's and the white
 // water's do.
 //
@@ -104,7 +121,9 @@
 // water), draw a drop's ring (FAN.rings), or leave froth too faint to see by
 // itself (FAN.froth), so froth gathers under the fan in a second or so and
 // goes as slowly (stamps strong enough to see at once blinked on and off).
-// On ice it glances the same, and leaves nothing where it lands.
+// On ice it glances the same, and leaves nothing where it lands, each drop
+// tested where it comes down (iceAt): a fan thrown by a hole's edge rains on
+// the water whichever side of the edge it was thrown from.
 //
 // Its boil (whiten, WHITE; src/whiteWater.js draws it): at the stream's foot
 // the water it drives air into heaps up white. Its scale is set by the
@@ -140,6 +159,7 @@ import { seededRandom, sprayDrops } from './spray.js';
 import { SHEATH } from './streamSheath.js';
 import { FAN_GRID } from './sprayFan.js';
 import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
+import { AIR_DENSITY } from './air.js';
 
 const WATER_DENSITY = 1000;
 const SURFACE_TENSION = 0.072;
@@ -200,6 +220,11 @@ export const ROUGH = {
   shed: 0.01,         // the share of the flow the rough skin throws off as mist (BREAKUP.mist where it has broken up)
   stretch: 6,         // a swept rope is seen through as many times more as it is stretched (writePiece), up to this
 };
+// In vacuum (src/air.js: Europa) the stream flashes (the header): bubbles of vapour grow in it at the speed the
+// water's vapour pressure drives them, sqrt(2/3 · p_v/ρ) (Rayleigh's, inertia-limited: 611 Pa at 0 °C, the ocean's
+// water), so it has burst across its bore by `flash` = r·V/u from the muzzle and goes on as a cone of drops widening
+// at u/V (nozzle, skin).
+export const FLASH = { growth: Math.sqrt((2 / 3) * 611 / WATER_DENSITY) };   // m/s: the bubbles' growth, u
 // The fan of spray the stream throws off the water where it lands (the header; src/sprayFan.js draws it).
 // The fan's ring's room under the place's gravity (FAN.capacity): its flights, 2·vy/g, as many times longer as g is weaker.
 const fanCapacity = () => Math.ceil(FAN.capacity * Math.max(EARTH_GRAVITY / GRAVITY, 1));
@@ -272,7 +297,11 @@ export const WHITE = {
   life: [1.2, 2.4],       // in T: a boil at the stream's foot, gone as soon as the stream is
 };
 
-/** The nozzle at `pressure` bar for a thing's `stream`: its radius (m), exit speed (m/s), flow (m³/s), breakup length (m) and where its skin roughens (`onset`, m). */
+/**
+ * The nozzle at `pressure` bar for a thing's `stream`: its radius (m), exit speed (m/s), flow (m³/s), breakup length
+ * (m), where its skin roughens (`onset`, m) and, in vacuum (src/air.js), where it has flashed across its bore
+ * (`flash`, m: FLASH; 0 in air).
+ */
 export function nozzle(pressure, stream) {
   const { min, max } = stream.pressure;
   const share = THREE.MathUtils.clamp((pressure - min) / Math.max(max - min, 1e-9), 0, 1);
@@ -281,7 +310,8 @@ export function nozzle(pressure, stream) {
   const flow = Math.PI * radius * radius * speed;
   const diameter = 2 * radius;
   const weber = (WATER_DENSITY * speed * speed * diameter) / SURFACE_TENSION;
-  return { radius, speed, flow, breakup: BREAKUP.length * diameter * weber ** BREAKUP.power, onset: ROUGH.onset * diameter * weber ** ROUGH.power };
+  const flash = AIR_DENSITY === 0 ? (radius * speed) / FLASH.growth : 0;
+  return { radius, speed, flow, breakup: BREAKUP.length * diameter * weber ** BREAKUP.power, onset: ROUGH.onset * diameter * weber ** ROUGH.power, flash };
 }
 
 /** How big the nozzle is drawn (its radius, m) for a thing of `radius` firing a jet of bore `bore` (m): its own, or bigger, so the jet fits its bore (CANNON.boreRoom). */
@@ -330,14 +360,22 @@ const smoothstep = (edge0, edge1, value) => { const t = Math.min(Math.max((value
 
 /**
  * The stream's skin `along` metres from a nozzle of bore `radius`, rough from
- * `onset` and broken up by `breakup` (ROUGH): how `white` it is (0 glass, 1
- * wholly white), the sheath's `radius`, the optical `depth` through its
- * middle and how far it has `broken` up (0 to 1). Written into `out`.
+ * `onset` and broken up by `breakup` (ROUGH), and in vacuum flashed through
+ * by `flash` (FLASH; 0 in air): how `white` it is (0 glass, 1 wholly white),
+ * the sheath's `radius`, the optical `depth` through its middle and how far
+ * it has `broken` up (0 to 1). Written into `out`. Flashing, it is white
+ * with bubbles from a third of the way there, and from the muzzle a cone of
+ * drops whose radius grows by the bore's each `flash` flown, the same water
+ * over a wider way, so thinner.
  */
-export function skin(radius, onset, breakup, along, out = {}) {
-  const white = smoothstep(onset, ROUGH.whole * onset, along);
+export function skin(radius, onset, breakup, along, out = {}, flash = 0) {
+  let white = smoothstep(onset, ROUGH.whole * onset, along);
   const start = ROUGH.radius * radius;
-  const sheath = (start + ROUGH.spread * Math.max(along - onset, 0)) * (1 + Math.max(along / breakup - 1, 0));
+  let sheath = (start + ROUGH.spread * Math.max(along - onset, 0)) * (1 + Math.max(along / breakup - 1, 0));
+  if (flash > 0) {
+    white = Math.max(white, smoothstep(flash / 3, flash, along));
+    sheath = Math.max(sheath, start + (radius * along) / flash);
+  }
   const broken = smoothstep(ROUGH.brokenFrom * breakup, BREAKUP.drawn * breakup, along);
   out.white = white; out.radius = sheath; out.broken = broken;
   out.depth = ROUGH.depth * Math.max(white, ROUGH.veil) * (start / sheath) * (1 - broken * broken);
@@ -345,7 +383,7 @@ export function skin(radius, onset, breakup, along, out = {}) {
 }
 
 // What a sample of the stream mixes of its two parcels' launches (sampleAt).
-const SAMPLED = ['time', 'vx', 'vy', 'vz', 'x', 'y', 'z', 'radius', 'speed', 'breakup', 'onset'];
+const SAMPLED = ['time', 'vx', 'vy', 'vz', 'x', 'y', 'z', 'radius', 'speed', 'breakup', 'onset', 'flash'];
 
 export class WaterCannon {
   /**
@@ -354,10 +392,11 @@ export class WaterCannon {
    * @param dropRings src/dropRings.js (or null)
    * @param startle (x, z) → frighten the fish there (or null)
    * @param wetIce (x, z, radius) → true if ice lies there, wetted (or null)
+   * @param iceAt (x, z) → true if ice lies there (or null): where the fan's water comes down on it, it rings nothing
    * @param sheath src/streamSheath.js: the white rope the stream is drawn as (or null: nothing drawn of it)
    * @param fan src/sprayFan.js: the sheet its fan of spray is drawn as (or null)
    */
-  constructor({ water, splash, dropRings = null, startle = null, wetIce = null, sheath = null, fan = null }) {
+  constructor({ water, splash, dropRings = null, startle = null, wetIce = null, iceAt = null, sheath = null, fan = null }) {
     this.sheath = sheath;
     this.fan = fan;
     this.sample = { centre: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 1 }, age: 0, along: 0 };
@@ -370,6 +409,7 @@ export class WaterCannon {
     this.dropRings = dropRings;
     this.startle = startle;
     this.wetIce = wetIce;
+    this.iceAt = iceAt;
     this.burst = null;        // the nozzle while it is on or just shut: { tOn, tOff, hand, aim, nozzle, radius, share, phase, handle }
     this.random = () => 0.5;  // the stream's own draws (seededRandom), from its start
     this.whiteRandom = () => 0.5;   // and its white water's (whiten), a stream of their own
@@ -389,6 +429,7 @@ export class WaterCannon {
       flight: new Float64Array(capacity), radius: new Float64Array(capacity), speed: new Float64Array(capacity), breakup: new Float64Array(capacity),
       landX: new Float64Array(capacity), landZ: new Float64Array(capacity),
       onset: new Float64Array(capacity),        // where its skin roughens (nozzle)
+      flash: new Float64Array(capacity),        // where it has flashed across its bore, in vacuum (nozzle; 0 in air)
       lead: new Uint8Array(capacity),           // the first let out after the nozzle was off: no water joins it to the parcel before
       handle: new Array(capacity).fill(null),   // the burst's handle each parcel was let out by
     };
@@ -533,6 +574,7 @@ export class WaterCannon {
       records.landX[index] = exit.x + aim.vx * flight;
       records.landZ[index] = exit.z + aim.vz * flight;
       records.onset[index] = burst.nozzle.onset;
+      records.flash[index] = burst.nozzle.flash;
       const before = (this.count + capacity - 1) % capacity;
       records.lead[index] = this.count === 0 || records.handle[before] !== burst.handle || time - records.time[before] > 1.5 * dt ? 1 : 0;
       records.handle[index] = burst.handle;
@@ -547,7 +589,7 @@ export class WaterCannon {
         const age = time - records.time[index];
         const across = Math.hypot(records.vx[index], records.vz[index]);
         const along = arcLength(across, records.vy[index], age);
-        const made = skin(records.radius[index], records.onset[index], records.breakup[index], along, this.skinScratch);
+        const made = skin(records.radius[index], records.onset[index], records.breakup[index], along, this.skinScratch, records.flash[index]);
         const ruffled = ROUGH.shed * made.white + BREAKUP.mist * made.broken;
         if (ruffled <= 0) continue;
         const px = records.x[index] + records.vx[index] * age, py = records.y[index] + records.vy[index] * age - 0.5 * GRAVITY * age * age, pz = records.z[index] + records.vz[index] * age;
@@ -593,7 +635,11 @@ export class WaterCannon {
     const speed = Math.hypot(across, vy);
     const along = arcLength(across, records.vy[index], flight);
     const breakup = records.breakup[index];
-    const radius = records.radius[index] * (1 + (BREAKUP.widen - 1) * smoothstep(0, breakup, along)) * (1 + Math.max(along / breakup - 1, 0));   // past the breakup the shower widens on
+    let radius = records.radius[index] * (1 + (BREAKUP.widen - 1) * smoothstep(0, breakup, along)) * (1 + Math.max(along / breakup - 1, 0));   // past the breakup the shower widens on
+    // In vacuum it comes down as wide as its flashed cone (skin), the same momentum over more of the water: its push the less.
+    let cratering = IMPACT.push;
+    const cone = records.flash[index] > 0 ? records.radius[index] * (1 + along / records.flash[index]) : 0;
+    if (cone > radius) { cratering *= (radius / cone) ** 2; radius = cone; }
     const water = Math.PI * records.radius[index] ** 2 * records.speed[index] * dt;   // the parcel's water, m³
     const directionX = across > 1e-9 ? records.vx[index] / across : 0, directionZ = across > 1e-9 ? records.vz[index] / across : 0;
     this.landings++;
@@ -606,12 +652,18 @@ export class WaterCannon {
     this.landing = { x, z, radius, speed, directionX, directionZ, churn: onIce ? 0 : IMPACT.footprint * radius + CHURN * Math.cbrt((water / dt) * speed / GRAVITY) };
     const random = this.random;
     const footprint = IMPACT.footprint * radius;
-    const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch).radius;
+    const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch, records.flash[index]).radius;
     this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce);
-    if (!onIce) {
+    {
+      // Only the stream's centre is tested above (onIce), but near a hole's edge its footprint straddles it, on
+      // either side: each thing laid off the centre is tested where it is laid, and over ice does nothing, its draws
+      // drawn all the same, so the rest are as they were (as the fan's, throwFan). Off ice it is all as it always
+      // was. A caller with wetIce but no iceAt has only the centre's answer: on ice, everything is on it.
+      const iceAt = this.landedOnIce(onIce);
       // The crater, its centre wandering within the footprint.
       let angle = random() * Math.PI * 2, out = IMPACT.jitter * radius * Math.sqrt(random());
-      this.water.addSplat({ x: x + Math.cos(angle) * out, z: z + Math.sin(angle) * out, radius: footprint, velocity: -IMPACT.push * speed * dt, rim: IMPACT.rim });
+      const craterX = x + Math.cos(angle) * out, craterZ = z + Math.sin(angle) * out;
+      if (!iceAt?.(craterX, craterZ)) this.water.addSplat({ x: craterX, z: craterZ, radius: footprint, velocity: -cratering * speed * dt, rim: IMPACT.rim });
       // Its churn: a stamp of foam each step, each its own size, place and strength (the header).
       // Laid along the way the stream glances on (IMPACT.trail), wider and so thinner the farther: a streak, never a disc.
       // With no air (src/splash.js `airless`: Europa) none is driven under, so it leaves no foam, specks or white water.
@@ -619,20 +671,27 @@ export class WaterCannon {
       const onward = random() ** 2, trail = IMPACT.trail * across * onward;
       angle = random() * Math.PI * 2; out = IMPACT.boilReach * radius * Math.sqrt(random()) * (1 + IMPACT.trailWiden * onward);
       const stampRadius = (radius * (IMPACT.boilRadii[0] + (IMPACT.boilRadii[1] - IMPACT.boilRadii[0]) * random()) + 0.01) * (1 + IMPACT.trailWiden * onward);
-      if (!airless) this.water.addFoam?.({ x: x + directionX * trail + Math.cos(angle) * out, z: z + directionZ * trail + Math.sin(angle) * out, radius: stampRadius, amount: Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1), lifetime: IMPACT.boilLife, boil: true });
-      // A speck of foam drifting out of it, now and then.
+      const stampX = x + directionX * trail + Math.cos(angle) * out, stampZ = z + directionZ * trail + Math.sin(angle) * out;
+      if (!airless && this.water.addFoam) {   // its strength drawn only here, as it always was (no foam in vacuum)
+        const amount = Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1);
+        if (!iceAt?.(stampX, stampZ)) this.water.addFoam({ x: stampX, z: stampZ, radius: stampRadius, amount, lifetime: IMPACT.boilLife, boil: true });
+      }
+      // A speck of foam drifting out of it, now and then, where it starts on water (a speck's own draws are the
+      // spawn's, so it is kept or skipped whole, as it always was).
       if (!airless && this.splash.foamSpecks && random() < IMPACT.specks) {
         angle = random() * Math.PI * 2;
         const drift = IMPACT.speckDrift[0] + (IMPACT.speckDrift[1] - IMPACT.speckDrift[0]) * random();
-        this.splash.foamSpecks.spawn(x + Math.cos(angle) * footprint, z + Math.sin(angle) * footprint, Math.cos(angle) * drift, Math.sin(angle) * drift, splashTime, undefined, random);
+        const speckX = x + Math.cos(angle) * footprint, speckZ = z + Math.sin(angle) * footprint;
+        if (!iceAt?.(speckX, speckZ)) this.splash.foamSpecks.spawn(speckX, speckZ, Math.cos(angle) * drift, Math.sin(angle) * drift, splashTime, undefined, random);
       }
       // A stray drop's ring round about.
       if (this.dropRings && random() < IMPACT.rings) {
         const reach = radius * (IMPACT.ringReach[0] + (IMPACT.ringReach[1] - IMPACT.ringReach[0]) * random()), turn = random() * Math.PI * 2;
-        this.dropRings.add({ x: x + Math.cos(turn) * reach, z: z + Math.sin(turn) * reach, radius: 0.002, fallSpeed: 3 }, splashTime);
+        const ringX = x + Math.cos(turn) * reach, ringZ = z + Math.sin(turn) * reach;
+        if (!iceAt?.(ringX, ringZ)) this.dropRings.add({ x: ringX, z: ringZ, radius: 0.002, fallSpeed: 3 }, splashTime);
       }
-      // Its white water heaping up and rolling on.
-      if (!airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
+      // Its white water heaping up and rolling on: each puff where it is born on water (whiten).
+      if (!airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime, iceAt);
     }
     // The drops torn off as it glances, off the water or the ice: they go with the fan's middle, kicked about, pulsing from step to step.
     const pulse = IMPACT.pulse[0] + (IMPACT.pulse[1] - IMPACT.pulse[0]) * random();
@@ -650,17 +709,29 @@ export class WaterCannon {
     }
     // The fish, now and then while it goes on.
     if (this.startle && time - this.lastStartle >= IMPACT.startleEvery) { this.lastStartle = time; this.startle(x, z); }
-    // A floater in the footprint, shoved along the stream by its momentum on it (the header).
-    if (!onIce) {
+    // A floater in the footprint, shoved along the stream by its momentum on it (the header): afloat in water by a
+    // hole's edge it is shoved whichever side of it the stream's centre comes down.
+    const floatersIceAt = this.landedOnIce(onIce);
+    {
       for (const rock of rocks) {
         if (!rock.floats || rock.fading !== undefined || !(rock.state === 'float' || rock.afloat)) continue;
+        if (floatersIceAt?.(rock.position.x, rock.position.z)) continue;
         const apart = Math.hypot(rock.position.x - x, rock.position.z - z), reach = footprint + rock.radius;
         if (apart >= reach) continue;
         const share = 1 - apart / reach;
-        const push = Math.min(IMPACT.pushCap, (WATER_DENSITY * water * speed * share) / Math.max(rock.mass, 1e-3));
+        const push = Math.min(IMPACT.pushCap, (WATER_DENSITY * water * speed * share * (cratering / IMPACT.push)) / Math.max(rock.mass, 1e-3));   // in vacuum, the share of the cone it meets
         rock.knock(directionX * push, 0, directionZ * push, 0, 0, 0);
       }
     }
+  }
+
+  /**
+   * Where a landing's effects are on ice, (x, z) → boolean, or null where there is none: the caller's iceAt, tested
+   * where each is laid; without one, only wetIce's answer for the stream's centre (`onIce`), so all of a landing on
+   * ice is on it and all of one on water is on water.
+   */
+  landedOnIce(onIce) {
+    return this.iceAt ?? (onIce ? () => true : null);
   }
 
   /**
@@ -756,7 +827,7 @@ export class WaterCannon {
       const back = Math.round((2 * tail.velocity[(newest * parts + part) * 3 + 1]) / GRAVITY / dt);
       if (back >= inAir) continue;
       const slot = (tail.count - 1 - back) % capacity;
-      if (tail.ice[slot]) continue;
+      if (tail.ice[slot] && !this.iceAt) continue;   // only the centre's answer (landedOnIce); with iceAt each drop is tested where it lands, below
       const at = (slot * parts + part) * 3, place = -1 + (2 * part) / (parts - 1);
       const flight = (2 * tail.velocity[at + 1]) / GRAVITY;
       const range = Math.hypot(tail.velocity[at], tail.velocity[at + 2]) * flight;
@@ -766,12 +837,18 @@ export class WaterCannon {
       const z = tail.z[slot] + tail.sideZ[slot] * place * 0.5 * tail.width[slot] + tail.velocity[at + 2] * flight + Math.sin(turn) * out;
       if (this.water.holds && !this.water.holds(x, z)) continue;
       const strength = tail.strength[slot * parts + part];
+      // Thrown from open water, it may come down on ice beyond it (under a weak pull, Europa's, far beyond): there it
+      // does nothing, its draws drawn all the same, so the rest of the fan's are as they were.
+      const onWater = !this.iceAt?.(x, z);
       if (draw < FAN.pock) {
-        this.water.addSplat({ x, z, radius: FAN.pockRadius[0] + (FAN.pockRadius[1] - FAN.pockRadius[0]) * random(), velocity: -(FAN.pockPush[0] + (FAN.pockPush[1] - FAN.pockPush[0]) * random()) * strength });
+        const splat = { x, z, radius: FAN.pockRadius[0] + (FAN.pockRadius[1] - FAN.pockRadius[0]) * random(), velocity: -(FAN.pockPush[0] + (FAN.pockPush[1] - FAN.pockPush[0]) * random()) * strength };
+        if (onWater) this.water.addSplat(splat);
       } else if (draw < FAN.pock + FAN.rings) {
-        this.dropRings?.add({ x, z, radius: 0.001 + 0.0015 * random(), fallSpeed: Math.max(tail.velocity[at + 1], 1) }, splashTime);
+        const ring = { x, z, radius: 0.001 + 0.0015 * random(), fallSpeed: Math.max(tail.velocity[at + 1], 1) };
+        if (onWater) this.dropRings?.add(ring, splashTime);
       } else if (!this.splash.airless) {   // froth, but where there is no air (above)
-        this.water.addFoam?.({ x, z, radius: FAN.frothRadius * wide * (0.6 + 0.8 * random()), amount: FAN.frothAmount * strength, lifetime: FAN.frothLife });
+        const froth = { x, z, radius: FAN.frothRadius * wide * (0.6 + 0.8 * random()), amount: FAN.frothAmount * strength, lifetime: FAN.frothLife };
+        if (onWater) this.water.addFoam?.(froth);
       }
     }
     // The drops that leave it, where the sheet comes apart: they fly on with its velocity there, and land.
@@ -806,7 +883,7 @@ export class WaterCannon {
    * `flow` the stream's (m³/s), landing at `speed` (`across` of it
    * horizontal, along the direction given).
    */
-  whiten(whiteWater, x, z, speed, across, directionX, directionZ, flow, time, dt, splashTime) {
+  whiten(whiteWater, x, z, speed, across, directionX, directionZ, flow, time, dt, splashTime, iceAt = null) {
     const random = this.whiteRandom;
     const between = (range) => range[0] + (range[1] - range[0]) * random();
     const scale = Math.cbrt((flow * speed) / GRAVITY);
@@ -825,10 +902,14 @@ export class WaterCannon {
       const fan = Math.atan2(directionZ, directionX) + (2 * random() - 1) * (WHITE.fan + (Math.PI - WHITE.fan) * (1 - onward));
       const turn = random() * Math.PI * 2, out = pace * WHITE.spread * random();
       const size = scale * between(WHITE.size);
+      const puffX = x + directionX * along - directionZ * aside, puffZ = z + directionZ * along + directionX * aside;
+      // Drawn in the order they always were, and whether or not it is born, so the rest are as they were.
+      const rise = between(WHITE.rise), swell = size * between(WHITE.swell), life = period * between(WHITE.life), seed = random();
+      if (iceAt?.(puffX, puffZ)) continue;   // born on ice by a hole's edge: no white water there
       whiteWater.puff({
-        x: x + directionX * along - directionZ * aside, z: z + directionZ * along + directionX * aside,
-        vx: Math.cos(fan) * forward + Math.cos(turn) * out, vy: pace * between(WHITE.rise) * (1 + WHITE.pulse * (pulse - 1)), vz: Math.sin(fan) * forward + Math.sin(turn) * out,
-        size, swell: size * between(WHITE.swell), tau: WHITE.drag * period, life: period * between(WHITE.life), time: splashTime, seed: random(),
+        x: puffX, z: puffZ,
+        vx: Math.cos(fan) * forward + Math.cos(turn) * out, vy: pace * rise * (1 + WHITE.pulse * (pulse - 1)), vz: Math.sin(fan) * forward + Math.sin(turn) * out,
+        size, swell, tau: WHITE.drag * period, life, time: splashTime, seed,
       });
     }
   }
@@ -920,12 +1001,12 @@ export class WaterCannon {
         const exit = this.exitScratch;
         this.barrel(burst.hand, burst.pointing.x, burst.pointing.z, burst.nozzle.speed, burst.scale, exit);
         this.sampleAt(0, time, sample, 0);
-        skin(sample.radius, sample.onset, sample.breakup, 0, made);
+        skin(sample.radius, sample.onset, sample.breakup, 0, made, sample.flash);
         this.pieceRing(exit.x, exit.y, exit.z, sample.axis, sample.pace, made.radius, time, made.depth, made.broken);
       }
       for (let row = 0; row < rows; row++) {
         this.sampleAt(first + ((last - first) * row) / (rows - 1), time, sample);
-        skin(sample.radius, sample.onset, sample.breakup, sample.along, made);
+        skin(sample.radius, sample.onset, sample.breakup, sample.along, made, sample.flash);
         const whole = (joinsMuzzle ? 1 : smoothstep(0, ROUGH.taper, tailTime - sample.time)) * (reachesWater ? 1 : smoothstep(0, ROUGH.taper, sample.time - headTime));
         this.pieceRing(sample.centre.x, sample.centre.y, sample.centre.z, sample.axis, sample.pace, made.radius * (0.5 + 0.5 * whole), sample.time, made.depth * whole, made.broken);
       }
@@ -933,7 +1014,7 @@ export class WaterCannon {
         // Down to the water: where the oldest parcel comes down, the water there now let out a flight ago.
         const flight = records.flight[parcel(last)];
         this.sampleAt(last, time, sample, flight);
-        skin(sample.radius, sample.onset, sample.breakup, sample.along, made);
+        skin(sample.radius, sample.onset, sample.breakup, sample.along, made, sample.flash);
         this.pieceRing(sample.centre.x, sample.centre.y, sample.centre.z, sample.axis, sample.pace, made.radius, time - flight, made.depth, made.broken);
       }
       this.writePiece();

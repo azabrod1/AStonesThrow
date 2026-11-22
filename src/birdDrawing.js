@@ -10,6 +10,7 @@
 // (`centre`, `radius`).
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
+import { withRandom, parkMiller } from './withRandom.js';
 import { HAZE } from './shaders/scene.js';
 
 export const BIRDS_FOLDER = new URL('../assets/birds/', import.meta.url);
@@ -52,14 +53,24 @@ export function boundedGeometry(source, bounds) {
   return geometry;
 }
 
+// The textures' own stream: three draws a texture's (and its source's) uuid from Math.random, and a download comes
+// whenever the network lets it, perhaps between two seeded throws, which would then draw differently.
+const textureRandom = parkMiller(11);
+
+/**
+ * `make`'s result, its three objects made on the textures' own stream (textureRandom): for what is made whenever a
+ * download comes (a bird model's geometry, src/birdMeshes.js), so no seeded throw's draws depend on when it came.
+ */
+export const madeOnOwnStream = (make) => withRandom(textureRandom, make);
+
 /**
  * A bird's image (a WebP in assets/birds/, its rows as they lie: uv from its top left), fetched and made a mipmapped
- * sRGB texture, filtered `anisotropy` times.
+ * sRGB texture, filtered `anisotropy` times; made on a stream of its own (textureRandom).
  */
 export async function loadBirdTexture(url, { anisotropy = 1 } = {}) {
   const bytes = await loadAsset(url, 'arrayBuffer');
   const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-  const texture = new THREE.Texture(bitmap);
+  const texture = withRandom(textureRandom, () => new THREE.Texture(bitmap));
   texture.flipY = false;   // its rows as they lie (tools/bird-models.py, tools/bird-sprites.py)
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.generateMipmaps = true;
@@ -91,6 +102,18 @@ export function kindsAbout(birds, dark) {
 }
 
 const boundsSphere = new THREE.Sphere(), boundsBox = new THREE.Box3();
+/** The bounds of every shown bird of `sprites` that the mirror's camera sees (`frustum`), joined into `into`: how many. */
+export function mirrorBounds(sprites, into, frustum) {
+  let seen = 0;
+  for (const sprite of sprites) {
+    if (!sprite.shown) continue;
+    boundsSphere.set(sprite.centre, sprite.radius);
+    if (!frustum.intersectsSphere(boundsSphere)) continue;
+    into.union(boundsSphere.getBoundingBox(boundsBox));
+    seen++;
+  }
+  return seen;
+}
 /**
  * The bounds (each `centre` and `radius`) of every shown bird of `sprites` that is not as the mirror last drew it
  * and that the mirror's camera sees (`frustum`), joined into `into`: how many (src/main.js draws the mirror image

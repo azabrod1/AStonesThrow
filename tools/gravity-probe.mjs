@@ -6,13 +6,14 @@
 // Checks, failing with exit code 1 if any fails, that under Europa's gravity
 //   - a throw (src/rock.js placeFlightTime, as src/main.js throwVelocity
 //     throws it, aimed for the drag by aimThrow as thingVelocity aims it
-//     under another gravity) is let go as fast as the same throw on Earth
-//     (within 3%: the drag's aim), and the stone src/rock.js flies comes
-//     down at the tap (2 cm), when placeFlightTime says (FLIGHT_TOLERANCE),
-//     after climbing as high as v²/(2g) says (APEX_TOLERANCE: the air's
-//     drag; the air is still Earth's, src/gravity.js), longer and higher
-//     than on Earth; a fall from rest takes sqrt(9.81/1.315) = 2.73 times
-//     as long;
+//     under another gravity) flies Earth's arc, slower: let go sqrt(1.315/9.81)
+//     as fast as the same throw on Earth (within 3%: the drag's aim), and
+//     the stone src/rock.js flies comes down at the tap (2 cm), when
+//     placeFlightTime says (FLIGHT_TOLERANCE), after climbing as high as
+//     v²/(2g) says (APEX_TOLERANCE: the air's drag; the air is still
+//     Earth's, src/gravity.js), as high as on Earth (SAME_ARC m) and in at
+//     its angle (SAME_ANGLE degrees), 2.73 times as long; a fall from rest
+//     takes sqrt(9.81/1.315) = 2.73 times as long;
 //   - the cavity (src/cavity.js) of a stone going in at the same Froude
 //     number V²/(g·R) (V times sqrt(1.315/9.81)) is the same hole in R,
 //     slower: its pinch-off 2.73 times as late and its bowl's time unit
@@ -64,6 +65,8 @@ import { readFile } from 'node:fs/promises';
 const EUROPA = 1.315;
 const FLIGHT_TOLERANCE = 0.02;     // of the flight time; and metres from the tap
 const APEX_TOLERANCE = 0.05;       // of the apex in a vacuum: the air's drag (Earth's air: the header) takes a little off it
+const SAME_ARC = 0.05;          // m: a toss's apex on Europa against Earth's (the drag on each: the header)
+const SAME_ANGLE = 2;          // degrees: and its entry from vertical
 const SIMILAR_TOLERANCE = 0.03;
 const DROP_TOLERANCE = 0.08;
 const COST_MOST = 3;               // ms a frame (tools/jet-probe.mjs COST_MOST)
@@ -189,11 +192,13 @@ for (const [name, multiplier] of [['medium toss', 1], ['soft toss', 1.18], ['med
   const miss = Math.hypot(thrown.landing.x - target.x, thrown.landing.z - target.z);
   const angle = THREE.MathUtils.radToDeg(Math.acos(-thrown.entry.y / thrown.entry.length()));
   console.log(`  ${name}: let go at ${thrown.launch.length().toFixed(2)} m/s (placeFlightTime's ${thrown.released.toFixed(2)}, aimed for the drag; Earth's ${onEarth.released.toFixed(2)}), flies ${thrown.flown.toFixed(2)} s (placeFlightTime ${thrown.time.toFixed(2)}; Earth ${onEarth.flown.toFixed(2)}), up to ${thrown.apex.toFixed(2)} m (v²/2g ${apexTheory.toFixed(2)}), in ${(miss * 100).toFixed(1)} cm from the tap at ${thrown.entry.length().toFixed(2)} m/s, ${angle.toFixed(1)}° from vertical, F = ${(thrown.entry.lengthSq() / (EUROPA * 0.03)).toFixed(0)}`);
-  check(near(thrown.released, onEarth.released, 1e-9) && near(thrown.launch.length(), onEarth.released, 0.03), `${name}: let go at ${thrown.launch.length()} m/s, not Earth's ${onEarth.released}`);
+  const slower = onEarth.released / ratio, earthAngle = THREE.MathUtils.radToDeg(Math.acos(-onEarth.entry.y / onEarth.entry.length()));
+  check(near(thrown.released, slower, 1e-9) && near(thrown.launch.length(), slower, 0.03), `${name}: let go at ${thrown.launch.length()} m/s, not Earth's ${onEarth.released} / ${ratio}`);
   check(near(thrown.flown, thrown.time, FLIGHT_TOLERANCE), `${name}: flies ${thrown.flown} s, not ${thrown.time}`);
   check(near(thrown.apex, apexTheory, APEX_TOLERANCE), `${name}: climbs to ${thrown.apex} m, not ${apexTheory}`);
   check(miss <= FLIGHT_TOLERANCE * 2, `${name}: comes down ${miss} m from the tap`);
-  check(thrown.flown > onEarth.flown && thrown.apex > onEarth.apex, `${name}: no longer or higher than on Earth`);
+  check(Math.abs(thrown.apex - onEarth.apex) <= SAME_ARC && Math.abs(angle - earthAngle) <= SAME_ANGLE, `${name}: up to ${thrown.apex} m and in at ${angle}°, not Earth's arc (${onEarth.apex} m, ${earthAngle}°)`);
+  check(near(thrown.flown / onEarth.flown, ratio, 0.03), `${name}: in the air ${thrown.flown / onEarth.flown} times as long as on Earth, not ${ratio}`);
 }
 
 // The cavity at the same Froude number: the same hole, slower.

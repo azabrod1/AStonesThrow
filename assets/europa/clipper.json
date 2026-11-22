@@ -1,0 +1,21 @@
+{
+  "file": "clipper.webp",
+  "pixels": [
+    1024,
+    858
+  ],
+  "metres": [
+    30.63,
+    25.665
+  ],
+  "body": [
+    0.4113,
+    0.4429
+  ],
+  "credit": {
+    "title": "PIA20025: Europa Mission Spacecraft - Artist's Rendering",
+    "author": "NASA/JPL-Caltech",
+    "licence": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Europa_Clipper_spacecraft_model.png"
+  }
+}

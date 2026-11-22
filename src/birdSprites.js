@@ -46,7 +46,7 @@
 // uniform: no program changes); a failed fetch leaves that kind unshown.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
-import { BIRDS_FOLDER, BIRD_HAZE, SUN_SHARE, SKY_SHARE, MIRROR_NEARNESS_SCALE, boundedGeometry, loadBirdTexture, spritesFor, kindsAbout, mirrorChanges as mirrorChangesOf } from './birdDrawing.js';
+import { BIRDS_FOLDER, BIRD_HAZE, SUN_SHARE, SKY_SHARE, MIRROR_NEARNESS_SCALE, boundedGeometry, loadBirdTexture, spritesFor, kindsAbout, mirrorChanges as mirrorChangesOf, mirrorBounds as mirrorBoundsOf } from './birdDrawing.js';
 
 const FRAMES_URL = new URL('birds.json', BIRDS_FOLDER);
 // A bird flying this nearly along the eye's line (the cosine) is drawn head on, if its kind has a front frame.
@@ -364,6 +364,7 @@ export function createBirdPictures({ lighting, haze, mirrorLayer, onLoaded = () 
   }
 
   const mirrorChanges = (into, frustum) => mirrorChangesOf(sprites, into, frustum, changed);
+  const mirrorBounds = (into, frustum) => mirrorBoundsOf(sprites, into, frustum);
 
   /** Under the veil (src/main.js warmUp): a bird's meshes drawn in front of the camera, so both programs are built; done() takes them away. */
   function warmUp() {
@@ -379,7 +380,7 @@ export function createBirdPictures({ lighting, haze, mirrorLayer, onLoaded = () 
 
   return {
     above, below, mirror,
-    show, update, mirrorChanges, warmUp,
+    show, update, mirrorChanges, mirrorBounds, warmUp,
     get drawCalls() { return sprites.reduce((sum, sprite) => sum + (sprite.shown ? sprite.meshes.length : 0), 0); },
   };
 }

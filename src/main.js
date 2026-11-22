@@ -500,10 +500,11 @@ const CEILING_TOLERANCE = 0.007;
 // skip's strength is its speed (src/rock.js SKIP_THROW). The normal toss is
 // the throw the splash is tuned to (CLAUDE.md's reference throw). Those are
 // Earth's flights: under a place's own gravity (src/gravity.js, Europa's) a
-// throw is let go as fast as it is on Earth (the arm is the same) and lands
-// at the tap the higher way round, a hard toss the lower (src/rock.js
-// placeFlightTime): a toss on Europa climbs ten metres and takes eight
-// seconds, a skip skims as fast and as low as ever.
+// toss or a lob flies Earth's arc, slower (src/rock.js placeFlightTime: the
+// medium toss 2.2 s on Europa against 0.8, as high and in at the same
+// angle, so its splash is Earth's in slow motion), and a hard toss is let go
+// as fast as on Earth, on the lower, flatter arc; a skip skims as fast and
+// as low as ever.
 const ARC = {
   toss: { soft: 1.18, normal: 1.0, hard: null },
   lob: { soft: 1.3, normal: 1.5, hard: 1.7 },
@@ -936,6 +937,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
   const sound = createSound();
   sound.setEnabled((pageParameters.get('sound') ?? storedChoice(SOUND_STORAGE_KEY)) !== 'off');
+  sound.setAirless(placeAirless(firstPlace));   // no air to carry a sound but through the ice (src/sound.js)
   // Browsers let audio start only on a gesture: the first press or key starts it (never the page's own throws, the
   // warm-up's among them).
   for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => sound.unlock(), { capture: true });
@@ -1219,6 +1221,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // And Europa's scenery in their place (src/europaScenery.js, drawn by src/europaSceneryMeshes.js): no bird has air to
   // fly in there, so with the birds on it has its plume and a probe crossing its sky instead, on the birds' seed.
   const europaScenery = new EuropaScenery({ seed: Number(birdSeed) });
+  // Its probe's picture comes when it comes: the mirror needs no redrawing whole for it, its region being drawn again every frame it is shown
+  // (mirrorChanges), so its coming changes nothing else drawn and frames are alike whenever it came.
   const europaSceneryView = createEuropaSceneryView({ lighting, haze: environment.hazeUniforms, mirrorLayer: MIRROR_LAYER });
   sceneMain.add(europaSceneryView.above, europaSceneryView.mirror);
   // The frost the vapour of open water boiling in vacuum condenses into, over it (src/boilingVapour.js), posed a frame.
@@ -1497,8 +1501,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // from the mirror camera into the target's alpha (MIRROR_COMMON in
   // src/shaders/fluid.js); the dome and the clear leave alpha at 1, which
   // says "as far as the sky". The water shader looks near objects up by that
-  // distance inside the rectangle the splash's image covers (splashRect,
-  // handed to the surface each frame). With nothing alive the cached mirror
+  // distance inside the rectangle the splash's image covers and any bird's
+  // (nearRect, handed to the surface each frame). With nothing alive the cached mirror
   // stays untouched: no pass at all. The mirror image has underScale of the
   // canvas's resolution; the rectangle is in its own pixels. Each draw ends
   // by making its mip levels, which spread the image where the ripples are
@@ -1519,6 +1523,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const mirrorShift = new THREE.Vector3();
   const splashRect = new THREE.Vector4();     // this frame's splash image in the reflection target (x, y, width, height; 0 wide: none)
   const mirroredRect = new THREE.Vector4();   // the last frame's
+  const birdsRect = new THREE.Vector4();      // every bird the mirror sees, still or not (updateReflection)
+  const nearRect = new THREE.Vector4();       // splashRect and birdsRect: where the water looks the image up by its nearness
+  const nearBox = new THREE.Box3();
   const mirrorRegion = new THREE.Vector4();
   const mirrorFrustum = new THREE.Frustum();   // what the mirror's camera sees (placeMirrorCamera): a bird outside it is not drawn again
   const mirrorViewProjection = new THREE.Matrix4();
@@ -1623,11 +1630,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // its mesh's farthest point (src/rock.js `reach`; a toy slide's corners are 3.5 of its nominal radii out, a box of
     // 1.5 cut its image short and left pieces of its last ones in the cached mirror), never less than 1.5 radii.
     for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(2 * (Math.max(1.5, rock.reach) * rock.radius + RIDE_MIRROR_MARGIN))));
-    if (mirrorBox.isEmpty() || mirrorBox.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
-    mirrorBox.min.y = Math.max(mirrorBox.min.y, mirrorLevel.value);
+    rectOfImage(mirrorBox, splashRect);
+  }
+
+  /** Where `box` (world) falls in the reflection target, above the mirror's level, into `into` (0 wide when nowhere). */
+  function rectOfImage(box, into) {
+    into.set(0, 0, 0, 0);
+    if (box.isEmpty() || box.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
+    box.min.y = Math.max(box.min.y, mirrorLevel.value);
     let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
     for (let corner = 0; corner < 8; corner++) {
-      mirrorCorner.set(corner & 1 ? mirrorBox.max.x : mirrorBox.min.x, corner & 2 ? mirrorBox.max.y : mirrorBox.min.y, corner & 4 ? mirrorBox.max.z : mirrorBox.min.z);
+      mirrorCorner.set(corner & 1 ? box.max.x : box.min.x, corner & 2 ? box.max.y : box.min.y, corner & 4 ? box.max.z : box.min.z);
       mirrorCorner.applyMatrix4(mirrorCamera.matrixWorldInverse);
       if (mirrorCorner.z > -mirrorCamera.near) { left = -1; right = 1; bottom = -1; top = 1; break; }   // reaches behind the camera: all of it
       mirrorCorner.applyMatrix4(mirrorCamera.projectionMatrix);
@@ -1640,10 +1653,29 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const x1 = THREE.MathUtils.clamp(Math.ceil((right * 0.5 + 0.5) * width) + 2, 0, width);
     const y0 = THREE.MathUtils.clamp(Math.floor((bottom * 0.5 + 0.5) * height) - 2, 0, height);
     const y1 = THREE.MathUtils.clamp(Math.ceil((top * 0.5 + 0.5) * height) + 2, 0, height);
-    if (x1 > x0 && y1 > y0) splashRect.set(x0, y0, x1 - x0, y1 - y0);
+    if (x1 > x0 && y1 > y0) into.set(x0, y0, x1 - x0, y1 - y0);
   }
 
+  /**
+   * The mirror image drawn again where it is stale (redrawMirror), and where the water looks it up by its nearness
+   * (nearRect): the splash's rectangle and every bird the mirror sees, standing still or not, so a heron's image is
+   * as sharp whether it moves or not. The cached scenery around it there (the koi's garden) writes no nearness, so
+   * the rectangle shows nowhere but on the bird.
+   */
   function updateReflection() {
+    redrawMirror();
+    nearBox.makeEmpty();
+    if (!skip.mirror) birdView.mirrorBounds(nearBox, mirrorFrustum);
+    rectOfImage(nearBox, birdsRect);
+    if (birdsRect.z === 0) nearRect.copy(splashRect);
+    else if (splashRect.z === 0) nearRect.copy(birdsRect);
+    else {
+      const x0 = Math.min(splashRect.x, birdsRect.x), y0 = Math.min(splashRect.y, birdsRect.y);
+      nearRect.set(x0, y0, Math.max(splashRect.x + splashRect.z, birdsRect.x + birdsRect.z) - x0, Math.max(splashRect.y + splashRect.w, birdsRect.y + birdsRect.w) - y0);
+    }
+  }
+
+  function redrawMirror() {
     const objects = skip.fluid || skip.mirror ? nothingMirrored : splash.mirrorObjects();
     // A floater whose image is not where it now is (moving, or come to rest since it was last drawn), or one riding water
     // that moves under it (src/rock.js rideTheWater: the wind's waves, the solver's ripples, the rings, the rain's).
@@ -2251,7 +2283,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function throwVelocity(hand, target, powerName, radius, mannerName = manner) {
     const multiplier = (ARC[mannerName] ?? ARC.toss)[powerName];
     const earthTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
-    // Under another gravity (src/gravity.js: Europa's) as fast as on Earth, the higher way to the tap, a hard toss the lower.
+    // Under another gravity (src/gravity.js: Europa's) Earth's arc, slower; a hard toss as fast as on Earth, the lower way.
     const flightTime = placeFlightTime(hand, target, earthTime, multiplier === null);
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
     velocity.y += 0.5 * GRAVITY * flightTime;
@@ -2555,6 +2587,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Where the stream lands (src/waterCannon.js IMPACT.startleEvery): the fish there scatter, and a heron near it goes or, in sight of it, looks.
     startle: (x, z) => { fishes.startle(x, 0, z, FISH_ALARM.finger); birds.startle(stepsTime, x, z); },
     wetIce: (x, z, radius) => { if (!ice.on || ice.holeAt(x, z)) return false; ice.wetSpot(x, z, radius); return true; },
+    iceAt: (x, z) => ice.on && !ice.holeAt(x, z),
   });
   let cannonPointer = null;           // the press firing the cannon
   let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
@@ -3185,7 +3218,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const quiet = !grab.rock && !finger.inWater && !cannon.active && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0), quiet);
     surface.chooseLean(renderer);
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: nearRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = !skip.surface;
@@ -3495,6 +3528,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
+    nearRect.set(0, 0, 0, 0);
   }
 
   /**
@@ -3524,6 +3558,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     setGravity(next.gravity ?? EARTH_GRAVITY);
     // And of air (src/air.js): nothing in flight lives under two either.
     setAirDensity(placeAirless(place) ? 0 : EARTH_AIR);
+    sound.setAirless(placeAirless(place));
     if (geometryChanges || iceChanges || gravityChanges || airChanges) clearPond();
     placeName = place;
     pooled = Boolean(next.pool);
@@ -4012,6 +4047,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get sky() { return placeName; },
     /** Resolves when the sky's horizon strip is drawn, or has failed (src/sky.js, Horizon): the tools wait for it, the page never. */
     get horizonReady() { return environment.horizonReady; },
+    /** Resolves once Europa's probe's picture has come (src/europaSceneryMeshes.js), or at once where it was never asked for. */
+    get europaSceneryReady() { return europaSceneryView.ready; },
     /**
      * The hour of the place last asked for (a name from `hours`), its local
      * time remembered on this device as the time of day other places follow.

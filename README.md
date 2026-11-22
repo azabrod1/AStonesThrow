@@ -771,13 +771,13 @@ standing birds' flush and return, the frame rate and the cost.
 birds turn it on and off): nothing flies where there is no air, so a vent on
 the far ice erupts now and then, a faint column of sunlit ice grains
 (licence: vapour is all but invisible, and Europa's plumes are contested),
-and a probe crosses the sky. It is modelled after Europa Clipper as NASA and
-JPL give it: solar arrays 30.5 m tip to tip, five panels a wing, a 3 m
-high-gain dish, the radar's 17.6 m antennas along the wings and an 8.5 m
-magnetometer boom. Its arrays face the sun; about that line it turns to show
-its wings to the eye, as NASA's artist's view of it over Europa does. Lit by the
-sun and from below by the sunlit ice, it crosses in front of Jupiter about
-half a minute into a visit. It takes four minutes to cross, from behind the
+and a probe crosses the sky. It is a picture of Europa Clipper, NASA/JPL's
+rendering of it (PIA20025, public domain; `assets/europa/`, made by
+`tools/europa-probe.py`), drawn facing the eye as the birds' pictures are,
+30.5 m across its arrays, their cells toward the eye as they face a sun behind
+it. The rendering is of the 2016 design, four panels a wing to the flown
+craft's five. Lit by the sun and from below by the sunlit ice, it crosses in
+front of Jupiter about half a minute into a visit. It takes four minutes to cross, from behind the
 eye's right to behind its left, 300 m off and so about 6° across. That is
 licence too: Clipper's closest passes are some 25 km up at 4.5 km/s. Closed
 form in time and seeded (the birds' seed), out of throw reach, in the mirror;
@@ -1336,15 +1336,26 @@ The curated locations include:
   choices are kept, still remembered on the device, and come back at the next
   place with air; no rain, snow or gale program is built for it.
   Its gravity is its own, 1.315 m/s², a seventh of Earth's
-  (`PLACES.europa.gravity`, `src/gravity.js`): the throw is let go as fast
-  as on Earth and goes the high way to the tap (`placeFlightTime` in
-  `src/rock.js`), so a medium toss climbs ten metres and comes down eight
-  seconds later nearly straight; the hole pinches 2.7 times later, the drops
+  (`PLACES.europa.gravity`, `src/gravity.js`): a toss or a lob flies Earth's
+  arc, slower (`placeFlightTime` in `src/rock.js`): let go at 0.37 of the
+  speed, as high, in at the same angle and 2.7 times as long in the air (the
+  medium toss 2.2 s), as much in frame as on Earth, and its splash is
+  Earth's in slow motion; a hard toss is let go as fast as on Earth and comes in flatter.
+  Let go as fast as on Earth, a toss would climb 11 m and land 8 s later.
+  The hole pinches 2.7 times later, the drops
   hang longer and the rings run slower (`tools/gravity-probe.mjs`).
   Its air is its own too (`src/air.js`). Europa's atmosphere is a trace of
   oxygen, about 0.1 µPa at the surface, a trillionth of Earth's, so it counts
   as none:
   - Nothing drags on what flies: the stone and the spray fly plain parabolas.
+  - No air carries a sound (`src/sound.js`): the splash, a skip and the
+    cannon are silent, and so are things knocking each other; only a thing
+    landing on the ground (the ice or the beach) is heard, through it.
+  - The water cannon's stream flashes: water at 0 °C has a vapour pressure of
+    611 Pa and nothing outside holds it in, so bubbles of vapour grow in it
+    at about 0.64 m/s and burst it into a widening cone of drops that freeze
+    as they fly (`FLASH` in `src/waterCannon.js`). With no drag and a
+    seventh of the gravity, its rooster tail climbs about 7.5 times as high.
   - No air tears a big drop apart, and none is dragged under, so a splash
     leaves no foam and no bubbles.
   - A drop boils as it flies, and that freezes it in a few hundredths of a
@@ -2192,6 +2203,11 @@ farther out, so it rises into the view rather than filling its corner.
   by SHA-256. About five minutes (`--draft`: a 2k preview in about one);
   needs numpy and Pillow. Over its black sky the encoder's relative error
   reads near 100%: it measures nothing there.
+- `python3 tools/europa-probe.py` writes the probe over Europa
+  (`assets/europa/clipper.webp` and `clipper.json`: its size and credit)
+  from NASA/JPL's rendering of Europa Clipper (PIA20025, public domain, by
+  way of Commons), fetched once into `tools/.europa-sources/` and checked by
+  SHA-256; needs numpy, scipy and Pillow with WebP.
 - `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
   Reflecting Pool's skies, one an hour, from its plan,
   `tools/mall-backdrop.json`: it fetches the photographs (cached in
