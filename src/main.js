@@ -325,7 +325,7 @@ import { SplashSystem, MIRROR_LAYER, SAND_ALBEDO } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { Glare } from './glare.js';
 import { Reeds } from './reeds.js';
-import { Boulders } from './boulders.js';
+import { Boulders, sceneryShader } from './boulders.js';
 import { Tropics } from './tropics.js';
 import { LochVisitor } from './lochVisitor.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
@@ -335,7 +335,8 @@ import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
-import { WaterCannon, CANNON, IMPACT, aimVelocity, nozzle } from './waterCannon.js';
+import { WaterCannon, CANNON, IMPACT, nozzle, nozzleScale } from './waterCannon.js';
+import { CannonRig } from './cannonRig.js';
 import { StreamSheath } from './streamSheath.js';
 import { SprayFan } from './sprayFan.js';
 import { ObjectGrab, GRAB_HOLD_MS } from './objectGrab.js';
@@ -527,7 +528,7 @@ const FARTHEST_BACK = 2.0;    // zoomed out past the frame, the eye steps back t
 // The thing about to be thrown, previewed in the hand (buildPreview): its opacity; how fast it turns about the
 // vertical (radians a second); how long it is gone after a person's throw (seconds of real time) and then takes to
 // fade back; and the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay).
-const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11 };
+const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11, rigSeed: 12 };   // seed: its random draws; rigSeed: the cannon rig's meshes' ids (ensureCannonRig)
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
@@ -1281,7 +1282,59 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
   const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0 };
-  const previewAim = { vx: 0, vy: 0, vz: 0, flight: 0, short: false };   // the nozzle's launch (updatePreview), worked out in place
+  const previewMuzzle = { x: 0, y: 0, z: 0 };   // the nozzle's muzzle (updatePreview), worked out in place
+  // The water cannon's pump and hoses (src/cannonRig.js), made the first time the cannon is in hand, shown with its
+  // nozzle (made under the veil, warmUp, for its under-water program); set down again for each place (its land) and when
+  // the water freezes or thaws, `rigFor` what it was set down for.
+  let cannonRig = null;
+  const rigFor = { place: null, thickness: NaN, opened: NaN, holes: NaN, openHoles: NaN, x: NaN, y: NaN, z: NaN };
+  /** A material of the nozzle's own program (buildPreview's for a stream: solid, coloured by vertex), its look given. */
+  function rigMaterial(roughness, metalness, reflection) {
+    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness, metalness, envMap: environment.envTexture, envMapIntensity: reflection, transparent: false, opacity: 1, depthWrite: true });
+    const grain = stoneUniforms(null);
+    material.onBeforeCompile = (shader) => stoneDetail(shader, grain);
+    material.customProgramCacheKey = () => 'preview';
+    return material;
+  }
+  /**
+   * Its twin for the under-water pass (src/cannonRig.js `under`): clipped to under the still surface, drawn where the
+   * surface shows it and fading into the water seen from under it, as a boulder's (src/boulders.js sceneryShader). One
+   * program, built under the veil (warmUp).
+   */
+  function rigUnderMaterial(roughness, metalness, reflection) {
+    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness, metalness, envMap: environment.envTexture, envMapIntensity: reflection,
+      clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, -1, 0), 0)] });
+    const grain = stoneUniforms(null);
+    material.onBeforeCompile = (shader) => { stoneDetail(shader, grain); sceneryShader(shader, 'below', { extinction: lighting.extinction, color: lighting.waterColor }); };
+    material.customProgramCacheKey = () => 'rig-below';
+    return material;
+  }
+  /** The rig, made the first time it is wanted, its meshes' ids from a stream of their own (never Math.random: seeded throws stay). */
+  function ensureCannonRig() {
+    if (cannonRig) return cannonRig;
+    // Its stream kept for what it makes later (its stand as it is placed, its yoke), so that never draws from Math.random either.
+    const random = parkMiller(PREVIEW.rigSeed);
+    cannonRig = withRandom(random, () => new CannonRig({ scene: sceneMain, under: sceneUnder, material: rigMaterial, underMaterial: rigUnderMaterial,
+      landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt, surfaceAt: () => (galeWaves.on ? galeSurfaceAt : null), random }));
+    return cannonRig;
+  }
+  /** The land's height at (x, z) for the rig (src/cannonRig.js landAt): the pool's deck outside its walls, else the shore's; null over the water. */
+  function rigLandAt(x, z) {
+    if (pooled) return outsidePool(x, z) > 0.02 ? POOL.deck : null;
+    const depth = floorDepthAt(x, z);
+    return depth < -0.004 ? -depth : null;
+  }
+  /** The ground's height at (x, z), else the ice's top, else the bed's under open water, for the rig's stand (src/cannonRig.js groundAt). */
+  function rigGroundAt(x, z) {
+    if (pooled) {
+      if (outsidePool(x, z) > 0) return POOL.deck;
+    } else if (floorDepthAt(x, z) < 0) return -floorDepthAt(x, z);
+    return (ice.on ? ice.at(x, z) : null) ?? (pooled ? -POOL.depth : -floorDepthAt(x, z));
+  }
+  /** What the rig's hoses rest on at (x, z) (src/cannonRig.js floorAt): the land, else the ice (src/ice.js at: none in a hole), else null. */
+  function rigFloorAt(x, z) {
+    return rigLandAt(x, z) ?? (ice.on ? ice.at(x, z) : null);
+  }
   /** A seed for the next throw's own parts (src/rock.js dressThing), from the browser's own randomness: never Math.random, so seeded throws stay. */
   function nextDressing() { return crypto.getRandomValues(new Uint32Array(1))[0]; }
   /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
@@ -1289,6 +1342,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return withRandom(parkMiller(PREVIEW.seed), build);
   }
   function disposePreview() {
+    cannonRig?.hide();
     if (!preview.mesh) return;
     sceneMain.remove(preview.mesh);
     if (preview.ownsGeometry) preview.mesh.geometry.dispose();
@@ -1349,7 +1403,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const hand = handPosition(radius, thing);
     if (skipsNow() && thing.skips) hand.y = Math.min(hand.y, SKIP_THROW.handHeight);
     preview.mesh.position.copy(hand);
-    preview.mesh.scale.setScalar(radius);
+    // The cannon's nozzle as big as its jet needs (src/waterCannon.js nozzleScale: a bigger tip for a bigger bore).
+    preview.mesh.scale.setScalar(thing.stream ? nozzleScale(radius, nozzle(size, thing.stream).radius) : radius);
   }
   /**
    * A person's throw has left the hand (throwFromHand): the preview is gone
@@ -1372,13 +1427,33 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       mesh.visible = true;
       mesh.material.opacity = 1;
       const aim = cannon.aim ?? (marker.visible ? { x: marker.position.x, z: marker.position.z } : null);
+      // While it fires, as big and as steep as the burst it fires (its pressure as the burst began, src/waterCannon.js
+      // fire), so the stream leaves its muzzle whatever the slider says meanwhile; otherwise as the slider says.
+      const burst = cannon.firing ? cannon.burst : null;
+      const made = burst ? burst.nozzle : nozzle(preview.pressure, preview.thing.stream);
+      mesh.scale.setScalar(burst ? burst.scale : nozzleScale(preview.radius, made.radius));
       if (aim) {
-        const launch = aimVelocity(mesh.position, aim.x, aim.z, nozzle(preview.pressure, preview.thing.stream).speed, previewAim);
+        // Along the launch from its muzzle (cannon.barrel), which is where the stream leaves it: the stream comes out of its bore's middle.
+        const launch = cannon.barrel(mesh.position, aim.x, aim.z, made.speed, mesh.scale.x, previewMuzzle);
         mesh.lookAt(mesh.position.x + launch.vx, mesh.position.y + launch.vy, mesh.position.z + launch.vz);
       }
+      // Its pump, hoses and stand (src/cannonRig.js): set down on this place's land, the hose laid to the nozzle, humming as it fires.
+      ensureCannonRig();
+      // Its hoses lie on the ice (laid again as it thickens or thins, a hole opens or skins over, or the pond is cleared), or
+      // float on open water; its stand stands under the hand (laid again if the hand moves).
+      const hand = mesh.position;
+      // (Compared field by field, not as a key string, so a frame with the cannon in hand makes no garbage.)
+      const moved = Math.abs(hand.x - rigFor.x) >= 5e-5 || Math.abs(hand.y - rigFor.y) >= 5e-5 || Math.abs(hand.z - rigFor.z) >= 5e-5;
+      if (moved || rigFor.place !== placeName || rigFor.thickness !== ice.thickness || rigFor.opened !== ice.opened
+        || rigFor.holes !== ice.holes.length || rigFor.openHoles !== ice.openHoles) {
+        cannonRig.place(shoreFrame, mesh.position);
+        Object.assign(rigFor, { place: placeName, thickness: ice.thickness, opened: ice.opened, holes: ice.holes.length, openHoles: ice.openHoles, x: hand.x, y: hand.y, z: hand.z });
+      }
+      cannonRig.show(mesh, cannon.strength, now / 1000);
       preview.drawnAt = now;
       return;
     }
+    cannonRig?.hide();
     const seconds = THREE.MathUtils.clamp((now - preview.drawnAt) / 1000, 0, 0.1);
     preview.drawnAt = now;
     preview.turned = (preview.turned + PREVIEW.turn * seconds) % (2 * Math.PI);
@@ -1792,6 +1867,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     visitor.setEnvironment(environment.envTexture);
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
+    if (cannonRig) for (const mesh of [...cannonRig.meshes, ...cannonRig.below.map(({ twin }) => twin)]) mesh.material.envMap = environment.envTexture;
     applyWaterColor();
     ice.setGlow(environment.glow ?? 0);   // Europa's night ice glows (src/sky.js `glow`), and its frost beach
     setShoreGlow(environment.glow ?? 0);
@@ -3051,8 +3127,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       fingerSeen = { ...finger.position };
       threats.push({ x: finger.position.x, y: -0.05, z: finger.position.z, radius: FINGER.radius, inAir: false, still: moved < FISH_STILL });
     } else fingerSeen = null;
-    // The water cannon's stream coming down (src/waterCannon.js, this step's landing): in their way, as the finger is.
-    if (cannon.landing) threats.push({ x: cannon.landing.x, y: -0.05, z: cannon.landing.z, radius: Math.max(IMPACT.footprint * cannon.landing.radius, FINGER.radius), inAir: false, still: false });
+    // The water cannon's stream coming down (src/waterCannon.js, this step's landing): in their way, as the finger is, and
+    // the water it churns (`stream`, its reach) one they flee and keep out of, deep (src/fish.js).
+    if (cannon.landing) threats.push({ x: cannon.landing.x, y: -0.05, z: cannon.landing.z, radius: Math.max(IMPACT.footprint * cannon.landing.radius, FINGER.radius), inAir: false, still: false, stream: cannon.landing.churn });
     return { threats, foods };
   }
 
@@ -3214,7 +3291,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...(cannonRig ? cannonRig.meshes : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3628,6 +3705,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // still at the frames drawn after the stone's impact.
     const fired = Boolean(THINGS[thingName].stream);
     if (everything || fired) throwAt(WARM_UP.x + 0.3, WARM_UP.z, { thing: fired ? thingName : 'cannon', seconds: WARM_UP.cannonSeconds });
+    // Its rig's under-water program (src/cannonRig.js `below`) in the pass of everything; drawn, where the cannon is in
+    // hand, as the preview shows the rig (updatePreview), wherever it reaches under the water.
+    if (everything) ensureCannonRig().warmUp(true);
     // A floater of each program and a sinker of each besides the stone's (WARM_UP); drawn, the thing chosen alone, unless
     // it is the stone (or is fired, not thrown). A floater's mirror image (src/rock.js meshMirror), in the whole mirror
     // drawn now, and a textured thing's materials (a pizza's: above, below and in the mirror): their programs too.
@@ -3655,6 +3735,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (preview.mesh) programKeepers.push(preview.mesh.material);
     viewChanged = true;
     render();
+    if (everything) cannonRig.warmUp(false);
     fishWarmUp?.done();
     birdWarmUp?.done();
     lifeWarmUp?.done();

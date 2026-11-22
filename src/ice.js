@@ -703,7 +703,11 @@ export class IceSheet {
   }
 
   /** The holes not yet skinned over. */
-  get openHoles() { return this.holes.filter((hole) => !hole.skin?.closed).length; }
+  get openHoles() {
+    let open = 0;
+    for (const hole of this.holes) if (!hole.skin?.closed) open++;   // counted, not filtered: src/main.js reads it every frame
+    return open;
+  }
 
   /** The water's sides: the pool's walls, or the solver's patch. */
   get waterBounds() {

@@ -131,8 +131,10 @@
 //     three aims at its least, first and most pressure lands within
 //     AIM_MISS of the aim, no slower than it left the nozzle; two squirts
 //     alike fall alike (its own seeded draws); a 0.2 s squirt lands a parcel
-//     a step, 48 in all, and is then done with nothing in the air; a step
-//     costs under STEP_COST_MS.
+//     a step, 48 in all, and is then done with nothing in the air; swept by
+//     an aim that comes a frame at a time its heading kinks by no more than
+//     SWEEP_KINK a step (the nozzle turns after the aim), and its stream
+//     leaves the muzzle on the barrel's axis; a step costs under STEP_COST_MS.
 // Both costs (FIXED_THROW_MS, STEP_COST_MS) are the main thread's time
 // (tools/cost-clock.mjs), not the time the probe waited for a core beside
 // others.
@@ -145,7 +147,7 @@ import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
-import { WaterCannon, nozzle } from '../src/waterCannon.js';
+import { WaterCannon, CANNON, nozzle } from '../src/waterCannon.js';
 import { EARTH_GRAVITY, setGravity } from '../src/gravity.js';
 import { EARTH_AIR, setAirDensity } from '../src/air.js';
 import { PLACES } from '../src/places.js';
@@ -156,6 +158,7 @@ import { costClock, costSince } from './cost-clock.mjs';
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
 const AIM_MISS = 0.05;                 // m
+const SWEEP_KINK = 0.001;              // rad: the most a swept cannon's heading may kink a step (its second difference; a staircase of 60 Hz aims kinks tens of milliradians)
 const REST_SECONDS = 24;              // s: a watermelon (960 kg/m³) dives over a metre and rises slowly, resting after 13 to 21 s as its throw falls (40 throws)
 const FLOAT_DEPTH_TOLERANCE = 0.003;   // m
 const SINK_TOLERANCE = 0.02;           // of the terminal speed
@@ -605,6 +608,16 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   const inAir = churn(false), inVacuum = churn(true);
   check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
     `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
+  // The water it churns, which the fish keep out of (landing.churn, src/fish.js): none where it comes down on ice.
+  const churnOf = (wetIce) => {
+    const own = new WaterCannon({ water, splash, wetIce });
+    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
+    let most = 0;
+    for (let step = 0; step < 240; step++) { own.step(step * STEP, STEP, []); most = Math.max(most, own.landing?.churn ?? 0); }
+    return most;
+  };
+  const inWater = churnOf(() => false), onTheIce = churnOf(() => true);
+  check(inWater > 0.3 && onTheIce === 0, `a squirt churns ${inWater.toFixed(2)} m of water for the fish to keep out of, on ice ${onTheIce.toFixed(2)} m (none)`);
   // Under Europa's gravity the fan flies as many times longer, and its ring has room for it (src/waterCannon.js
   // fanCapacity): over a long burst every landing still throws its moment of the fan.
   {
@@ -618,6 +631,28 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
     } finally {
       setGravity(EARTH_GRAVITY);
     }
+  }
+  // The nozzle turns after the aim (CANNON.follow), so an aim that comes a frame at a time (60 Hz, a step in four) is a
+  // smooth sweep, not a staircase of jets: no parcel's heading turns more than SWEEP_KINK past the turn of the one before
+  // it. And the stream leaves its muzzle, on the barrel's axis, CANNON.muzzle of the nozzle's drawn radius out from the hand.
+  {
+    const hand = handFor(0.04, thing);
+    const own = new WaterCannon({ water, splash });
+    own.start({ hand, x: -1.5, z: -1.2, pressure: 3, thing, radius: 0.04, time: 0, seconds: 0.6 });
+    const headings = [];
+    let offAxis = 0;
+    for (let step = 0; step < 0.6 * 240; step++) {
+      if (step % 4 === 0) own.aimAt(-1.5 + 3 * Math.min(step / (0.5 * 240), 1), -1.2);
+      own.step(step * STEP, STEP, []);
+      const newest = (own.count - 1) % CANNON.capacity, records = own.records;
+      headings.push(Math.atan2(records.vx[newest], -records.vz[newest]));
+      const pace = Math.hypot(records.vx[newest], records.vy[newest], records.vz[newest]), along = CANNON.muzzle * own.burst.scale;
+      offAxis = Math.max(offAxis, Math.hypot(records.x[newest] - hand.x - (records.vx[newest] / pace) * along, records.y[newest] - hand.y - (records.vy[newest] / pace) * along, records.z[newest] - hand.z - (records.vz[newest] / pace) * along));
+    }
+    let kink = 0;
+    for (let at = 2; at < headings.length; at++) kink = Math.max(kink, Math.abs(headings[at] - 2 * headings[at - 1] + headings[at - 2]));
+    check(kink < SWEEP_KINK, `swept by an aim that comes a frame at a time, the cannon's heading kinks by up to ${(kink * 1e3).toFixed(3)} mrad a step (most ${SWEEP_KINK * 1e3})`);
+    check(offAxis < 1e-5, `the cannon's stream leaves up to ${(offAxis * 1e3).toFixed(4)} mm off its barrel's axis`);
   }
   // Aimed just inside a hole's edge, only the stream's centre is in the hole: what it lays off that centre (the
   // crater, its foam, the stray drops' rings, foam specks, white water) must not land on the ice round about (iceAt).
