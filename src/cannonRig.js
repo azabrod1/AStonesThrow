@@ -69,8 +69,15 @@
 // drawn where the surface shows it, as a boulder's under-water part is), the
 // pass the water refracts, so seen from above what is under the surface is
 // not cut off at the waterline; each twin is drawn only while its bounds
-// reach under the water. Every mesh is culled by each pass's view.
+// reach under the water; the meshes themselves are not drawn from below
+// (src/main.js hiddenFromBelow). Every mesh is culled by each pass's view.
+//
+// Three draws every geometry's id from Math.random: what the rig makes as it
+// is placed (the stand) or as the nozzle's scale changes (the yoke) draws from
+// its own stream (`random`, src/withRandom.js), never the page's, so a seeded
+// throw after it draws what it always drew.
 import * as THREE from 'three';
+import { withRandom } from './withRandom.js';
 
 export const PUMP = {
   place: { right: 0.62, back: 0.42, step: 0.05, most: 3, inland: 1.5 },   // m in the shore view's frame from its eye; walked back by `step`, no more than `most`, to land, then `inland` farther if that is land too
@@ -548,8 +555,10 @@ export class CannonRig {
    * @param surfaceAt () → under a gale, (x, z) → the water's height there (its CPU sum), else null: what lifts what floats
    * @param under the under-water pass's scene, and `underMaterial` its material maker (as `material`'s): what of the rig
    *   can be under the water is drawn there too (the header), or nothing if either is missing
+   * @param random the stream Math.random stands for while the rig makes geometry after it is built (the header)
    */
-  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0, surfaceAt = () => null, under = null, underMaterial = null }) {
+  constructor({ scene, material, landAt, floorAt = landAt, groundAt = (x, z) => landAt(x, z) ?? 0, surfaceAt = () => null, under = null, underMaterial = null, random = Math.random }) {
+    this.random = random;
     this.landAt = landAt;
     this.surfaceAt = surfaceAt;
     this.floorAt = floorAt;
@@ -652,7 +661,7 @@ export class CannonRig {
     // The stand under the hand, its legs parted where the hose goes down towards the pump.
     const towardPump = new THREE.Vector3(this.footing.x - hand.x, 0, this.footing.z - hand.z).normalize();
     this.stand.geometry.dispose();
-    this.stand.geometry = standGeometry(hand.clone().setY(hand.y - STAND.yoke - STAND.swivel), towardPump, this.groundAt);
+    this.stand.geometry = withRandom(this.random, () => standGeometry(hand.clone().setY(hand.y - STAND.yoke - STAND.swivel), towardPump, this.groundAt));
     for (const { mesh, twin } of this.below) twin.geometry = mesh.geometry;
     this.placed = true;
   }
@@ -735,7 +744,7 @@ export class CannonRig {
     barrel.set(0, 0, 1).applyQuaternion(nozzle.quaternion);
     // The clamp goes with the nozzle; the yoke turns with its heading, as wide as its pins.
     this.clamp.position.copy(nozzle.position); this.clamp.quaternion.copy(nozzle.quaternion); this.clamp.scale.copy(nozzle.scale);
-    if (Math.abs(this.yokeReach - STAND.pins * scale) > 1e-6) { this.yokeReach = STAND.pins * scale; this.yoke.geometry.dispose(); this.yoke.geometry = yokeGeometry(this.yokeReach); }
+    if (Math.abs(this.yokeReach - STAND.pins * scale) > 1e-6) { this.yokeReach = STAND.pins * scale; this.yoke.geometry.dispose(); this.yoke.geometry = withRandom(this.random, () => yokeGeometry(this.yokeReach)); }
     this.yoke.position.copy(nozzle.position);
     this.yoke.rotation.set(0, Math.atan2(barrel.x, barrel.z), 0);
     tail.copy(nozzle.position).addScaledVector(barrel, HOSE.delivery.tail * scale);

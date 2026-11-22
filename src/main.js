@@ -1307,8 +1307,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   /** The rig, made the first time it is wanted, its meshes' ids from a stream of their own (never Math.random: seeded throws stay). */
   function ensureCannonRig() {
-    cannonRig ??= withRandom(parkMiller(PREVIEW.rigSeed), () => new CannonRig({ scene: sceneMain, under: sceneUnder, material: rigMaterial, underMaterial: rigUnderMaterial,
-      landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt, surfaceAt: () => (galeWaves.on ? galeSurfaceAt : null) }));
+    if (cannonRig) return cannonRig;
+    // Its stream kept for what it makes later (its stand as it is placed, its yoke), so that never draws from Math.random either.
+    const random = parkMiller(PREVIEW.rigSeed);
+    cannonRig = withRandom(random, () => new CannonRig({ scene: sceneMain, under: sceneUnder, material: rigMaterial, underMaterial: rigUnderMaterial,
+      landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt, surfaceAt: () => (galeWaves.on ? galeSurfaceAt : null), random }));
     return cannonRig;
   }
   /** The land's height at (x, z) for the rig (src/cannonRig.js landAt): the pool's deck outside its walls, else the shore's; null over the water. */
@@ -3255,7 +3258,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...(cannonRig ? cannonRig.meshes : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
