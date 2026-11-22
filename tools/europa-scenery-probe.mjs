@@ -24,7 +24,7 @@ const check = (ok, message) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${message}
 const MINUTES = 10, FRAME = 1 / 60;
 const LEVEL = { halfHeight: 24, halfWidth: Math.atan(Math.tan(24 * Math.PI / 180) * 16 / 9) * 180 / Math.PI, pitch: -1.8 };   // src/main.js frameFov, VIEWS.level
 const JUPITER = { bearing: -10, elevation: 11, radius: 6.1 };
-const PROBE_HALF_SPAN = 15.25;   // m: src/europaSceneryMeshes.js PROBE, its arrays 30.5 m tip to tip
+const PROBE_HALF_SPAN = 15.25;   // m: the probe's picture (assets/europa/clipper.json, src/europaSceneryMeshes.js), its arrays 30.5 m tip to tip
 /** Bearing (degrees right of ahead) and elevation (degrees, about the level view's axis) of a point from the level view's eye. */
 const seen = ({ x, y, z }) => {
   const dx = x - SCENERY_EYE.x, dz = z - SCENERY_EYE.z;

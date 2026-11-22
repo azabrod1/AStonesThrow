@@ -11,21 +11,18 @@
 //     to an eye, and Europa's plumes are contested (Hubble's detections are
 //     near its limits; Europa Clipper is to look for them). NASA's artist's
 //     views of the surface show them so.
-//   - The probe: a spacecraft drawn after Europa Clipper as NASA and JPL give
-//     it (src/europaSceneryMeshes.js PROBE: solar arrays 30.5 m tip to tip,
-//     a 3 m high-gain antenna, an 8.5 m magnetometer boom, its radar's long
-//     antennas along the arrays), as NASA's artist's view of Clipper over
-//     Europa shows it: high over the ice in front of Jupiter, its arrays
-//     turned to the sun. Licence again: Clipper's closest passes are some
-//     25 km up at 4.5 km/s, a point of light gone in seconds; here it is
-//     `distance` m off, so it is seen whole (about 6° across), and crosses
-//     the sky ahead in `crossing` s, from behind the eye's right to behind
-//     its left, then is `gap` s out of sight. It fades in and out only far to
-//     either side (`fades`, degrees from ahead), out of the level view's
-//     frame. Its arrays face the sun throughout; about the sun's line it may
-//     turn as it likes, and turns so its wings lie across the eye's way to
-//     it (src/europaSceneryMeshes.js), as NASA's view shows it, swaying
-//     slowly either side of that (`roll`, rad, over `sway` s).
+//   - The probe: Europa Clipper, drawn as NASA/JPL's rendering of it
+//     (src/europaSceneryMeshes.js: a picture facing the eye, as wide as its
+//     arrays tip to tip, 30.5 m), as NASA's artist's view of Clipper over
+//     Europa shows it: high over the ice in front of Jupiter, the cells of
+//     its arrays toward a sun behind the eye. Licence again: Clipper's
+//     closest passes are some 25 km up at 4.5 km/s, a point of light gone in
+//     seconds; here it is `distance` m off, so it is seen whole (about 6°
+//     across), and crosses the sky ahead in `crossing` s, from behind the
+//     eye's right to behind its left, then is `gap` s out of sight. It fades
+//     in and out only far to either side (`fades`, degrees from ahead), out
+//     of the level view's frame, swaying slowly in the picture's plane
+//     (`roll`, rad either way, over `sway` s).
 //
 // All of it is closed form in time (showAt), the eruptions laid out from the
 // place's seed and each one's number, in order, the last few kept, so a
@@ -35,7 +32,7 @@
 // checks them.
 //
 // The probe's pose (`probe`, which src/europaSceneryMeshes.js draws): where
-// its body is (x, y, z), `roll` (rad about the sun's line), `fade` (0 to 1)
+// its body is (x, y, z), `roll` (rad, in the picture's plane), `fade` (0 to 1)
 // and whether it is `shown`; `pass`, which crossing it is.
 import { seededRandom } from './spray.js';
 
@@ -57,7 +54,7 @@ const along = (bearing, distance) => {
 //     `bow` degrees in its middle (so it passes in front of Jupiter's upper half, 5 to 17° up, about its middle);
 //     `crossing` s across, then `gap` s out of sight before the next; faded out beyond `fades` [from, to] degrees of
 //     bearing either side; `start` the share of a crossing it is through at time 0 (so the first frame shows it); `roll`
-//     rad either way about the sun's line, over `sway` s.
+//     rad either way in the picture's plane, over `sway` s.
 export const SCENERY_BY_PLACE = {
   europa: {
     vent: { bearing: 21, distance: 64 },
