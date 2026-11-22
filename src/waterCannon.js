@@ -53,7 +53,9 @@
 // glances (IMPACT.sheet of its water as spray, thrown as the fan's middle
 // below is, kicked about, and pulsing from step to step as a jet's splash
 // does), big drops now and then (IMPACT.drops a second) and a few stray
-// drops' rings around it (src/dropRings.js). Onset and shutoff ring the
+// drops' rings around it (src/dropRings.js); where there is no air
+// (src/splash.js `airless`: Europa) none is driven under, so no foam, specks,
+// froth or white water. Onset and shutoff ring the
 // water by themselves. A floater in the footprint is shoved along the
 // stream (Rock.knock, the stream's momentum on it, no more than
 // IMPACT.pushCap a step), and the fish are frightened (the caller's
@@ -126,8 +128,8 @@ import * as THREE from 'three';
 import { seededRandom, sprayDrops } from './spray.js';
 import { SHEATH } from './streamSheath.js';
 import { FAN_GRID } from './sprayFan.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
 const SURFACE_TENSION = 0.072;
 const BAR = 1e5;
@@ -180,8 +182,10 @@ export const ROUGH = {
   shed: 0.01,         // the share of the flow the rough skin throws off as mist (BREAKUP.mist where it has broken up)
 };
 // The fan of spray the stream throws off the water where it lands (the header; src/sprayFan.js draws it).
+// The fan's ring's room under the place's gravity (FAN.capacity): its flights, 2·vy/g, as many times longer as g is weaker.
+const fanCapacity = () => Math.ceil(FAN.capacity * Math.max(EARTH_GRAVITY / GRAVITY, 1));
 export const FAN = {
-  capacity: 512,        // moments of it in the air at most
+  capacity: 512,        // moments of it in the air at most under Earth's gravity; under a weaker one as many times more as its flights are longer (fanCapacity)
   spread: 1.05,         // rad: its headings, to either side of the stream's way (some two thirds of that is seen: the sheet thins to nothing towards its sides)
   speed: [0.22, 0.15],  // thrown at this share of the landing speed down its middle, and at its sides...
   rise: 0.2,            // ...up at this (rad)...
@@ -365,9 +369,16 @@ export class WaterCannon {
     this.count = 0;
     // The fan (FAN): a ring of the moments it was thrown at, `head` the oldest with any of it still in the air; for
     // each moment the launch of each part across it (the fan's columns).
-    const moments = FAN.capacity, parts = FAN_GRID.columns;
-    this.tail = {
-      head: 0, count: 0,
+    this.tail = this.makeTail(fanCapacity());
+    this.thrown = { vx: 0, vy: 0, vz: 0 };   // the fan's middle's launch at the last landing (the spray goes with it)
+    this.stepSeconds = 1 / 240;
+  }
+
+  /** The fan's ring (FAN) of `moments` moments, empty. */
+  makeTail(moments) {
+    const parts = FAN_GRID.columns;
+    return {
+      head: 0, count: 0, capacity: moments,
       drift: new Float64Array(FAN.controls * 8),    // its wander (FAN.sway): at each control, for each of speed, elevation, heading and strength, the walk and its smoothed value
       swayed: new Float64Array(FAN.controls * 4),   // the smoothed values, this landing
       comb: new Float64Array(parts),                // each part's own wander (FAN.fingers)
@@ -384,8 +395,6 @@ export class WaterCannon {
       strength: new Float32Array(moments * parts),       // how much water each part carries, against the mean
       reach: new Float32Array(moments * parts),          // the share of its flight each part lasts as a sheet (FAN.reach)
     };
-    this.thrown = { vx: 0, vy: 0, vz: 0 };   // the fan's middle's launch at the last landing (the spray goes with it)
-    this.stepSeconds = 1 / 240;
   }
 
   /** Parcels in the air. */
@@ -551,12 +560,14 @@ export class WaterCannon {
       this.water.addSplat({ x: x + Math.cos(angle) * out, z: z + Math.sin(angle) * out, radius: footprint, velocity: -IMPACT.push * speed * dt, rim: IMPACT.rim });
       // Its churn: a stamp of foam each step, each its own size, place and strength (the header).
       // Laid along the way the stream glances on (IMPACT.trail), wider and so thinner the farther: a streak, never a disc.
+      // With no air (src/splash.js `airless`: Europa) none is driven under, so it leaves no foam, specks or white water.
+      const airless = this.splash.airless;
       const onward = random() ** 2, trail = IMPACT.trail * across * onward;
       angle = random() * Math.PI * 2; out = IMPACT.boilReach * radius * Math.sqrt(random()) * (1 + IMPACT.trailWiden * onward);
       const stampRadius = (radius * (IMPACT.boilRadii[0] + (IMPACT.boilRadii[1] - IMPACT.boilRadii[0]) * random()) + 0.01) * (1 + IMPACT.trailWiden * onward);
-      this.water.addFoam?.({ x: x + directionX * trail + Math.cos(angle) * out, z: z + directionZ * trail + Math.sin(angle) * out, radius: stampRadius, amount: Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1), lifetime: IMPACT.boilLife, boil: true });
+      if (!airless) this.water.addFoam?.({ x: x + directionX * trail + Math.cos(angle) * out, z: z + directionZ * trail + Math.sin(angle) * out, radius: stampRadius, amount: Math.min(IMPACT.boil * dt * (speed / 10) * (0.5 + random()), 1), lifetime: IMPACT.boilLife, boil: true });
       // A speck of foam drifting out of it, now and then.
-      if (this.splash.foamSpecks && random() < IMPACT.specks) {
+      if (!airless && this.splash.foamSpecks && random() < IMPACT.specks) {
         angle = random() * Math.PI * 2;
         const drift = IMPACT.speckDrift[0] + (IMPACT.speckDrift[1] - IMPACT.speckDrift[0]) * random();
         this.splash.foamSpecks.spawn(x + Math.cos(angle) * footprint, z + Math.sin(angle) * footprint, Math.cos(angle) * drift, Math.sin(angle) * drift, splashTime, undefined, random);
@@ -567,7 +578,7 @@ export class WaterCannon {
         this.dropRings.add({ x: x + Math.cos(turn) * reach, z: z + Math.sin(turn) * reach, radius: 0.002, fallSpeed: 3 }, splashTime);
       }
       // Its white water heaping up and rolling on.
-      if (this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
+      if (!airless && this.splash.whiteWater) this.whiten(this.splash.whiteWater, x, z, speed, across, directionX, directionZ, water / dt, time, dt, splashTime);
     }
     // The drops torn off as it glances, off the water or the ice: they go with the fan's middle, kicked about, pulsing from step to step.
     const pulse = IMPACT.pulse[0] + (IMPACT.pulse[1] - IMPACT.pulse[0]) * random();
@@ -631,8 +642,8 @@ export class WaterCannon {
     const comb = tail.comb, kept = FAN.fingers.memory * period;
     for (let part = 0; part < parts; part++) comb[part] += (-comb[part] * dt) / kept + Math.sqrt((2 * dt) / kept) * 2 * (random() + random() + random() - 1.5);
     const onward = Math.atan2(directionZ, directionX);
-    const room = tail.count - tail.head < FAN.capacity;
-    const slot = tail.count % FAN.capacity;
+    const room = tail.count - tail.head < tail.capacity;
+    const slot = tail.count % tail.capacity;
     let longest = 0;
     for (let part = 0; part < parts; part++) {
       const place = -1 + (2 * part) / (parts - 1), middle = 1 - place * place;
@@ -652,7 +663,7 @@ export class WaterCannon {
       longest = Math.max(longest, (2 * vy) / GRAVITY);
     }
     if (!room) return;
-    const before = (tail.count + FAN.capacity - 1) % FAN.capacity;
+    const before = (tail.count + tail.capacity - 1) % tail.capacity;
     tail.lead[slot] = tail.count === 0 || time - tail.time[before] > 1.5 * dt ? 1 : 0;
     tail.time[slot] = time; tail.x[slot] = x; tail.z[slot] = z;
     tail.sideX[slot] = -directionZ; tail.sideZ[slot] = directionX;
@@ -672,7 +683,7 @@ export class WaterCannon {
    * and drops leave it (FAN.drops places on it).
    */
   stepFan(time, dt, splashTime) {
-    const tail = this.tail, capacity = FAN.capacity, parts = FAN_GRID.columns;
+    const tail = this.tail, capacity = tail.capacity, parts = FAN_GRID.columns;
     while (tail.count > tail.head) {
       const slot = tail.head % capacity;
       if (tail.time[slot] + tail.life[slot] > time + dt - 1e-12) break;
@@ -705,7 +716,7 @@ export class WaterCannon {
         this.water.addSplat({ x, z, radius: FAN.pockRadius[0] + (FAN.pockRadius[1] - FAN.pockRadius[0]) * random(), velocity: -(FAN.pockPush[0] + (FAN.pockPush[1] - FAN.pockPush[0]) * random()) * strength });
       } else if (draw < FAN.pock + FAN.rings) {
         this.dropRings?.add({ x, z, radius: 0.001 + 0.0015 * random(), fallSpeed: Math.max(tail.velocity[at + 1], 1) }, splashTime);
-      } else {
+      } else if (!this.splash.airless) {   // froth, but where there is no air (above)
         this.water.addFoam?.({ x, z, radius: FAN.frothRadius * wide * (0.6 + 0.8 * random()), amount: FAN.frothAmount * strength, lifetime: FAN.frothLife });
       }
     }
@@ -881,7 +892,7 @@ export class WaterCannon {
    * nothing is drawn from one piece to the next.
    */
   drawFan(time) {
-    const fan = this.fan, tail = this.tail, capacity = FAN.capacity, parts = FAN_GRID.columns;
+    const fan = this.fan, tail = this.tail, capacity = tail.capacity, parts = FAN_GRID.columns;
     const inAir = tail.count - tail.head;
     if (inAir === 0) { fan.hide(); return; }
     const slotAt = (back) => (tail.count - 1 - back) % capacity;
@@ -940,6 +951,8 @@ export class WaterCannon {
     this.lastLanding = -Infinity;
     this.lastStartle = -Infinity;
     this.landing = null;
+    // The fan's ring as long as the place's gravity keeps its water up (fanCapacity): a change of gravity clears the pond.
+    if (this.tail.capacity !== fanCapacity()) this.tail = this.makeTail(fanCapacity());
     this.tail.head = 0; this.tail.count = 0;
     this.sheath?.hide();
     this.fan?.hide();

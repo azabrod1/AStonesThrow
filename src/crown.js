@@ -478,8 +478,8 @@ import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from
 import { buildLaunchField, sampleLaunchField } from './launchField.js';
 import { seededRandom, sprayDrops, gammaFactor } from './spray.js';
 import { splashRandom } from './splashRandom.js';
+import { GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
 const ROWS = 24;                   // samples along launch time, rim (row 0) to base
 const MAIN_ROWS = 17;              // rows given to the main launch once the tail exists

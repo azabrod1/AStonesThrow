@@ -800,6 +800,9 @@
   }
   .menu-card:hover { background: rgba(238, 243, 244, 0.07); }
   .menu-card[aria-checked="true"] { border-color: var(--accent); background: rgba(241, 199, 122, 0.1); }
+  /* A choice the place does not allow (Weather and Wind where there is no air): greyed, and its page's note says why. */
+  .menu-card[aria-disabled="true"], .menu-seg button[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+  .menu-card[aria-disabled="true"]:hover { background: none; }
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
@@ -1223,6 +1226,7 @@
         <button type="button" class="menu-card" role="radio" data-value="lagoon"><img loading="lazy" src="assets/sky/thumbs/lagoon.jpg" alt="" width="80" height="45"><span><b>Polynesian lagoon</b><small>White sand, palms, a turquoise lagoon and reef fish</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="loch"><img loading="lazy" src="assets/sky/thumbs/loch.jpg" alt="" width="80" height="45"><span><b>Loch Ness</b><small>Peat-dark water under the ridges · keep an eye on the far water</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="mall"><img loading="lazy" src="assets/sky/thumbs/mall.jpg" alt="" width="80" height="45"><span><b>Reflecting Pool</b><small>Washington, D.C.: the Monument mirrored down the pool, elms either side</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="europa"><img loading="lazy" src="assets/sky/thumbs/europa.jpg" alt="" width="80" height="45"><span><b>Europa</b><small>Jupiter’s ice moon: throw into the lead, the way to the ocean under it · starts frozen</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
       <!-- Credit for what a place shows that its licence asks for (CREDITS.md, published as credits.html): the
@@ -1584,6 +1588,11 @@
         blizzard: 'A blizzard: heavy snow driven sideways by a gale, the world beyond the pond gone white.',
         fog: 'A dense fog on a still day: a hundred metres to see, the far shore and the beach fading white, the sun a pale disc where it is high enough to burn through.',
       },
+      // An airless place (Europa: pond.airless) holds the weather clear and the wind calm; the choices come back after.
+      airless: {
+        weather: (place, kept) => `${place} has only a trace of an atmosphere, a trillionth of Earth’s, so no weather: no cloud, rain, snow or fog, the sky black to the horizon.${kept ? ` ${kept} comes back at the next place.` : ''}`,
+        wind: (place, kept) => `${place} has only a trace of an atmosphere, a trillionth of Earth’s, so no wind.${kept ? ` ${kept} comes back at the next place.` : ''}`,
+      },
       time: 'Choose a moment below or slide through the day. Each is a real photograph, aligned to keep the landscape in place.',
       oneTime: 'This place is a single photograph. Try Highlands, Desert oasis, Lakeside or Mesas for changing light.',
     };
@@ -1642,7 +1651,7 @@
       off: 'The water is empty: nothing swims, and nothing is eaten.',
     };
     const BIRD_NOTES = {
-      on: 'Every place but the Pool has its own birds, the ones that live where its photograph was taken: kelp gulls at the Rocky cove, a heron in the Koi pond, a fish eagle over Lakeside, frigatebirds over the lagoon. Throw near the heron and it flies off, and comes back within a minute.',
+      on: 'Every place but the Pool and Europa has its own birds, the ones that live where its photograph was taken: kelp gulls at the Rocky cove, a heron in the Koi pond, a fish eagle over Lakeside, frigatebirds over the lagoon. Throw near the heron and it flies off, and comes back within a minute. Europa’s atmosphere is a trillionth of Earth’s, nothing to fly in: a vent on the far ice erupts now and then, and a probe like NASA’s Europa Clipper crosses the sky in front of Jupiter.',
       off: 'No birds: the sky and the banks are empty.',
     };
     const fishNote = document.getElementById('fish-note');
@@ -1726,15 +1735,22 @@
       });
       updateWind();   // a storm or a blizzard brings a gale, a fog the calm
     }
+    // Where there is no air (pond.airless: Europa) both pages' choices are greyed out and their notes say why: the
+    // weather is clear and the wind calm there, and the choices kept (pond.weatherChoice, pond.windChoice) come back after.
+    let airShown = false;   // whether the pages last showed an airless place: updateSky shows them again only as that changes
     function updateWeather() {
+      const airless = airShown = pond.airless;
+      for (const card of document.querySelectorAll('#weather [role="radio"]')) card.setAttribute('aria-disabled', String(airless));
       showWeather(pond.weather);
-      settings.setValue('weather', label('weather', pond.weather));
-      weatherNote.textContent = NOTES.weather[pond.weather];
+      settings.setValue('weather', airless ? 'None' : label('weather', pond.weather));
+      weatherNote.textContent = airless ? NOTES.airless.weather(label('sky', pond.sky), pond.weatherChoice !== 'clear' && label('weather', pond.weatherChoice)) : NOTES.weather[pond.weather];
     }
     function updateWind() {
+      const airless = pond.airless;
+      for (const button of document.querySelectorAll('#wind [role="radio"]')) button.setAttribute('aria-disabled', String(airless));
       showWind(pond.wind);
-      settings.setValue('wind', label('wind', pond.wind));
-      document.getElementById('wind-note').textContent = NOTES.wind[pond.wind];
+      settings.setValue('wind', airless ? 'None' : label('wind', pond.wind));
+      document.getElementById('wind-note').textContent = airless ? NOTES.airless.wind(label('sky', pond.sky), pond.windChoice !== pond.wind && label('wind', pond.windChoice)) : NOTES.wind[pond.wind];
     }
     const showQualityChoice = radioGroup(document.getElementById('quality'), (value) => { pond.setQuality(value); showQuality(); });
     showQuality = () => {
@@ -1770,6 +1786,15 @@
       skyNote.textContent = '';
       updateTime();
       updateWater();   // the pool has its own water
+      // Into an airless place or out of one (pond.airless), the Weather and Wind pages as it has them: greyed out, or the
+      // choices back in force. Only then, so a rain's note on its way, or its retry, is left as it is.
+      if (pond.airless !== airShown) {
+        updateWeather();
+        updateWind();
+        // Out to air with a rain chosen: its table may still be on its way, or have failed to come (the pond's holdAir
+        // only warns), so it is asked for as a choice is, with its note and, if it fails, its retry.
+        if (!pond.airless && RAINY.includes(pond.weatherChoice) && !pond.raining) chooseWeather(pond.weatherChoice);
+      }
     }
     // The time of day: the shown place's hours on a slider (pond.hours), a
     // lone photograph's one hour with no slider. An hour is a photo to load,

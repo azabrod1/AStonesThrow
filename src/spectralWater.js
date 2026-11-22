@@ -110,6 +110,7 @@
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { SPECTRAL_UPDATE_FRAGMENT, SOLVER_FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './shaders/spectral.js';
+import { gravityUniform } from './gravity.js';
 
 const MAX_SPLATS = 32;
 const MAX_FOAM = 16;
@@ -335,6 +336,7 @@ export class SpectralWater {
       uN: { value: size },
       uCell: { value: this.cell },
       uDepth: { value: depth },
+      uGravity: gravityUniform,   // the place's (src/gravity.js)
       uDt: { value: 0 },
       uGamma0: { value: DAMPING.base },
       uGammaLeast: { value: 0 },

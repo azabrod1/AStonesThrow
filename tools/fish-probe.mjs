@@ -39,7 +39,7 @@ import * as THREE from 'three';
 import { floorDepthAt, koiFloorDepthAt, KOI_SHORE } from '../src/pondFloor.js';
 import { POOL } from '../src/pool.js';
 import { THINGS } from '../src/things.js';
-import { fishBody, fishFins } from '../src/fishMeshes.js';
+import { fishBody, fishFins, medusaGeometry } from '../src/fishMeshes.js';
 
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -187,14 +187,14 @@ console.log('\nwhole body off the bed:');
   Math.random = realRandom;   // three's geometries draw their ids from it; the fish never do
   for (const [name, species] of Object.entries(FISH_SPECIES)) {
     const points = [];
-    for (const geometry of [fishBody(species.shape), fishFins(species.shape)]) {
+    for (const geometry of species.form === 'medusa' ? [medusaGeometry(species.shape)] : [fishBody(species.shape), fishFins(species.shape)]) {
       const position = geometry.attributes.position;
       for (let index = 0; index < position.count; index++) if (position.getY(index) < -0.2 * species.shape.depth) points.push([position.getX(index), position.getY(index), position.getZ(index)]);
     }
     lowPoints[name] = points;
   }
   Math.random = () => { throw new Error('the fish drew Math.random'); };
-  for (const place of ['koi', 'lakeside', 'highlands']) {
+  for (const place of ['koi', 'lakeside', 'highlands', 'europa']) {
     const population = new FishPopulation({ seed: 1 });   // src/main.js's
     population.setWaters({ place, ...waterOf(place) });
     let worst = Infinity, worstAt = '';
@@ -279,6 +279,53 @@ console.log('\nfright:');
   calm.setWaters({ place: 'koi', ...BASIN });
   for (let frame = 0; frame < 5 / FRAME; frame++) calm.step(FRAME, { threats: [{ x: 0, y: -1.37, z: -1, radius: 0.03, inAir: false, still: true }] });
   check(calm.fish.every((fish) => fish.wary === 0), 'a stone lying still on the bed frightens none');
+}
+
+console.log('\nEuropa\'s ice lanterns (glowing medusas):');
+{
+  // They start in the water and stay there (every place's checks above); here: slower than any koi, their own seeded
+  // stream, flashing when a stone comes down on them and dimming while wary, then back to calm.
+  const lantern = FISH_SPECIES.lantern;
+  check(lantern.form === 'medusa' && lantern.glows && !lantern.eats, 'Europa has ice lanterns: medusas that glow and eat nothing');
+  check(lantern.cruise * lantern.length[1] < FISH_SPECIES.koi.cruise * FISH_SPECIES.koi.length[0], `they drift slower than any koi swims (${(lantern.cruise * lantern.length[1]).toFixed(3)} m/s at most against ${(FISH_SPECIES.koi.cruise * FISH_SPECIES.koi.length[0]).toFixed(3)})`);
+  const drift = () => {
+    const population = new FishPopulation({ seed: 1 });
+    population.setWaters({ place: 'europa', ...LAKE });
+    for (let frame = 0; frame < 20 / FRAME; frame++) population.step(FRAME);
+    return population;
+  };
+  const population = drift();
+  check(JSON.stringify(population.fish.map((fish) => [fish.x, fish.y, fish.z, fish.glow])) === JSON.stringify(drift().fish.map((fish) => [fish.x, fish.y, fish.z, fish.glow])), 'they drift the same every time, from their own seeded stream');
+  const calmGlow = population.fish[0].glow;
+  check(population.fish.every((fish) => Math.abs(fish.glow - calmGlow) < 1e-9 && fish.glow > 0.3), `calm, each glows alike (${calmGlow.toFixed(2)})`);
+  const target = population.fish[0];
+  const landX = target.x + 0.05, landZ = target.z;
+  const near = population.fish.filter((fish) => Math.hypot(fish.x - landX, fish.z - landZ) < 0.6);
+  const before = near.map((fish) => Math.hypot(fish.x - landX, fish.z - landZ));
+  // A stone coming down just beside the first, 60 ms from the water.
+  population.step(FRAME, { threats: [{ x: landX - 0.06, y: 0.3, z: landZ, radius: 0.03, vx: 1, vy: -5, vz: 0, inAir: true }] });
+  for (let frame = 0; frame < 0.3 / FRAME; frame++) population.step(FRAME);
+  check(near.every((fish) => fish.fright > 0 && fish.glow > calmGlow + 0.3), `it flashes every one near where it lands (${near.length}; their light ${near.map((fish) => fish.glow.toFixed(2)).join(', ')})`);
+  for (let frame = 0; frame < 1.5 / FRAME; frame++) population.step(FRAME);
+  const after = near.map((fish) => Math.hypot(fish.x - landX, fish.z - landZ));
+  check(after.every((distance, index) => distance > before[index] + 0.1), `they drift away from it (${before.map((distance) => distance.toFixed(2)).join(', ')} m to ${after.map((distance) => distance.toFixed(2)).join(', ')})`);
+  for (let frame = 0; frame < 0.9 / FRAME; frame++) population.step(FRAME);
+  check(near.every((fish) => fish.fright === 0 && fish.wary > 0 && fish.glow < calmGlow * 0.6), `wary after, they dim (${near.map((fish) => fish.glow.toFixed(2)).join(', ')})`);
+  for (let frame = 0; frame < 15 / FRAME; frame++) population.step(FRAME);
+  check(near.every((fish) => fish.wary === 0 && fish.glow > calmGlow * 0.9), `and glow again once calm (${near.map((fish) => fish.glow.toFixed(2)).join(', ')})`);
+  // Calm again, they drift to where the stone went in, up under the surface, and hang about it (LURE).
+  for (let frame = 0; frame < 20 / FRAME; frame++) population.step(FRAME);
+  const gathered = population.fish.filter((fish) => Math.hypot(fish.x - landX, fish.z - landZ) < 0.8);
+  check(gathered.length >= 3, `then drift to where it went in and hang about it (${gathered.length} of ${population.fish.length} within 0.8 m, ${population.fish.map((fish) => Math.hypot(fish.x - landX, fish.z - landZ).toFixed(2)).join(', ')} m)`);
+  check(gathered.every((fish) => fish.y > -0.6), `up under the surface (${gathered.map((fish) => fish.y.toFixed(2)).join(', ')} m)`);
+  // A splash the pond is cleared of (src/main.js clearPond: the warm-up's throws) lures none: resetClock forgets it.
+  const cleared = drift();
+  cleared.startle(landX, 0, landZ, 1);
+  cleared.resetClock();
+  let luredSince = 0;
+  for (let frame = 0; frame < 30 / FRAME; frame++) { cleared.step(FRAME); luredSince += cleared.groups.filter((group) => group.lured).length; }
+  check(cleared.lure === null && luredSince === 0, `a splash cleared with the pond lures none (${luredSince} group-frames lured)`);
+  check(new FishPopulation({ seed: 1 }).fish.every((fish) => fish.glow === 0) && (() => { const koi = new FishPopulation({ seed: 1 }); koi.setWaters({ place: 'koi', ...KOI }); return koi.fish.every((fish) => fish.glow === 0); })(), 'no fish glows');
 }
 
 console.log('\nfood:');

@@ -71,6 +71,7 @@ import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { AMBIENT_EVALUATE_FRAGMENT, FFT_PASS_FRAGMENT } from './shaders/spectral.js';
 import { runInverseFft } from './spectralWater.js';
+import { GRAVITY, gravityUniform } from './gravity.js';
 
 export const AMBIENT_WAVES = {
   texels: 256,            // per side, on every quality
@@ -92,7 +93,6 @@ export const DEFAULT_WIND = [0.45, -0.9];
 export const WIND_STRENGTHS = { calm: 0.3, breeze: 1, windy: 1.8, gale: 4 };
 const HEIGHT_TEXTURE_UNITS = 1000;   // the height texture holds millimetres
 
-const GRAVITY = 9.81;
 const SURFACE_TENSION_OVER_DENSITY = 7.2e-5;
 
 /** ω for a wavenumber (rad/m) on water of the given depth, as SPECTRAL_UPDATE_FRAGMENT computes it. */
@@ -253,6 +253,7 @@ export class AmbientWaves {
       uN: { value: size },
       uTileSize: { value: settings.tileSize },
       uDepth: { value: depth },
+      uGravity: gravityUniform,   // the place's (src/gravity.js)
       uFrequencyStep: { value: 2 * Math.PI / settings.period },
       uTime: { value: 0 },
       uOutputScale: { value: HEIGHT_TEXTURE_UNITS },

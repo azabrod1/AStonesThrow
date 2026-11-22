@@ -164,12 +164,14 @@ export const SHORE_LOOKS = {
   salt:    { sand: [0.84, 0.83, 0.8],   grey: 0.85, pebbles: 0.05, pebbleSize: 1,   tufts: 0.05, wrack: 0,   grass: 2,    cracks: 1 },
   scree:   { sand: [0.46, 0.46, 0.46],  grey: 0.95, pebbles: 0.95, pebbleSize: 2.2, tufts: 0.1,  wrack: 0,   grass: 1.5,  cracks: 0 },
   coral:   { detail: [0.5, 0.22], sand: [0.92, 0.89, 0.80],  grey: 0.15, pebbles: 0.12, pebbleSize: 0.8, tufts: 0.35, wrack: 0.35, grass: 0.9,  cracks: 0 },   // the Polynesian lagoon's: white coral sand, bits of shell, a wrack line of seaweed
+  frost:   { sand: [0.78, 0.83, 0.88],  grey: 0.75, pebbles: 0.15, pebbleSize: 1.6, tufts: 0,    wrack: 0,   grass: 2,    cracks: 1 },   // Europa's: frosted ice, a few blocks, cracked into plates, nothing growing
 };
 const DRY_SAND = SHORE_LOOKS.sand.sand;   // LAND_FRAGMENT's: the tint is against it
 const bedDetailUniform = { value: new THREE.Vector2(1, 1) };   // grain and silt contrast; cleaner coral sand at the lagoon
 const bedTintUniform = { value: new THREE.Vector4(1, 1, 1, 0) };   // FLOOR_SAND's uBedTint: the tint, and the grey share in w
 const shoreLookUniform = { value: new THREE.Vector4(0.3, 1, 1, 1) };   // LAND_FRAGMENT's uShoreLook...
 const shoreMoreUniform = { value: new THREE.Vector2(1, 0) };          // ...and uShoreMore
+const shoreGlowUniform = { value: 0 };   // LAND_FRAGMENT's uShoreGlow (setShoreGlow)
 /** The shore look in force (SHORE_LOOKS by name; 'sand' for one not there): the bed's tint and the beach's uniforms. */
 export function setShoreLook(name) {
   const look = SHORE_LOOKS[name] ?? SHORE_LOOKS.sand;
@@ -574,6 +576,7 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       uBedTint: bedTintUniform,       // the place's shore look (setShoreLook)...
       uShoreLook: shoreLookUniform,
       uShoreMore: shoreMoreUniform,
+      uShoreGlow: shoreGlowUniform,
       uSunDir: { value: lighting.sunDirection },
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
@@ -596,4 +599,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
   const mesh = new THREE.Mesh(koi ? koiLandGeometry(backdrop) : lagoon ? new THREE.BufferGeometry() : landGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
+}
+
+/** How much a frost beach glows at night (src/sky.js an hour's `glow`: Europa's night; 0 by day): LAND_FRAGMENT's uShoreGlow. */
+export function setShoreGlow(glow = 0) {
+  shoreGlowUniform.value = glow;
 }

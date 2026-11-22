@@ -65,7 +65,7 @@ The birds are photographs of real ones from Wikimedia Commons, cut out of their 
 
 ## Skies
 
-Every other place's sky, and the Reflecting Pool's pure skies, are HDRIs from [Poly Haven](https://polyhaven.com), all [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+Every other place's sky but Europa's (below), and the Reflecting Pool's pure skies, are HDRIs from [Poly Haven](https://polyhaven.com), all [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
 
 | Place | HDRIs | Authors |
 |---|---|---|
@@ -82,6 +82,17 @@ Every other place's sky, and the Reflecting Pool's pure skies, are HDRIs from [P
 | Reflecting Pool | Qwantani [Mid Morning](https://polyhaven.com/a/qwantani_mid_morning_puresky), [Sunset](https://polyhaven.com/a/qwantani_sunset_puresky), [Night](https://polyhaven.com/a/qwantani_night_puresky) (Pure Sky) | Greg Zaal and Jarod Guest |
 
 [Meadow 2](https://polyhaven.com/a/meadow_2) by Sergej Majboroda (CC0) is kept only to calibrate the sun's colour (`BALANCE_FILE` in `src/sky.js`); it isn't shown.
+
+## Europa
+
+Europa's sky is computed (`tools/europa-sky.py`) from spacecraft images, all public domain (works of NASA and the US Geological Survey):
+
+| Shows | Image | Mission and author | Licence |
+|---|---|---|---|
+| The ice: Conamara Chaos at 9 m a pixel, its light and shade and the relief worked out from them | [Galileo SSI observation mosaic 12ESCHAOS_01](https://astrogeology.usgs.gov/search/map/photogrammetrically_controlled_galileo_image_mosaics_of_europa), from the [Photogrammetrically Controlled, Equirectangular Galileo Image Mosaics of Europa](https://doi.org/10.5066/P9VKKK7C) | Galileo (NASA/JPL); mosaic by M. T. Bland, L. A. Weller, B. A. Archinal, E. Smith and B. H. Wheeler, USGS Astrogeology Science Center (2021) | Public domain |
+| Jupiter | [PIA07782: Cassini's Best Maps of Jupiter (Cylindrical Map)](https://commons.wikimedia.org/wiki/File:Jupiter_Cylindrical_Map_-_Dec_2000_PIA07782.jpg) | Cassini ISS: NASA/JPL/Space Science Institute | Public domain |
+
+Its stars and the Milky Way are drawn by the tool, not taken from a catalogue.
 
 ## Textures
 

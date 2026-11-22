@@ -20,6 +20,8 @@
 // tools/fft-test.mjs reproduces these passes on the CPU, also through
 // binary16 storage.
 
+import { EARTH_GRAVITY } from '../gravity.js';
+
 export const FULLSCREEN_VERTEX = /* glsl */`
 varying vec2 vUv;
 void main() {
@@ -35,6 +37,7 @@ uniform sampler2D uState;
 uniform float uN;            // grid size (texels per side)
 uniform float uCell;         // metres per texel
 uniform float uDepth;        // pond depth, metres
+uniform float uGravity;      // m/s², the place's (src/gravity.js)
 uniform float uDt;           // seconds advanced this pass
 uniform float uGamma0;       // base damping, 1/s, above uKDamp...
 uniform float uKDamp;        // ...and in proportion to k below it, but...
@@ -72,7 +75,7 @@ void main() {
   vec2 q = 2.0 * PI * vec2(kx, ky) / uN;     // radians per texel
   float qMag = length(q);
   float k = qMag / uCell;                      // radians per metre
-  float omega2 = (9.81 * k + 7.2e-5 * k * k * k) * tanh(min(k * uDepth, 20.0));
+  float omega2 = (uGravity * k + 7.2e-5 * k * k * k) * tanh(min(k * uDepth, 20.0));
   float omega = sqrt(omega2);
   float gamma = max(uGamma0 * min(k / uKDamp, 1.0), uGammaLeast) + uNu * k * k + (k < uKLow ? uGammaLow : 0.0) + uGammaBreaking;
 
@@ -160,6 +163,7 @@ uniform sampler2D uSeed;        // per wave vector: A₋ (r, g), A₊ (b, a), me
 uniform float uN;               // texels per side
 uniform float uTileSize;        // metres per side
 uniform float uDepth;           // pond depth, metres
+uniform float uGravity;         // m/s², the place's (src/gravity.js)
 uniform float uFrequencyStep;   // rad/s
 uniform float uTime;            // seconds, within one period
 uniform float uOutputScale;     // height texture units per metre
@@ -174,7 +178,7 @@ void main() {
   int size = int(uN);
   vec2 latticeIndex = vec2(texel.x < size / 2 ? texel.x : texel.x - size, texel.y < size / 2 ? texel.y : texel.y - size);
   float wavenumber = 2.0 * PI * length(latticeIndex) / uTileSize;
-  float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
+  float omega = sqrt((uGravity * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
   omega = floor(omega / uFrequencyStep + 0.5) * uFrequencyStep;
   float angle = omega * uTime;
   vec2 turn = vec2(cos(angle), sin(angle));
@@ -202,7 +206,7 @@ export const GALE_EVALUATE_FRAGMENT = /* glsl */`
 uniform sampler2D uSeed;        // per wave vector: A₋ (r, g), A₊ (b, a), metres
 uniform float uN;               // texels per side
 uniform float uTileSize;        // metres per side
-uniform float uDepth;           // the lake's depth for the dispersion, metres
+uniform float uDepth;           // the lake's depth for the dispersion, metres (with Earth's gravity: src/galeWaves.js)
 uniform float uFrequencyStep;   // rad/s
 uniform float uTime;            // seconds, within one period
 uniform float uOutputScale;     // texture units per metre
@@ -222,7 +226,7 @@ void main() {
   vec2 latticeIndex = vec2(texel.x < size / 2 ? texel.x : texel.x - size, texel.y < size / 2 ? texel.y : texel.y - size);
   vec2 waveVector = 2.0 * PI * latticeIndex / uTileSize;   // rad/m along world x and z
   float wavenumber = length(waveVector);
-  float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
+  float omega = sqrt((${EARTH_GRAVITY} * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
   omega = floor(omega / uFrequencyStep + 0.5) * uFrequencyStep;
   float angle = omega * uTime;
   vec2 turn = vec2(cos(angle), sin(angle));

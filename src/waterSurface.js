@@ -179,7 +179,7 @@ function poolPatchGeometry(water, segments, square) {
 // The ice's uniforms when there is no ice sheet (ICE_COMMON in src/shaders/scene.js): none, off.
 const NO_ICE = () => ({
   uIceMask: { value: null }, uIceArea: { value: new THREE.Vector3(0, 0, 1) }, uIceOn: { value: 0 }, uIceTop: { value: 0 },
-  uIceThickness: { value: 0 }, uIceFar: { value: 1 }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 }, uIcePool: { value: new THREE.Vector4() }, uSnow: { value: 0 },
+  uIceThickness: { value: 0 }, uIceFar: { value: 1 }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 }, uIcePool: { value: new THREE.Vector4() }, uIceCrust: { value: new THREE.Vector4() }, uSnow: { value: 0 },
   ...ICE_SHADOW_UNIFORMS,   // the shadows' shared set (src/iceShadow.js): none in use without ice
 });
 

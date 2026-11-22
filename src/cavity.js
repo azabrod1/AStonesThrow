@@ -224,8 +224,8 @@
 // never shows through the tiles.
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 import { frothWeber } from './crown.js';
+import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 
-const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
 const WATER_DENSITY = 1000;
 const ROCK_DENSITY = 2600;
@@ -243,7 +243,8 @@ const ADDED_MASS = 0.5;            // C_a: a body carries this share of the wate
 const STONE_UNDER_WATER = Object.freeze({ density: ROCK_DENSITY, ratio: DENSITY_RATIO, inertia: 1, drag: STONE_DRAG, head: STONE_HEAD, lift: LIFT, restingHeight: RESTING_HEIGHT });
 const ENTRY_HEIGHT = 0.7;          // the stone's centre at first contact, in radii above the water, when the impact does not say
 const PATH_STEP = 1 / 240;         // s: the app's substep at 60 frames a second, when the impact does not give one
-const PATH_SECONDS = 1.5;
+const PATH_SECONDS = 1.5;          // s under Earth's gravity: the path is traced for its time scale, sqrt(R/g), so for longer under a weaker (src/gravity.js)
+const pathSeconds = () => PATH_SECONDS * Math.sqrt(EARTH_GRAVITY / GRAVITY);
 // The walls.
 const SLICE_STEP = 1 / 6;          // slices this many radii apart
 const DEEPEST_SHARE = 0.6;         // the pinch is at most this share of the stone's depth at the pinch time (Duclaux et al. 2007)
@@ -560,7 +561,7 @@ export class Cavity {
    */
   tracePath(x, height, z, velocity, floorDepth, step, lift = null, water = undefined) {
     const radius = this.radius;
-    const steps = Math.ceil(PATH_SECONDS / step) + 1;
+    const steps = Math.ceil(pathSeconds() / step) + 1;
     this.pathStep = step;
     this.entryHeight = height;
     this.entrySinking = Math.max(-velocity.y, 0.1);
@@ -619,7 +620,7 @@ export class Cavity {
     const step = SLICE_STEP * radius;
     this.sliceStep = step;
     // As deep as the stone went by then: a thing lighter than water turns back up (the header).
-    const until = Math.min(2 * this.pinchTime + 0.05, PATH_SECONDS);
+    const until = Math.min(2 * this.pinchTime + 0.05, pathSeconds());
     let deepest = this.stoneAt(until).depth;
     for (let index = 0; index < this.pathCount && (index + 1) * this.pathStep <= until; index++) deepest = Math.max(deepest, this.pathDepth[index]);
     const count = Math.max(Math.floor(Math.max(deepest, step) / step) + 1, 3);

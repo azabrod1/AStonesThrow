@@ -114,6 +114,8 @@
 // needle's millimetre threads are most of it, a rock's centimetre column
 // almost nothing.
 
+import { GRAVITY } from './gravity.js';
+
 export const WATER = Object.freeze({ density: 1000, surfaceTension: 0.072, viscosity: 1.0e-3 });
 
 const TARGET_LENGTH = 2.0;     // segments are cut to about this many local radii...
@@ -147,11 +149,11 @@ const lehmer = (seed) => { let state = seed; return () => { state = (state * 168
 export class SlenderJet {
   /**
    * @param capacity the most nodes it holds (past it, segments are not split)
-   * @param gravity m/s²
+   * @param gravity m/s² (the place's, src/gravity.js, unless given)
    * @param water {density, surfaceTension, viscosity}
    * @param random the stream the seeds (NOISE) are drawn from
    */
-  constructor({ capacity = 1024, gravity = 9.81, water = WATER, random = null } = {}) {
+  constructor({ capacity = 1024, gravity = GRAVITY, water = WATER, random = null } = {}) {
     this.capacity = capacity;
     this.density = water.density;
     this.surfaceTension = water.surfaceTension;

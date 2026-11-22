@@ -7,6 +7,7 @@
 // rings a splash's drops leave (DROP_RING_SLOPES) read the same table;
 // src/dropRings.js says what they are.
 import { GALE_SURFACE } from './gale.js';
+import { EARTH_GRAVITY } from '../gravity.js';
 import { BUBBLE_SPRITE } from './bubble.js';
 import { MAX_DROP_RINGS } from '../dropRings.js';
 
@@ -355,7 +356,7 @@ export const SPLASH = {
   shine: [0.35, 1.0],   // a splash's own brightness, of the rain's opacity
   fade: [0.4, 1.0],     // px: a capsule fades out as its true width falls through these
   timePower: 0.5,       // a splash's times scale with the drop's size to this power (its lengths with the size itself)
-  gravity: 9.81,
+  gravity: EARTH_GRAVITY,   // Earth's wherever it rains: rain falls only through an air (src/gravity.js EARTH_GRAVITY)
 };
 const splashDefines = `
 #define SPLASH_CROWN_LIFE ${SPLASH.crown.life}

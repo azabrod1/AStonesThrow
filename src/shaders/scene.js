@@ -23,6 +23,9 @@ import { VISITOR_WATER } from './visitor.js';
 // (uHazeDensity 3/visibility: a dark object at the visibility keeps 5% of its
 // contrast). The dome fades the same way, to the distance its land stands
 // at. With no rain the density is 0 and the colour passes untouched.
+// A crust's glow at night (Europa's: ICE_CRUST_GLOW, the frost beach's uShoreGlow) against its light on level ice:
+// tools/europa-sky.py GLOW, 0.28 of it, green-blue (Gudipati et al. 2020), as the panorama's far ice glows.
+const CRUST_GLOW = [0.084, 0.266, 0.224];
 export const HAZE = /* glsl */`
 uniform vec3 uHazeColor;
 uniform float uHazeDensity;
@@ -101,6 +104,16 @@ vec3 snowShade(vec2 point) {
 //     bare black ice between is a mirror, the sun a small hard glint in it
 //     (a sheen spread evenly over the ice reads as a blur). It is flat:
 //     frozen, it has no ripples.
+// A place may give its ice an old crust instead (uIceCrust, src/places.js
+// iceCrust: Europa's): the snow ice's threshold lowered (ICE_CRUST_REACH),
+// so frost covers nearly all of it, rough and white, the bare ice left in
+// dark leads, and its frost a little warm, stained along long bands (ICE_CRUST_LINEA).
+// Its ice is blue where the frost on it is thin (ICE_CRUST_THIN) and in its
+// leads (ICE_CRUST_LEAD), and its shade is lit blue by the sunlit ice about it
+// (ICE_CRUST_FILL): under a black sky nothing else lights it. At night
+// (uIceGlow: Europa's) its frost glows green-blue under the radiation Jupiter
+// drives into it (ICE_CRUST_GLOW: its own light, not light it gives back),
+// dimmer along its stained bands (salts dim it: Gudipati et al. 2020).
 //
 // Wet (the flood round a hole and the splash's drops, src/ice.js; the rain's
 // film), the ice is darker, its white ice greyed, and smooth: a mirror. Once
@@ -126,6 +139,8 @@ uniform float uIceFar;         // the cap of the mask's distances (m)
 uniform float uIceGlaze;       // the mask's B where it was once wet and is dry (src/ice.js FLOOD.glaze)
 uniform float uIceWet;         // how wet the rain has made it (src/main.js WEATHERS)
 uniform vec4 uIcePool;         // a frozen pool's corner (x, z) and side (m), w 1; w 0 over a lake
+uniform vec4 uIceCrust;        // a place's old crust (src/places.js iceCrust): its stain's colour and how far frost covers it, 0 to 1
+uniform float uIceGlow;        // how much a crust glows at night (src/ice.js setGlow: Europa's), 0 by day
 #define ICE_INDEX 1.31
 #define ICE_CRACK_JAG 0.0005           // m: a crack's own roughness, finer than its points (ICE_CRACK_FRAGMENT)
 `;
@@ -150,6 +165,15 @@ ${ICE_UNIFORMS}
 #define ICE_FROST_LEVELS 320.0         // the sky cube's texels a radian, about (CUBE_SIZE in src/sky.js, 512, over π/2)...
 #define ICE_FROST_COARSEST 4.5         // ...blurred no further than this level (coarser, its faces' seams show)...
 #define ICE_FROST_SKY 2.5              // ...and no brighter than this times the sky's mean (iceSurface: the sun is the sheen's)
+#define ICE_CRUST_REACH 0.44           // how far a crust (uIceCrust.w 1) lowers the snow ice's threshold: frost nearly all over
+#define ICE_CRUST_LINEA 0.3            // m: the width of its stained bands, about (iceSurface)...
+#define ICE_CRUST_CAST 0.12            // ...and the share of their stain all its frost takes
+#define ICE_CRUST_THIN vec3(0.68, 0.85, 1.0)    // the tint of ice under thin frost: blue, as a glacier's (NASA: blue and white are the purest ice)
+#define ICE_CRUST_FILL 0.22            // the light the sunlit ice round about throws into its shade, against level ice's...
+#define ICE_CRUST_FILL_TINT vec3(0.62, 0.80, 1.0)   // ...blue, off ice onto ice (no air: nothing else lights a shadow)
+#define ICE_CRUST_LEAD vec3(0.05, 0.22, 0.42)  // what a bare lead's ice sends back of the sun's light: deep blue over the black sea
+#define ICE_CRUST_NIGHT_GLINT 0.1      // the share of a point sun's glint left on a crust lit by Jupiter's disc (iceSurface)
+#define ICE_CRUST_GLOW vec3(${CRUST_GLOW.join(', ')})   // a night crust's glow against its light on level ice (CRUST_GLOW)
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
 
@@ -264,7 +288,7 @@ IceLook iceLook(vec2 worldXZ, float footprint) {
   // streaks along the wind that blew it (ICE_SNOW_STREAK); drifted against a pool's walls.
   vec2 snow = iceFbm(mat2(0.8, -0.6, 0.6, 0.8) * worldXZ * vec2(1.0, ICE_SNOW_STREAK), 0.7, footprint * ICE_SNOW_STREAK);
   float drift = 0.07 * (1.0 - smoothstep(0.0, 8.0 * ICE_RIM, fromWall));
-  float threshold = mix(0.69, 0.56, thickShare) - drift;
+  float threshold = mix(0.69, 0.56, thickShare) - drift - ICE_CRUST_REACH * uIceCrust.w;
   float soft = 0.004 + 0.5 * snow.y * footprint;
   float covered = smoothstep(threshold - soft, threshold + soft, snow.x);
   float white = covered * (0.35 + 0.55 * smoothstep(threshold, threshold + 0.1, snow.x));
@@ -1944,6 +1968,20 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float shaded = dot(light, vec3(0.2126, 0.7152, 0.0722)) / max(dot(sunLight + skyLight, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
   under *= shaded;
   vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
+  // An old crust's frost (uIceCrust) is stained along long bands, as Europa's lineae are (a ridged noise's crests, stretched).
+  // The frost itself a little warm with it (Europa's natural colour is beige-white, its blue-grey the false colour's).
+  // Only a crust pays for its noise (a uniform branch): every other ice is as it was without it.
+  vec3 levelSun = uSunIrradiance * max(uSunDir.y, 0.0);
+  float stain = 0.0;
+  if (uIceCrust.w > 0.0) {
+    vec2 lineaAt = mat2(0.6, 0.8, -0.8, 0.6) * vWorld.xz * vec2(0.06, 0.16) / ICE_CRUST_LINEA + 17.0;
+    float linea = 1.0 - abs(2.0 * valueNoise(lineaAt + 0.8 * valueNoise(vWorld.xz * 0.4 + 5.0)) - 1.0);
+    stain = ICE_CRUST_CAST + (1.0 - ICE_CRUST_CAST) * smoothstep(0.86, 0.96, linea) * (0.5 + 0.5 * valueNoise(vWorld.xz * 7.0));
+    scattered *= mix(vec3(1.0), uIceCrust.rgb, uIceCrust.w * stain);
+    scattered = mix(scattered, scattered * ICE_CRUST_THIN, uIceCrust.w * (1.0 - smoothstep(0.45, 0.95, look.white)))
+      + uIceCrust.w * ICE_CRUST_FILL * ICE_WHITE_ALBEDO * levelSun * ICE_CRUST_FILL_TINT * ICE_CRUST_THIN;
+    under += uIceCrust.w * ICE_CRUST_LEAD * levelSun * (0.3 + 0.7 * shade.x) * (1.0 - look.white);
+  }
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
   float sineInside = clamp(length(v.xz) / ICE_INDEX, 0.0, 0.99);
@@ -1955,12 +1993,17 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
   body = mix(body, scattered * 1.15, face * clear);
   vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
-  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x;
+  // A crust's night is lit by Jupiter, a disc 12° across, not a point: its glint on the frost is spread to a sheen the
+  // frost's light already holds, so only a share is left (ICE_CRUST_NIGHT_GLINT).
+  float glintShare = mix(1.0, ICE_CRUST_NIGHT_GLINT, uIceGlow * uIceCrust.w);
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x * glintShare;
   // An old edge in new ice: a faint dark seam.
   color = mix(color, under * 0.7, 0.5 * seam);
   // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).
   float snow = snowOnIce(vWorld.xz, footprint) * (1.0 - newIce) * (1.0 - wet);
   if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * light, snow);
+  // A crust's night glow (uIceGlow): its frost's, not its open water's or its wet's.
+  color += uIceGlow * uIceCrust.w * ICE_CRUST_GLOW * dot(levelSun, vec3(0.2126, 0.7152, 0.0722)) * look.white * (1.0 - 0.85 * stain) * (1.0 - wet);
   return color;
 }
 
@@ -3292,6 +3335,7 @@ uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform samplerCube uLandCube;   // the land before the haze, for the grass (src/sky.js landCube)...
 uniform float uLandLevel;        // ...at this level of its mip chain
+uniform float uShoreGlow;        // how much a frost beach glows at night (src/pondFloor.js setShoreGlow: Europa's), 0 by day
 uniform vec4 uShoreLook;         // the place's shore (SHORE_LOOKS): the pebbles' share near the water, their size (times PEBBLE_RADII), the tufts' share (times TUFT_SHARE), the wrack's strength
 uniform vec2 uShoreMore;         // ...and how far inland the grass comes (times GRASS_FROM and GRASS_TO), the cracks of a dried flat (0 to 1)
 ${GARDEN_SHADE}
@@ -3630,6 +3674,8 @@ void main() {
   if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen), snow);
   // The haze by its distance (HAZE), but on the far land, which is the photo's, hazed already.
   if (uHazeDensity > 0.0) color = mix(color, uHazeColor, (1.0 - exp(-uHazeDensity * length(toLand))) * (1.0 - far));
+  // A frost beach's night glow (uShoreGlow), as its ice's (CRUST_GLOW): the far land, the photo's, glows in it already.
+  color += uShoreGlow * vec3(${CRUST_GLOW.join(', ')}) * dot(uSunIrradiance * max(uSunDir.y, 0.0), vec3(0.2126, 0.7152, 0.0722)) * (1.0 - far) * (1.0 - snow);
   gl_FragColor = vec4(color, 1.0);
 }
 `;

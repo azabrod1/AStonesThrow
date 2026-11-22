@@ -8,7 +8,9 @@
 //   (whose view looks down into the water), none for 'none';
 // - ten minutes of every place's flying birds (visit): always low over the
 //   water in the home view's sky (out past THROW_REACH from the eye, between
-//   1.2 m and the frame's top, but in a thermal's turns), at their kind's
+//   1.2 m and the place's home view's frame's top, but in a thermal's
+//   turns; the Swiss Alps' ravens, whose home view is the level one, above
+//   its far shore's band of dark forest), at their kind's
 //   speed, banked no more than 50°, never jumping between frames; over
 //   thirty seeds (each visit to the page draws its own) none comes much
 //   nearer than its group is laid out from, a thermal's circles too; they come
@@ -79,7 +81,12 @@ function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'}
 
 const EYE = new THREE.Vector3(LAYOUT_EYE.x, EYE_HEIGHT, LAYOUT_EYE.z);   // the home view's eye, as the birds are laid out from it (src/main.js VIEWS.shore)
 const THROW_REACH = 9;   // m: farther than anything thrown goes from the eye (it lands in the water's 6 m patch, at most 6.2 m off, its arc a few metres up)
-const FRAME_TOP = THREE.MathUtils.degToRad(7.4);   // the home view's frame reaches this far above the horizon (48° high, looking 16.6° down)
+// Each home view (src/main.js VIEWS; a place's is its `defaultView`, else the shore's): its eye, and how far above
+// the horizon its frame reaches (48° high: the shore view looking 16.6° down, the level one 1.8°).
+const HOME_VIEWS = {
+  shore: { eye: EYE, top: THREE.MathUtils.degToRad(7.4) },
+  level: { eye: new THREE.Vector3(0, 0.16, 0.5), top: THREE.MathUtils.degToRad(22.2) },
+};
 const DAY = { solarElevation: 37, sunDirection: new THREE.Vector3(0.6, 0.6, -0.5).normalize() };   // as the page gives them (src/main.js applySky)
 const NIGHT = { solarElevation: -28.3 };   // Lakeside Night: lit by a moon high up, the true sun well down
 const realRandom = Math.random;
@@ -107,13 +114,14 @@ function run(place, seconds, frame, { things = () => [], splashes = [], conditio
   return { birds, frames };
 }
 
-// Who lives where: some at every place but the Pool (its view looks down into the water, at no sky).
+// Who lives where: some at every place but the Pool (its view looks down into the water, at no sky) and Europa (no air).
+const BIRDLESS = ['pool', 'europa'];
 for (const place of Object.keys(PLACES)) {
   const birds = new BirdPopulation();
   birds.setPlace(place);
   const expected = (BIRDS_BY_PLACE[place] ?? []).reduce((sum, group) => sum + group.count, 0);
   const atNight = (BIRDS_AT_NIGHT[place] ?? []).reduce((sum, group) => sum + group.count, 0);
-  check((place === 'pool' ? expected === 0 : expected > 0) && birds.birds.length === expected + atNight, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
+  check((BIRDLESS.includes(place) ? expected === 0 : expected > 0) && birds.birds.length === expected + atNight, `${place}: ${birds.birds.length} birds (${[...new Set(birds.birds.map((bird) => BIRD_KINDS[bird.kind].name))].join(', ')})`);
 }
 {
   const none = new BirdPopulation(); none.setPlace('none');
@@ -137,6 +145,7 @@ for (const [label, where, frozen, night] of flyingRuns) {
   if (!groups.some((group) => group.habit === 'visit')) continue;
   const { frames } = run(where, 600, 1 / 60, { frozen, conditions: night ? NIGHT : DAY });
   const cruise = BIRD_KINDS[groups[0].kind].cruise;
+  const home = HOME_VIEWS[PLACES[where].defaultView ?? 'shore'];
   let nearest = Infinity, farthest = 0, lowest = Infinity, highestElevation = -Infinity, fastest = 0, slowest = Infinity, steepestBank = 0, fastestRoll = 0, biggestJump = 0;
   let visits = 0, inside = 0, styles = new Set(), entries = [];
   for (let index = 1; index < frames.length; index++) {
@@ -153,7 +162,7 @@ for (const [label, where, frozen, night] of flyingRuns) {
       nearest = Math.min(nearest, distance);
       if (Math.abs(bearingOf(bird)) < OUT_OF_FRAME) farthest = Math.max(farthest, distance);   // as far as it is seen
       lowest = Math.min(lowest, bird.y);
-      if (bird.style !== 'circle') highestElevation = Math.max(highestElevation, Math.atan2(bird.y - EYE.y, distance));
+      if (bird.style !== 'circle') highestElevation = Math.max(highestElevation, Math.atan2(bird.y - home.eye.y, Math.hypot(bird.x - home.eye.x, bird.z - home.eye.z)));
       steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
       if (!before.shown) return;
       const speed = Math.hypot(bird.x - before.x, bird.y - before.y, bird.z - before.z) * 60;
@@ -168,7 +177,7 @@ for (const [label, where, frozen, night] of flyingRuns) {
   // The Koi pond's garden is a photograph on a sphere 35 m round the eye (src/sky.js `garden` backdrop): its birds
   // fly inside it in the frame (out beyond its sides, where visits come and go, nothing is seen), never behind the picture.
   if (where === 'koi') check(farthest < 34, `${place}: they fly inside the garden's backdrop: farthest in the frame ${farthest.toFixed(1)} m from the eye`);
-  check(highestElevation < FRAME_TOP, `${place}: they stay in the home view's sky (but in a thermal): highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level`);
+  check(highestElevation < home.top, `${place}: they stay in the home view's sky (but in a thermal): highest ${THREE.MathUtils.radToDeg(highestElevation).toFixed(1)}° above the eye's level, its frame's top ${THREE.MathUtils.radToDeg(home.top).toFixed(1)}°`);
   check(slowest > 0.4 * cruise && fastest < 2.2 * cruise, `${place}: they fly at their speed: ${slowest.toFixed(1)} to ${fastest.toFixed(1)} m/s (cruising ${cruise})`);
   // Gliding turns, unhurried: a visit laid out within 28° of bank for its speed (a flock's outer birds a little more)
   // and rolled into over a second, never flicked over.
@@ -178,10 +187,18 @@ for (const [label, where, frozen, night] of flyingRuns) {
   check(visits >= 8 && seen > 0.2 && seen < 0.9, `${place}: they come and go: ${visits} visits in ten minutes, one in view ${(seen * 100).toFixed(0)}% of the time`);
   check(inside === 0, `${place}: every visit begins and ends out of the frame, beyond its sides (${inside} inside)`);
   // Each visit its own path: no two come in at the same place, and more than one way of going about where its birds
-  // have more than one (the songbirds only cross, tree row to tree row).
+  // have more than one (the songbirds cross, tree row to tree row, or hop in over one side and back).
   const sameEntry = entries.some((entry, index) => entries.slice(index + 1).some((other) => Math.hypot(entry.x - other.x, entry.y - other.y, entry.z - other.z) < 0.5 && Math.abs(Math.sin(entry.heading - other.heading)) < 0.05));
   const ways = new Set(groups.flatMap((group) => Object.keys(group.styles ?? {}))).size;
   check(!sameEntry && styles.size >= Math.min(2, ways), `${place}: every visit a path of its own (${[...styles].join(', ')})`);
+  if (where === 'swiss' && !night) {
+    // Seen from its home view (the level one), the far shore is a band of dark spruce forest up to about 6° above the
+    // eye's level (on the left all the way up): a black raven there is not seen. They fly above it, against the snow
+    // and the sky, but where they come in and go out on the left.
+    const seen = frames.flatMap((frame) => frame.birds.filter((bird) => bird.shown && Math.abs(Math.atan2(bird.x - home.eye.x, -(bird.z - home.eye.z))) < THREE.MathUtils.degToRad(38.4)));
+    const clear = seen.filter((bird) => Math.atan2(bird.y - home.eye.y, Math.hypot(bird.x - home.eye.x, bird.z - home.eye.z)) > THREE.MathUtils.degToRad(6)).length / seen.length;
+    check(clear > 0.8, `${place}: the ravens fly above the far shore's band of forest: ${(clear * 100).toFixed(0)}% of the time they are in the frame more than 6° above the level view's eye`);
+  }
   if (groups.some((group) => ['kelp', 'herring', 'fishEagle'].includes(group.kind))) {
     const shown = frames.filter((frame) => frame.birds.some((bird) => bird.shown));
     const flapping = shown.filter((frame) => frame.birds.some((bird) => bird.shown && bird.beat > 0.5)).length / shown.length;
@@ -249,16 +266,23 @@ for (const [label, where, frozen, night] of flyingRuns) {
   if (!groups.some((group) => group.habit === 'visit')) continue;
   const { frames } = run(where, 600, 1 / 60, { frozen, view: PHONE_FRAME, conditions: night ? NIGHT : DAY });
   let nearest = Infinity, steepestBank = 0, inside = 0;
+  // A hop turns back a short way inside the frame's edge (src/birds.js layVisit): on the phone's narrower frame too,
+  // each comes into it, never turning back beyond its side unseen.
+  const hops = [];
   frames.forEach((frame, index) => frame.birds.forEach((bird, which) => {
     const before = index ? frames[index - 1].birds[which] : bird;
     if (bird.shown !== before.shown && Math.abs(bearingOf(bird.shown ? bird : before)) < THREE.MathUtils.degToRad(PHONE_FRAME + 15)) inside++;
     if (!bird.shown) return;
+    if (bird.style === 'hop' && (!index || !before.shown)) hops[which] = (hops[which] ?? []).concat([{ seen: false }]);
+    if (bird.style === 'hop' && Math.abs(bearingOf(bird)) < THREE.MathUtils.degToRad(PHONE_FRAME)) hops[which].at(-1).seen = true;
     nearest = Math.min(nearest, Math.hypot(bird.x - EYE.x, bird.z - EYE.z));
     steepestBank = Math.max(steepestBank, Math.abs(bird.bank));
   }));
   const phone = inFrameShare(where, frozen, night, PHONE_FRAME, PHONE_FRAME), wide = inFrameShare(where, frozen, night, WIDE_FRAME, null);
   check(inside === 0 && nearest > THROW_REACH && steepestBank <= THREE.MathUtils.degToRad(35) + 1e-9, `${label}, upright phone: every visit begins and ends beyond the frame's sides (${inside} inside), nearest ${nearest.toFixed(1)} m, banked at most ${THREE.MathUtils.radToDeg(steepestBank).toFixed(1)}°`);
   check(phone > 0.8 * wide && phone < 1.5 * wide, `${label}, upright phone: a bird in its frame ${(phone * 100).toFixed(0)}% of the time, a wide screen's ${(wide * 100).toFixed(0)}%`);
+  const hopVisits = hops.flat().filter(Boolean);
+  if (hopVisits.length) check(hopVisits.every((hop) => hop.seen), `${label}, upright phone: every hop comes into its frame (${hopVisits.filter((hop) => hop.seen).length} of ${hopVisits.length})`);
 }
 {
   // Laid out as it always was for a frame as wide as a 16:9 screen's or wider.
