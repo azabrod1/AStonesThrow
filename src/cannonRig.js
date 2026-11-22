@@ -62,7 +62,8 @@
 // Nothing of it is black: red, blue, brass and grey. One program for all of
 // it: the nozzle's (src/main.js passes a material
 // maker that gives the nozzle's program, its parameters alike, so nothing
-// here compiles a program of its own), each part's colour by vertex.
+// here compiles a program of its own), each part's colour by vertex. Every
+// mesh is culled by each pass's view.
 import * as THREE from 'three';
 
 export const PUMP = {
@@ -555,7 +556,8 @@ export class CannonRig {
     this.clamp = new THREE.Mesh(clampGeometry(), this.pump.material);               // the band round the nozzle, with it
     this.yokeReach = 0;
     this.meshes = [this.pump, this.suction.mesh, this.delivery.mesh, this.strainer, this.stand, this.yoke, this.clamp];
-    for (const mesh of this.meshes) { mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh); }
+    // Culled by each pass's view (each geometry's sphere: the hoses' made again whenever they are laid or lifted, tubeAlong).
+    for (const mesh of this.meshes) { mesh.visible = false; scene.add(mesh); }
     this.scene = scene;
     this.nozzleAt = new THREE.Matrix4();   // the nozzle as the delivery hose was last laid to it
     this.restingAt = (x, z, radius) => this.restOf(x, z, radius);
