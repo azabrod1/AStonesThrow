@@ -582,6 +582,7 @@ export class CannonRig {
       }
     }
     this.lowest = new THREE.Vector3();
+    this.warming = false;   // the warm-up's (warmUp): the twins shown, whatever else hides them
     this.nozzleAt = new THREE.Matrix4();   // the nozzle as the delivery hose was last laid to it
     this.restingAt = (x, z, radius) => this.restOf(x, z, radius);
     // What laying the delivery hose again works in (show), kept so a sweep of the nozzle makes no garbage.
@@ -749,6 +750,7 @@ export class CannonRig {
    * under the still surface (a hose on the land or the ice, or a stand on the deck, draws nothing there).
    */
   showBelow(shown) {
+    if (this.warming) return;
     const lowest = this.lowest;
     for (const { mesh, twin } of this.below) {
       twin.position.copy(mesh.position); twin.quaternion.copy(mesh.quaternion); twin.scale.copy(mesh.scale);
@@ -760,8 +762,15 @@ export class CannonRig {
     }
   }
 
-  /** For the warm-up (src/main.js warmUp): its under-water twins shown whatever they hold, so their program is built; then hidden. */
-  warmUp(on) { for (const { twin } of this.below) twin.visible = on; }
+  /**
+   * For the warm-up (src/main.js warmUp): its under-water twins shown whatever they hold, so their program is built,
+   * and kept shown while `on` (the preview's frame hides the rig when something else is in hand); then hidden. Only
+   * those with normals: the stand's is empty until the rig is first placed, and three would build it a flat-shaded twin.
+   */
+  warmUp(on) {
+    this.warming = on;
+    for (const { twin } of this.below) twin.visible = on && Boolean(twin.geometry.attributes.normal);
+  }
 
   /** Hidden (the preview is gone, or another thing is in hand). */
   hide() { for (const mesh of this.meshes) mesh.visible = false; this.showBelow(false); }
