@@ -294,11 +294,15 @@ export const FAN = {
   kick: 0.06,           // ...kicked by this share of the sheet's speed there: they stream on off the tongue, a little apart
   // In vacuum (the header) the fan is grains: `samples` places across it a step (the stronger of two parts drawn, so
   // more of them off its fingers), each carrying an equal part of `share` of the flow (a hundredth: the spray's
-  // budget, the header), in grains of mean radius `radius` (m: within the spray's most, SPRAY_MOST_RADIUS, the
-  // larger of its spread held to it and counted so: throwGrains), kicked by `kick` of the part's speed (the drops'
-  // own flashing scatters them) and scattered over `spread` of the fan's width at its foot.
-  frozen: { samples: 3, share: 0.01, radius: 0.0008, kick: 0.05, spread: 0.5 },
+  // budget, the header), in grains of mean radius `radius` (m: the spray's most, SPRAY_MOST_RADIUS, the larger of
+  // its spread held to it and counted so: GRAIN_DROPS; a grain that large is a sprite of its own on every preset, so
+  // crowding alone makes them heavier, and the heaviest stays well short of a puff: tools/thing-probe.mjs), kicked by
+  // `kick` of the part's speed (the drops' own flashing scatters them) and scattered over `spread` of the fan's width
+  // at its foot.
+  frozen: { samples: 3, share: 0.01, radius: 0.001, kick: 0.05, spread: 0.5 },
 };
+// The grains' drops in a cubic metre of their water, as burst draws them (held to the spray's most): worked out once.
+const GRAIN_DROPS = sprayDrops(1, FAN.frozen.radius, SPRAY_MOST_RADIUS);
 // The white water where it lands (the header; src/whiteWater.js): its scale is the length L = (QU/g)^(1/3) at which
 // the stream's momentum flux ρQU heaps water up against its weight (9 cm for the weakest jet, 27 at 3 bar, 74 for the
 // deck gun), its speeds go as sqrt(gL) and its times as sqrt(L/g) (T), so a bigger stream's churn is the same churn
@@ -461,8 +465,8 @@ export class WaterCannon {
     // The fan (FAN): a ring of the moments it was thrown at, `head` the oldest with any of it still in the air; for
     // each moment the launch of each part across it (the fan's columns).
     this.tail = this.makeTail(fanCapacity());
-    this.thrown = { vx: 0, vy: 0, vz: 0 };
-    this.thrownParts = { velocity: new Float32Array(FAN_GRID.columns * 3), strength: new Float32Array(FAN_GRID.columns) };   // the line the last landing threw (throwFan), kept in the ring or not   // the fan's middle's launch at the last landing (the spray goes with it)
+    this.thrown = { vx: 0, vy: 0, vz: 0 };   // the fan's middle's launch at the last landing (the spray goes with it)
+    this.thrownParts = { velocity: new Float32Array(FAN_GRID.columns * 3), strength: new Float32Array(FAN_GRID.columns) };   // the line the last landing threw (throwFan), kept in the ring or not
     this.stepSeconds = 1 / 240;
   }
 
@@ -853,7 +857,7 @@ export class WaterCannon {
     const spray = this.splash.spray;
     if (!spray) return;
     const line = this.thrownParts, parts = FAN_GRID.columns, frozen = FAN.frozen, random = this.grainRandom;
-    const drops = sprayDrops((flow * this.stepSeconds * frozen.share) / frozen.samples, frozen.radius, SPRAY_MOST_RADIUS);
+    const drops = (flow * this.stepSeconds * frozen.share * GRAIN_DROPS) / frozen.samples;
     for (let sample = 0; sample < frozen.samples; sample++) {
       const one = Math.floor(random() * parts), other = Math.floor(random() * parts);
       const part = line.strength[one] >= line.strength[other] ? one : other;

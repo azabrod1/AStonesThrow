@@ -149,6 +149,8 @@ import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { WaterCannon, CANNON, FAN, IMPACT, nozzle } from '../src/waterCannon.js';
 import { SpraySystem, SPRAY_STRIDE } from '../src/spray.js';
+import { SPRAY_VERTEX } from '../src/shaders/fluid.js';
+import { readFileSync } from 'node:fs';
 import { EARTH_GRAVITY, setGravity } from '../src/gravity.js';
 import { EARTH_AIR, setAirDensity } from '../src/air.js';
 import { PLACES } from '../src/places.js';
@@ -613,7 +615,8 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   // instead, at the slider's ends as in its middle. Vacuum is Europa's whole: no air (so the stream flashes into its
   // cone) and its gravity. Each run has its own stand-in splash, its clock stepped with it; `making.grain` says while
   // throwGrains is making a burst, `making.lines` counts the lines it was given.
-  const squirt = ({ airless, pressure, spray, seconds = 0.3, steps = 4 * 240, grains = true, making = {}, x = 0.4, z = -1.5 }) => {
+  // `tongues` (with `grains` false) is the fan in vacuum as main had it: no grains, its tongue drops thrown as in air.
+  const squirt = ({ airless, pressure, spray, seconds = 0.3, steps = 4 * 240, grains = true, tongues = false, making = {}, x = 0.4, z = -1.5 }) => {
     if (airless) { setAirDensity(0); setGravity(PLACES.europa.gravity); }
     try {
       let rows = 0;
@@ -622,6 +625,10 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
       const own = new WaterCannon({ water, splash: { ...splash, time: 0, airless, spray }, fan });
       const throwGrains = own.throwGrains.bind(own);
       own.throwGrains = (...args) => { making.lines++; if (!grains) return; making.grain = true; try { throwGrains(...args); } finally { making.grain = false; } };
+      if (tongues) {
+        const stepFan = own.stepFan.bind(own);
+        own.stepFan = (...args) => { own.splash.airless = false; try { stepFan(...args); } finally { own.splash.airless = airless; } };
+      }
       own.start({ hand: handFor(0.025, thing), x, z, pressure, thing, radius: 0.025, time: 0, seconds });
       for (let step = 0; step < steps; step++) { own.splash.time = step * STEP; own.step(step * STEP, STEP, []); own.drawAt(step * STEP); }
       return { rows, landings: own.landings, landedWater: own.landings * nozzle(pressure, thing.stream).flow * STEP };
@@ -647,53 +654,62 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   }
   // And the grains are what they claim and fit the spray's budget, which every emitter shares (src/spray.js: past it a
   // burst writes fewer, heavier sprites, and one of PUFF_LEAST drops or more is drawn as a puff of mist,
-  // src/shaders/fluid.js; its ring, wrapping, takes sprites still in the air). A 2 s squirt in Europa's vacuum on
-  // Low's budget, the least, at each pressure, run with its grains and without, the sprites as written: the grains
-  // carry FAN.frozen.share of the water landed (within GRAIN_WATER: their larger, held to the spray's most, are
-  // counted so); none is written as a puff; the stream's own frozen cone (IMPACT.sheet's drops) is written at most
-  // GRAIN_CROWDING times as heavy, and at most GRAIN_OVERWRITE more of what is written takes a sprite still in the air.
-  // A fan to be seen costs some of the budget: the tongue drops the grains replace (FAN.drops, which ran in vacuum
-  // before) cost more (on Low at 3 bar they made the cone 1.8 times as heavy and 43% more take a sprite in the air;
-  // the grains 1.6 times and 27%); grains as dense as the sheet's water (share 0.3, 0.8 mm) made the cone up to 4.8
-  // times as heavy and 67% more take a sprite in the air. How many grains are taken before their apex is printed, not
-  // checked: what the spray's ring keeps under Europa's long flights is the spray's, not the fan's.
+  // src/shaders/fluid.js; its ring, wrapping, takes sprites still in the air). A squirt in Europa's vacuum on Low's
+  // budget (src/main.js QUALITY.low.spray), the least, at each pressure, aimed out (2 s) and close in front (4 s, the
+  // stream's own spray thickest about it), the sprites as written (the spray's own tally, so a write it refuses is not
+  // counted): the grains carry FAN.frozen.share of the water landed (within GRAIN_WATER: their larger, held to the
+  // spray's most, are counted so), and the heaviest grain is GRAIN_HEAVIEST of a puff at most (crowding by anything
+  // else in the air, a stone's splash, makes them heavier still). Against the fan as main had it in vacuum (its
+  // tongue drops thrown as in air, and no grains), the stream's own frozen cone (IMPACT.sheet's drops) is written at
+  // most GRAIN_CROWDING times as heavy, and at most GRAIN_OVERWRITE more of what is written takes a sprite still in
+  // the air: the grains cost no more of the budget than what they replace. How many grains are taken before their
+  // apex is printed, not checked: what the spray's ring keeps under Europa's long flights is the spray's, not the fan's.
   {
-    const PUFF_LEAST = 40, GRAIN_WATER = 0.05, GRAIN_CROWDING = 1.75, GRAIN_OVERWRITE = 0.3, LOW_SPRAY = { ring: 8192, share: 0.2 };   // src/main.js QUALITY.low.spray
-    const run = (pressure, grains) => {
+    const PUFF_LEAST = Number(/#define PUFF_LEAST ([0-9.]+)/.exec(SPRAY_VERTEX)[1]);
+    const lowSpray = /low: \{[^\n]*spray: \{ ring: (\d+), share: ([0-9.]+) \}/.exec(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+    const LOW_SPRAY = { ring: Number(lowSpray[1]), share: Number(lowSpray[2]) };
+    const GRAIN_WATER = 0.05, GRAIN_HEAVIEST = 0.75, GRAIN_CROWDING = 1.1, GRAIN_OVERWRITE = 0.05;
+    const run = ({ pressure, grains, tongues = false, x, z, seconds }) => {
       const spray = new SpraySystem();
       spray.setBudget(LOW_SPRAY);
-      const making = {}, apex = new Float64Array(LOW_SPRAY.ring).fill(-Infinity);
+      const making = {}, apex = new Float64Array(LOW_SPRAY.ring).fill(-Infinity), tally = spray.tally;
       let written = 0, overwritten = 0, heaviestGrain = 0, grainWater = 0, grainSprites = 0, grainsCut = 0, coneWeight = 0, coneSprites = 0, inCone = false;
       const write = spray.write.bind(spray);
       spray.write = (x, y, z, vx, vy, vz, radius, weight, time) => {
-        const slot = spray.next, base = slot * SPRAY_STRIDE;
-        if (slot < spray.used && spray.data[base + 3] + spray.data[base + 7] > time) overwritten++;
-        if (apex[slot] > time) grainsCut++;
-        apex[slot] = -Infinity;
+        // The slot it would take, and what is there: if it starts the ring over instead, everything there has landed.
+        const slot = spray.next, base = slot * SPRAY_STRIDE, used = spray.used;
+        const alive = slot < used && spray.data[base + 3] + spray.data[base + 7] > time, cut = apex[slot] > time;
+        const sprites = tally.sprites, water = tally.water;
+        write(x, y, z, vx, vy, vz, radius, weight, time);
+        if (tally.sprites === sprites) return;   // refused (it never flies)
+        const taken = (spray.next + spray.ring - 1) % spray.ring;
+        if (taken === slot) { if (alive) overwritten++; if (cut) grainsCut++; }
+        apex[taken] = -Infinity;
         written++;
         if (making.grain) {
           heaviestGrain = Math.max(heaviestGrain, weight);
-          grainWater += weight * (4 / 3) * Math.PI * radius ** 3;
+          grainWater += tally.water - water;
           grainSprites++;
-          apex[slot] = time + Math.max(vy, 0) / PLACES.europa.gravity;
+          apex[taken] = time + Math.max(vy, 0) / PLACES.europa.gravity;
         }
         if (inCone) { coneWeight += weight; coneSprites++; }
-        return write(x, y, z, vx, vy, vz, radius, weight, time);
       };
       const burst = spray.burst.bind(spray);
       spray.burst = (args) => { inCone = !making.grain && args.radius === IMPACT.sheetRadius; try { return burst(args); } finally { inCone = false; } };
-      const made = squirt({ airless: true, pressure, spray, seconds: 2, steps: 3 * 240, grains, making });
+      const made = squirt({ airless: true, pressure, spray, seconds, steps: (seconds + 1) * 240, grains, tongues, making, x, z });
       return {
         overwrites: overwritten / Math.max(written, 1), heaviestGrain, cone: coneWeight / Math.max(coneSprites, 1),
         grainShare: grainWater / Math.max(made.landedWater, 1e-12), grainsCut: grainsCut / Math.max(grainSprites, 1),
       };
     };
     for (const pressure of [thing.slider.min, thing.slider.initial, thing.slider.max]) {
-      const without = run(pressure, false), withGrains = run(pressure, true);
-      check(Math.abs(withGrains.grainShare / FAN.frozen.share - 1) < GRAIN_WATER && withGrains.heaviestGrain < PUFF_LEAST
-        && withGrains.cone <= GRAIN_CROWDING * without.cone && withGrains.overwrites <= without.overwrites + GRAIN_OVERWRITE,
-        `on Low's spray budget at ${pressure} bar in vacuum the fan's grains carry ${(100 * withGrains.grainShare).toFixed(2)}% of the water landed (FAN.frozen.share ${100 * FAN.frozen.share}%), written ${withGrains.heaviestGrain.toFixed(1)} drops a sprite at most (under ${PUFF_LEAST}); the stream's cone ${withGrains.cone.toFixed(0)} on average (${without.cone.toFixed(0)} with no grains), and ${(100 * withGrains.overwrites).toFixed(0)}% of what is written takes a sprite still in the air (${(100 * without.overwrites).toFixed(0)}% with no grains)`);
-      console.log(`  on Low at ${pressure} bar in vacuum ${(100 * withGrains.grainsCut).toFixed(0)}% of the fan's grains are taken by the spray's ring before their apex`);
+      for (const [where, x, z, seconds] of [['aimed out', 0.4, -1.5, 2], ['aimed close in front', 0.3, 1.5, 4]]) {
+        const before = run({ pressure, grains: false, tongues: true, x, z, seconds }), now = run({ pressure, grains: true, x, z, seconds });
+        check(Math.abs(now.grainShare / FAN.frozen.share - 1) < GRAIN_WATER && now.heaviestGrain <= GRAIN_HEAVIEST * PUFF_LEAST
+          && now.cone <= GRAIN_CROWDING * before.cone && now.overwrites <= before.overwrites + GRAIN_OVERWRITE,
+          `on Low's spray budget at ${pressure} bar in vacuum, ${where}, the fan's grains carry ${(100 * now.grainShare).toFixed(2)}% of the water landed (FAN.frozen.share ${100 * FAN.frozen.share}%), written ${now.heaviestGrain.toFixed(1)} drops a sprite at most (at most ${GRAIN_HEAVIEST * PUFF_LEAST}, a puff's ${PUFF_LEAST}); the stream's cone ${now.cone.toFixed(0)} on average (${before.cone.toFixed(0)} with main's tongue drops), and ${(100 * now.overwrites).toFixed(0)}% of what is written takes a sprite still in the air (${(100 * before.overwrites).toFixed(0)}% with them)`);
+        console.log(`  on Low at ${pressure} bar in vacuum, ${where}, ${(100 * now.grainsCut).toFixed(0)}% of the fan's grains are taken by the spray's ring before their apex`);
+      }
     }
   }
   // The water it churns, which the fish keep out of (landing.churn, src/fish.js): none where it comes down on ice.

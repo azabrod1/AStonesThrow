@@ -203,7 +203,9 @@ export function seededOnce(first, second, third) {
 /**
  * How many drops `water` m³ makes in drops of mean radius `meanRadius` (a gamma of order 4: E[r³] = 1.875·mean³).
  * Given `most`, the radius a burst holds them to, as burst draws them (heldCube): held there, the larger carry less,
- * so as many more drops make the same water (a mean near `most` loses most of it otherwise).
+ * so as many more drops make the same water (a mean near `most` loses most of it otherwise). That sums over the
+ * quantile table, some four thousand points: it is linear in `water`, so work it out once for a cubic metre and
+ * scale it, never in a step.
  */
 export function sprayDrops(water, meanRadius, most = null) {
   if (most !== null) return water / ((4 / 3) * Math.PI * heldCube(meanRadius, most));
@@ -211,15 +213,10 @@ export function sprayDrops(water, meanRadius, most = null) {
   return water / ((4 / 3) * Math.PI * cubed * meanRadius ** 3);
 }
 
-// The mean cube of the radius burst draws for a mean radius and a `most` (heldCube), by the pair: few pairs are asked.
-const HELD_CUBES = new Map();
-const HELD_STEPS = 16;   // points along each step of the quantile table
+const HELD_STEPS = 16;   // points along each step of the quantile table (heldCube)
 
 /** E[r³] of gammaFactor's draws at mean `meanRadius`, held within SPRAY_LEAST_RADIUS and `most` (m³), as burst draws them. */
 function heldCube(meanRadius, most) {
-  const key = `${meanRadius}:${most}`;
-  let cube = HELD_CUBES.get(key);
-  if (cube !== undefined) return cube;
   let sum = 0;
   for (let index = 0; index < GAMMA_TABLE_SIZE - 1; index++) {
     for (let step = 0; step < HELD_STEPS; step++) {
@@ -227,9 +224,7 @@ function heldCube(meanRadius, most) {
       sum += Math.min(Math.max(meanRadius * factor, SPRAY_LEAST_RADIUS), most) ** 3;
     }
   }
-  cube = sum / ((GAMMA_TABLE_SIZE - 1) * HELD_STEPS);
-  HELD_CUBES.set(key, cube);
-  return cube;
+  return sum / ((GAMMA_TABLE_SIZE - 1) * HELD_STEPS);
 }
 
 /**
