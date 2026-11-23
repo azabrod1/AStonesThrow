@@ -12,7 +12,8 @@
 //       { by: 'mass', unit: 'g' | 'kg' | 'lb' | 'ct', min, max, step, initial }   (a body.diameter, or a density)
 //       { by: 'preset', unit, presets: [{ value, label, diameter, mass, name }], initial }   (`name` what the size is called: "Size 7")
 //         (a preset may instead have `choices`, a list of 2 to 8 { diameter, mass, look?, water?, air?, body? }: each
-//         throw at that step is one of them, drawn at random (variantAt's `pick`; a bouquet of 7, 9 or 11 roses))
+//         throw at that step is one of them, drawn at random (variantAt's `pick`; a bouquet of 3, 5 or 7 roses); a
+//         thing of one preset has no slider, its one preset always thrown)
 //       { by: 'fixed', diameter, mass }   (the slider off)
 //     A sphere's density follows from its mass and diameter; a mesh's from
 //     its mass and its mesh's own volume (src/rock.js), a pizza's being a disc;
@@ -203,8 +204,8 @@
 //     2100 kg/m³: plates that sink, each but the iPhone its home screen
 //     painted on its glass), a cast-iron frying pan (20, 25 or 30 cm, 1.5 to
 //     3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside) and red roses
-//     (one, or an odd number up to 19 tied, drawn at random from the
-//     step's few, blooms of petals wound in a spiral: 30 to 40 g a rose,
+//     (3, 5 or 7 tied, drawn at random for each throw, blooms of
+//     petals wound in a spiral: 40 to 45 g a rose,
 //     250 to 350 kg/m³, floating by their blooms' hulls as a raft, blooms
 //     up, shedding petals as they are flung and as they strike);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
@@ -538,7 +539,7 @@ export function defineThing(key, definition, { trial = true } = {}) {
     // A stream's slider is its pressure (the header), its body of one size.
     slider: definition.stream ? { ...definition.stream.pressure }
       : size.by === 'fixed' ? null
-        : size.by === 'preset' ? { min: size.presets[0].value, max: size.presets.at(-1).value, step: 1, initial: size.initial, unit: size.unit }
+        : size.by === 'preset' ? (size.presets.length > 1 ? { min: size.presets[0].value, max: size.presets.at(-1).value, step: 1, initial: size.initial, unit: size.unit } : null)
           : { min: size.min, max: size.max, step: size.step, initial: size.initial, unit: size.unit },
     measure: measureFor(definition),
     readout: readoutFor(definition),
@@ -559,9 +560,11 @@ export function defineThing(key, definition, { trial = true } = {}) {
       if (made.length > 0) variants.set(preset.value, made);
     }
   }
-  thing.variantAt = (value, pick) => { const made = variants.get(Math.round(value ?? thing.slider?.initial)); return made ? pickOf(made, pick) : thing; };
+  // (A thing of one preset has no slider: its value is always its preset's.)
+  const valueOf = (value) => Math.round(value ?? thing.slider?.initial ?? size.initial);
+  thing.variantAt = (value, pick) => { const made = variants.get(valueOf(value)); return made ? pickOf(made, pick) : thing; };
   /** Each thing a throw at slider value `value` may be (more than one at a preset with choices). */
-  thing.choicesAt = (value) => variants.get(Math.round(value ?? thing.slider?.initial)) ?? [thing];
+  thing.choicesAt = (value) => variants.get(valueOf(value)) ?? [thing];
   thing.variants = [thing, ...[...variants.values()].flat()];
   // Each one's strip line its own (a variant's length and volume its own mesh's); the thing's from its plain definition,
   // whose mesh's volume its measure has measured already (unitVolume).
@@ -950,41 +953,29 @@ defineBuiltIn('pan', {
   water: { restingHeight: 0.1049 },
   look: { mesh: 'pan', size: 25, roughness: 0.55, reflection: 0.9, wet: { darker: 0.05, glossier: 0.35 } },
 });
-// Red roses (the header): one long-stemmed rose, or a bouquet tied in a spiral under a satin ribbon, always an odd
-// number of them, as a florist ties them: each step of the slider a few counts (its preset's `choices`, each a thing of
-// its own, its `look.count`, src/thingMeshes.js ROSES), and each throw one of them, drawn at random (src/main.js
-// throwAt: a throw by hand the one its preview showed). Each weighs what its parts do (ROSES' densities: a bloom some
-// 12 g, its stem and leaves about as heavy as the water they displace, its ribbon a few grams): 30 to 40 g a rose. Its
+// Red roses (the header): a bouquet tied in a spiral under a satin ribbon, of 3, 5 or 7, an odd number as a florist ties
+// them: its one preset's `choices` (each a thing of its own, its `look.count`, src/thingMeshes.js ROSES), no slider, and
+// each throw one of them, drawn at random (src/main.js throwAt: a throw by hand the one its preview showed). Each
+// weighs what its parts do (ROSES' densities: a bloom some 12 g, its stem and leaves about as heavy as the water they
+// displace, its ribbon a few grams): 40 to 45 g a rose. Its
 // petals hold air between them, so the whole is 250 to 350 kg/m³ and floats, a third or less under; its weight is lower
 // than its volume's middle (`ballast`, each its own: a rose's far down its stem), so it floats lying on the water, its
 // stems under and its blooms up, not on its blooms with its stems in the air. Its nominal radius is its ball's of like
-// volume (its splash a thing's that displaces as much). One rose's buoyancy is cut finer (`columns`), so its stem floats
-// as well as its bloom, and a big bouquet's, so its columns hold its body. It floats by its blooms' hulls, its petals
+// volume (its splash a thing's that displaces as much). It floats by its blooms' hulls, its petals
 // drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles slowly, end over end, its flowers swaying on
 // their stems as it goes, whipping on as it strikes and drooping as it lies (src/rock.js swayStep), and it sheds petals
 // as it is flung and as it strikes (src/petals.js).
 defineBuiltIn('roses', {
-  name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 19: it floats', called: 'roses',
+  name: 'Roses', group: 'Other', note: 'A bouquet of 3, 5 or 7: it floats', called: 'roses',
   body: {
     shape: 'mesh',
-    ballast: [0, -1.122, 0],
+    ballast: [0, -1.392, 0],
     size: {
-      by: 'preset', unit: 'roses', initial: 3, presets: [
-        { value: 1, name: '1 rose', label: '30 g', diameter: 0.0562, mass: 0.0298, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.388, 0] } },
-        { value: 2, name: '3 or 5 roses', label: '137–217 g', choices: [
+      by: 'preset', unit: 'roses', initial: 1, presets: [
+        { value: 1, name: '3, 5 or 7 roses', label: '137–296 g', choices: [
           { diameter: 0.0886, mass: 0.1374, look: { count: 3 }, body: { ballast: [0, -1.687, 0] } },
           { diameter: 0.1046, mass: 0.2166, look: { count: 5 }, body: { ballast: [0, -1.392, 0] } },
-        ] },
-        { value: 3, name: '7 to 11 roses', label: '296–437 g', choices: [
           { diameter: 0.1179, mass: 0.2958, look: { count: 7 }, body: { ballast: [0, -1.217, 0] } },
-          { diameter: 0.1285, mass: 0.3716, look: { count: 9 }, body: { ballast: [0, -1.118, 0] } },
-          { diameter: 0.1350, mass: 0.4369, look: { count: 11 }, body: { ballast: [0, -1.070, 0] } },
-        ] },
-        { value: 4, name: '13 to 19 roses', label: '513–747 g', choices: [
-          { diameter: 0.1429, mass: 0.5132, look: { count: 13 }, body: { ballast: [0, -1.021, 0] } },
-          { diameter: 0.1504, mass: 0.5934, look: { count: 15 }, body: { ballast: [0, -0.967, 0] } },
-          { diameter: 0.1593, mass: 0.6916, look: { count: 17 }, body: { ballast: [0, -0.888, 0] } },
-          { diameter: 0.1624, mass: 0.7467, look: { count: 19 }, water: { columns: 24 }, body: { ballast: [0, -0.901, 0] } },
         ] },
       ],
     },
@@ -992,7 +983,7 @@ defineBuiltIn('roses', {
   material: { bounce: [0.05, 0.12], friction: 0.8 },
   air: { drag: 1.0, spin: [1.5, 6] },
   water: { restingHeight: 0.5, columnsAlong: [0, 1, 0] },
-  look: { mesh: 'roses', count: 9, roughness: 0.9, reflection: 0.85, wet: { darker: 0.05, glossier: 0.15 } },
+  look: { mesh: 'roses', count: 5, roughness: 0.9, reflection: 0.85, wet: { darker: 0.05, glossier: 0.15 } },
 });
 // A water cannon (the header's `stream`; src/waterCannon.js): a fire truck's monitor nozzle held in the hand, which
 // shoots a stream of water where it is aimed for as long as the press lasts. The slider is its pressure, 0.5 to 10 bar:

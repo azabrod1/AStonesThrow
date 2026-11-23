@@ -57,8 +57,7 @@
 //     its body turned from a profile, a pour spout either side, its long
 //     handle (and the largest's helper handle) a tapering slab, seasoned
 //     black (createPanGeometry);
-//   - roses: one long-stemmed rose or a bouquet, each `look.count` its own
-//     (an odd number, 1 to 25): blooms of petals wound in a spiral, each a
+//   - roses: a bouquet, each `look.count` its own (3, 5 or 7): blooms of petals wound in a spiral, each a
 //     thin shell, stems with thorns, leaves of serrated leaflets, a bouquet
 //     tied in a spiral under a satin ribbon and bow, each stem its own to
 //     its cut end; to the physics each bloom a
@@ -3152,7 +3151,7 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // ---- the flowers -------------------------------------------------------------
 
 // A bouquet of red roses (src/things.js 'roses'), each count its own
-// (`look.count`: one long-stemmed rose, or an odd number up to 19 tied),
+// (`look.count`: 3, 5 or 7 tied),
 // built in metres, its blooms up (+y), and seeded (each count's from its own
 // stream, so it is built alike every time). A bloom as it is drawn
 // (rosePetals) is a hybrid tea's: its petals wound in a spiral, each the
@@ -3169,7 +3168,7 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // with thorns along it (drawn only: a few grams of them); a leaf a stalk
 // with serrated leaflets, the terminal and a pair or two, each a slab
 // (slabMesh) curled along its midrib, dark and glossy, reddish at its edge.
-// One rose is a bloom on a long stem with its leaves. A bouquet is tied as
+// A bouquet is tied as
 // a florist ties one, in a spiral: its blooms close together over a dome
 // (ROSES.dome: a sunflower's spiral over a cap of a sphere about the tie,
 // as wide as keeps them apart, each bloom a little nearer or farther), each
@@ -3180,9 +3179,8 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // blooms, a skirt of green. To the physics the bunch below the tie is a
 // cone round its stems, as heavy as they and the water between them (drawn
 // as the stems themselves). Its body's parts meet without overlapping (a
-// stem ends at its bloom's hip and at the bunch's top). A big bouquet's
-// outer stems carry a leaf each, not two, and every bouquet has two coarser
-// levels of detail for when it is small on the screen (rosesWithDetail).
+// stem ends at its bloom's hip and at the bunch's top). Every bouquet has
+// two coarser levels of detail for when it is small on the screen (rosesWithDetail).
 // Its flowers are not one rigid thing: each bloom's stem gives as a real one
 // does (`userData.sway`, roseSway: each corner's bloom and its share of the
 // bend, each stem's pivot, rate and give), and src/rock.js swayStep bends
@@ -3190,7 +3188,7 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // Set about its body's middle and scaled to a unit ball's volume of it: its
 // nominal radius is its ball's of like volume, its length roseLength().
 const ROSES = {
-  counts: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19],   // always odd, as a florist ties them
+  counts: [3, 5, 7],   // always odd, as a florist ties them
   // A bloom's hull (roseHull): its cup's profile, (radius, height) in centimetres from its hip at the stem up and out to
   // its outer petals' rims and in across its heart, round in `segments`; `reach`, its widest as drawn, its tips curled
   // out, for spacing blooms; each bloom's scale and turn drawn.
@@ -3212,9 +3210,8 @@ const ROSES = {
     claw: [[0.18, -1.3], [0.85, -1.5]], tip: [[0.42, 2.0], [3.15, 1.0]], width: [0.62, 1.95], rise: [3.2, 2.1],
     reflex: [[0, 0], [0.8, 0.75]], roll: [0, 0], cup: [0.05, 0.1], ruffle: 0, lean: 0,
     // Its cells along and across at each level of detail, finest first (the coarser shown as it is smaller on the
-    // screen: rosesWithDetail), and from how many roses a bouquet's outer stems carry one leaf, not two.
+    // screen: rosesWithDetail).
     levels: [{ rows: [6, 12], columns: [5, 6] }, { rows: [3, 6], columns: [3, 4] }, { rows: [2, 4], columns: [2, 2] }],
-    fewerLeavesFrom: 9,
     open: [0.85, 1.1],
   },
   petal: 0.05,   // cm: a petal's thickness
@@ -3223,17 +3220,16 @@ const ROSES = {
   heart: { segments: 16, profile: [[0, -0.6], [0.38, -0.4], [0.42, 1.0], [0.3, 1.75], [0.12, 1.95], [0, 1.98]] },
   hip: { segments: 10, profile: [[0, -2.5], [0.45, -2.45], [0.85, -2.1], [0.9, -1.75], [0.7, -1.55], [0, -1.5]] },
   sepals: { count: 5, from: [0.75, -1.65], length: 1.7, drop: 1.05, width: 0.32, thickness: 0.04, grid: [4, 2] },
-  stem: { radius: 0.0032, sides: 12, length: 0.42, below: 0.14 },   // m: its radius, a single rose's length under its hip, a bunch's under the tie
+  stem: { radius: 0.0032, sides: 12, below: 0.14 },   // m: its radius, its length under the tie
   thorns: { every: 0.07, length: 0.005, radius: 0.0021, tilt: 0.6 },   // m: one about this far apart up a stem, its length and its base's radius; its slant down the stem (rad)
   // A leaf (roseLeaf): its stalk's length and radius, its terminal leaflet's length, half-width and thickness, each
   // pair's share of that size and where up the stalk they spring, splayed by `splay` (rad); each leaflet's outline's points.
   leaf: { stalk: [0.045, 0.0009], length: 0.032, width: 0.0105, thickness: 0.0012, pairs: [[0.85, 0.58], [0.68, 0.2]], splay: 0.95, points: [18, 12, 8], serrations: 7 },
-  // How its stems give (roseSway, src/rock.js swayStep): each a spring of `rate` rad/s (2.5 to 4 swings a second), bent
-  // `give` rad by Earth's gravity across it (a cut rose's stem droops some 6 to 12 degrees held level); a single rose bends
-  // about `single` of the way up its stem, a little more (`singleGive`: its stem is longer).
   // Its radius on the screen (pixels) under which its coarsest level of detail is enough, and its middle one (rosesWithDetail).
   detail: [45, 160],
-  sway: { rate: [16, 25], give: [0.1, 0.2], single: 0.35, singleGive: 1.3 },
+  // How its stems give (roseSway, src/rock.js swayStep): each a spring of `rate` rad/s (2.5 to 4 swings a second), bent
+  // `give` rad by Earth's gravity across it (a cut rose's stem droops some 6 to 12 degrees held level).
+  sway: { rate: [16, 25], give: [0.1, 0.2] },
   dome: { radius: 0.17, perRose: 0.003, spacing: 1.72, packing: 1.05, jitter: 0.06 },   // m from the tie to its blooms, and more for each rose; blooms this many reaches apart; a sunflower's cap this much roomier than its blooms; each bloom's distance this share nearer or farther
   bunch: { spacing: 2.15, flare: 0.7, band: 0.035, ribbonOut: 0.004, twist: 0.6 },   // stems this many radii apart at the tie, how much farther out each stem's cut end is than its place at the tie, the ribbon's height and stand, the spiral's turn (rad)
   claw: linear(84, 6, 16), red: linear(176, 12, 30), tipRed: linear(196, 24, 40), velvet: linear(120, 6, 20), pinker: linear(204, 38, 58), dark: linear(92, 4, 18), light: linear(222, 54, 72),
@@ -3546,7 +3542,7 @@ function domePoints(count) {
 }
 
 /**
- * A bouquet's (or one rose's) geometry (the header) for its definition
+ * A bouquet's geometry (the header) for its definition
  * (`look.count`), as drawn, its body (what the water and the deck meet:
  * its blooms' hulls, its stems, leaves, bunch and ribbon) in its
  * `userData.physics`; with `metres`, as built, about its body's middle, and
@@ -3555,7 +3551,7 @@ function domePoints(count) {
 export function createRosesGeometry(definition, { metres = false, level = 0, frame = null } = {}) {
   const count = definition.look.count;
   const random = seeded(4242 + count);
-  const { radius: stemRadius, length: stemLength, below } = ROSES.stem;
+  const { radius: stemRadius, below } = ROSES.stem;
   const up = new THREE.Vector3(0, 1, 0);
   const drawn = [], body = [], densities = [];
   // Which bloom each drawn part sways with (its petals, its stem above the tie, its thorns and leaves), −1 for none (the
@@ -3577,72 +3573,59 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
   };
   const leaf = (base, along, facing, pairs = 1) => { for (const part of roseLeaf(base, along, facing, random, pairs, level)) add(part, ROSES.densities.leaf); };
   const stem = (from, to) => { add(roseStem(from, to, stemRadius, random), ROSES.densities.stem); draw(roseThorns(from, to, stemRadius, random)); };
-  if (count === 1) {
-    // One long-stemmed rose, standing: its bloom, its stem, three leaves up it, each round from the last.
-    owner = 0;
-    const hip = placeBloom(new THREE.Vector3(0, 0, 0), up);
-    stem(hip.clone().addScaledVector(up, -stemLength), hip);
-    // It bends about a point a third of the way up its stem, its bloom one way and its foot the other.
-    swaying.push({ pivot: hip.clone().addScaledVector(up, -ROSES.sway.single * stemLength), tip: new THREE.Vector3(0, 0, 0) });
-    [0.18, 0.34, 0.5].forEach((share, index) => {
-      const turn = index * 2.4 + 0.3, out = new THREE.Vector3(Math.cos(turn), 0, Math.sin(turn));
-      leaf(hip.clone().addScaledVector(up, -stemLength * share).addScaledVector(out, stemRadius * 0.9), out.clone().multiplyScalar(0.75).addScaledVector(up, 0.66).normalize(), up);
-    });
-  } else {
-    // The bunch at the tie (y 0): its stems' places, a sunflower's spiral over a disc, each turned round from under its
-    // bloom by the spiral's twist; the blooms over the dome, each a little nearer or farther than the next.
-    const { spacing, flare, band, ribbonOut, twist } = ROSES.bunch;
-    const bunchRadius = Math.sqrt((count * (spacing * stemRadius) ** 2 * 0.87) / Math.PI) + stemRadius;
-    const blooms = domePoints(count);
-    const outerPolar = Math.max(...blooms.map((bloom) => bloom.polar));
-    const footRadius = (bunchRadius - stemRadius) * (1 + flare) + stemRadius;
-    blooms.forEach(({ polar, azimuth, at }, index) => {
-      const reach = (bunchRadius - stemRadius) * Math.sqrt((index + 0.5) / count);
-      const spot = new THREE.Vector3(reach * Math.cos(azimuth + twist), 0, reach * Math.sin(azimuth + twist));
-      const centre = at.clone().multiplyScalar(1 + ROSES.dome.jitter * (random() - 0.5));
-      const axis = centre.clone().sub(spot).normalize();
+  // The bunch at the tie (y 0): its stems' places, a sunflower's spiral over a disc, each turned round from under its
+  // bloom by the spiral's twist; the blooms over the dome, each a little nearer or farther than the next.
+  const { spacing, flare, band, ribbonOut, twist } = ROSES.bunch;
+  const bunchRadius = Math.sqrt((count * (spacing * stemRadius) ** 2 * 0.87) / Math.PI) + stemRadius;
+  const blooms = domePoints(count);
+  const outerPolar = Math.max(...blooms.map((bloom) => bloom.polar));
+  const footRadius = (bunchRadius - stemRadius) * (1 + flare) + stemRadius;
+  blooms.forEach(({ polar, azimuth, at }, index) => {
+    const reach = (bunchRadius - stemRadius) * Math.sqrt((index + 0.5) / count);
+    const spot = new THREE.Vector3(reach * Math.cos(azimuth + twist), 0, reach * Math.sin(azimuth + twist));
+    const centre = at.clone().multiplyScalar(1 + ROSES.dome.jitter * (random() - 0.5));
+    const axis = centre.clone().sub(spot).normalize();
+    owner = index;
+    swaying.push({ pivot: spot.clone(), tip: centre.clone() });
+    const hip = placeBloom(centre, axis);
+    stem(spot, hip);
+    owner = -1;
+    // Below the tie it goes on, its own stem to its own cut end, fanning out a little as a spiral's stems do, all cut
+    // across at one height; drawn only (the bunch's body is the cone below).
+    const foot = new THREE.Vector3(spot.x * (1 + flare) + 0.003 * (random() - 0.5), -below, spot.z * (1 + flare) + 0.003 * (random() - 0.5));
+    draw([roseStem(foot, spot, stemRadius, random, { cut: true })]);
+    draw(roseThorns(foot, spot, stemRadius, random));
+    // The outer blooms' leaves (every one's in a small bunch), out from under them, hiding the stems: a skirt of
+    // green under the dome.
+    if (count <= 5 || polar > 0.55 * outerPolar) {
       owner = index;
-      swaying.push({ pivot: spot.clone(), tip: centre.clone() });
-      const hip = placeBloom(centre, axis);
-      stem(spot, hip);
-      owner = -1;
-      // Below the tie it goes on, its own stem to its own cut end, fanning out a little as a spiral's stems do, all cut
-      // across at one height; drawn only (the bunch's body is the cone below).
-      const foot = new THREE.Vector3(spot.x * (1 + flare) + 0.003 * (random() - 0.5), -below, spot.z * (1 + flare) + 0.003 * (random() - 0.5));
-      draw([roseStem(foot, spot, stemRadius, random, { cut: true })]);
-      draw(roseThorns(foot, spot, stemRadius, random));
-      // The outer blooms' leaves (every one's in a small bunch), out from under them, hiding the stems: a skirt of
-      // green under the dome.
-      if (count <= 5 || polar > 0.55 * outerPolar) {
-        owner = index;
-        const out = new THREE.Vector3(Math.cos(azimuth + 0.3), 0, Math.sin(azimuth + 0.3));
-        const along = hip.distanceTo(spot);
-        for (const [share, swing, lift] of [[0.1, 0.35, 0.15], [0.32, -0.3, 0.45]].slice(0, count >= ROSES.petals.fewerLeavesFrom ? 1 : 2)) {
-          const turned = out.clone().applyAxisAngle(axis, swing);
-          leaf(hip.clone().addScaledVector(axis, -along * share).addScaledVector(turned, stemRadius * 0.9), turned.clone().multiplyScalar(0.75).addScaledVector(axis, lift).normalize(), axis, 2);
-        }
-        owner = -1;
+      const out = new THREE.Vector3(Math.cos(azimuth + 0.3), 0, Math.sin(azimuth + 0.3));
+      const along = hip.distanceTo(spot);
+      for (const [share, swing, lift] of [[0.1, 0.35, 0.15], [0.32, -0.3, 0.45]]) {
+        const turned = out.clone().applyAxisAngle(axis, swing);
+        leaf(hip.clone().addScaledVector(axis, -along * share).addScaledVector(turned, stemRadius * 0.9), turned.clone().multiplyScalar(0.75).addScaledVector(axis, lift).normalize(), axis, 2);
       }
-    });
-    // The bunch below the tie, as its body: a cone round its stems (hidden: its stems are drawn), its foot at their cut.
-    const profile = [[0, -below], [footRadius, -below], [bunchRadius + (footRadius - bunchRadius) * (band / below), -band], [bunchRadius, 0], [0, 0]];
-    const bunch = turnedPart(profile, 24, (out, y, angle) => [out * Math.cos(angle), y, out * Math.sin(angle)], () => ROSES.green);
-    // As heavy as the stems in it (their share of its girth, top to foot) and the water between them.
-    const stems = (count * stemRadius ** 2) / (bunchRadius * footRadius);
-    add(bunch, stems * ROSES.densities.stem + (1 - stems) * WATER_KG_M3, { hidden: true });
-    // The ribbon wound round the tie, satin, drawn: a band standing just off the stems.
-    const ribbonColour = new THREE.Color();
-    const ribbonRadius = bunchRadius + ribbonOut;
-    draw([turnedPart([[0, -band], [ribbonRadius, -band], [ribbonRadius, -band * 0.66], [ribbonRadius, -band * 0.33], [ribbonRadius, 0], [0, 0]], 36,
-      (out, y, angle) => [out * Math.cos(angle), y, out * Math.sin(angle)],
-      (out, y, angle) => ribbonColour.copy(ROSES.ribbon).lerp(ROSES.ribbonShade, 0.35 + 0.35 * Math.sin(3 * angle + y * 200)))]);
-    // Its bow, on its front (+z): two loops up either side and two tails down, each a satin slab.
-    const knot = new THREE.Vector3(0, -band / 2, ribbonRadius + 0.0012);
-    const front = new THREE.Vector3(0, 0, 1);
-    for (const side of [-1, 1]) {
-      add(ribbonPiece(knot, new THREE.Vector3(0.8 * side, 0.6, 0.18).normalize(), front, 0.032, 0.011, 0.0025), ROSES.densities.ribbon);
-      add(ribbonPiece(knot, new THREE.Vector3(0.28 * side, -1, 0.1).normalize(), front, 0.075, 0.0065, 0.002), ROSES.densities.ribbon);
+      owner = -1;
     }
+  });
+  // The bunch below the tie, as its body: a cone round its stems (hidden: its stems are drawn), its foot at their cut.
+  const profile = [[0, -below], [footRadius, -below], [bunchRadius + (footRadius - bunchRadius) * (band / below), -band], [bunchRadius, 0], [0, 0]];
+  const bunch = turnedPart(profile, 24, (out, y, angle) => [out * Math.cos(angle), y, out * Math.sin(angle)], () => ROSES.green);
+  // As heavy as the stems in it (their share of its girth, top to foot) and the water between them.
+  const stems = (count * stemRadius ** 2) / (bunchRadius * footRadius);
+  add(bunch, stems * ROSES.densities.stem + (1 - stems) * WATER_KG_M3, { hidden: true });
+  // The ribbon wound round the tie, satin, drawn: a band standing just off the stems.
+  const ribbonColour = new THREE.Color();
+  const ribbonRadius = bunchRadius + ribbonOut;
+  draw([turnedPart([[0, -band], [ribbonRadius, -band], [ribbonRadius, -band * 0.66], [ribbonRadius, -band * 0.33], [ribbonRadius, 0], [0, 0]], 36,
+    (out, y, angle) => [out * Math.cos(angle), y, out * Math.sin(angle)],
+    (out, y, angle) => ribbonColour.copy(ROSES.ribbon).lerp(ROSES.ribbonShade, 0.35 + 0.35 * Math.sin(3 * angle + y * 200)))]);
+  // Its bow, on its front (+z): two loops up either side and two tails down, each a satin slab.
+  const knot = new THREE.Vector3(0, -band / 2, ribbonRadius + 0.0012);
+  const front = new THREE.Vector3(0, 0, 1);
+  for (const side of [-1, 1]) {
+    add(ribbonPiece(knot, new THREE.Vector3(0.8 * side, 0.6, 0.18).normalize(), front, 0.032, 0.011, 0.0025), ROSES.densities.ribbon);
+    add(ribbonPiece(knot, new THREE.Vector3(0.28 * side, -1, 0.1).normalize(), front, 0.075, 0.0065, 0.002), ROSES.densities.ribbon);
   }
   // What it weighs and where its weight is, of its body's parts' densities (`metres`: src/things.js's masses and ballasts).
   let mass = 0;
@@ -3678,8 +3661,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
 /**
  * How a bouquet's drawn mesh sways (src/rock.js swayStep, its flowers'
  * stems giving as real ones do): each bloom's stem a spring about its
- * `pivot` (its place at the tie, or a single rose's a third of the way up
- * its stem), its `axis` toward its bloom's middle `length` away, its own
+ * `pivot` (its place at the tie), its `axis` toward its bloom's middle `length` away, its own
  * `rate` (rad/s) and `give` (how far it bends, rad, under Earth's gravity
  * across it), both drawn from a stream of their own; and for each corner
  * the bloom it sways with (−1, none: below the tie) and its `share` of the
@@ -3692,7 +3674,7 @@ function roseSway(geometry, partCorners, owners, swaying, count, place) {
   const blooms = swaying.map(({ pivot, tip }) => {
     const from = place(pivot), to = place(tip);
     const [least, most] = ROSES.sway.rate, [softest, stiffest] = ROSES.sway.give;
-    return { pivot: from, axis: to.clone().sub(from).normalize(), length: from.distanceTo(to), rate: least + (most - least) * random(), give: (count === 1 ? ROSES.sway.singleGive : 1) * (softest + (stiffest - softest) * random()) };
+    return { pivot: from, axis: to.clone().sub(from).normalize(), length: from.distanceTo(to), rate: least + (most - least) * random(), give: softest + (stiffest - softest) * random() };
   });
   const corners = geometry.attributes.position.count, positions = geometry.attributes.position.array;
   const bloom = new Int16Array(corners).fill(-1), share = new Float32Array(corners);

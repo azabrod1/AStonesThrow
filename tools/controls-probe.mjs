@@ -73,8 +73,8 @@
 //     button's name (a rock, a ball, a gem), the row's value and the strip's
 //     name, slider (its range, or off for a ball of one size) and line
 //     ("Size 7 · 620 g") following, the strip still fitting, and for a
-//     thing whose steps are things of their own (an iPad, a frying pan,
-//     roses) the slider through each step, its line each step's ("iPad Pro
+//     thing whose steps are things of their own (an iPad, a frying pan)
+//     the slider through each step, its line each step's ("iPad Pro
 //     13″ · 579 g"), the strip never overflowing; the latest
 //     choices sit at the page's top and one tapped is thrown at once; Skip
 //     pressed for a pie stays off and says why, and for a pizza turns on
@@ -749,7 +749,7 @@ for (const framing of FRAMINGS) {
     // the pizza, which must stay among the latest four choices, below.)
     ['ipad', { button: 'Throw an iPad', row: 'iPad', label: 'iPad', readout: 'iPad 11″ · 477 g', minimum: 1, maximum: 4, disabled: false, steps: ['iPhone · 180 g', 'iPad mini · 293 g', 'iPad 11″ · 477 g', 'iPad Pro 13″ · 579 g'] }],
     ['pan', { button: 'Throw a frying pan', row: 'Frying pan', label: 'Pan', readout: '25 cm · 2.4 kg', minimum: 1, maximum: 3, disabled: false, steps: ['20 cm · 1.5 kg', '25 cm · 2.4 kg', '30 cm · 3.4 kg'] }],
-    ['roses', { button: 'Throw roses', row: 'Roses', label: 'Roses', readout: '7 to 11 roses · 296–437 g', minimum: 1, maximum: 4, disabled: false, steps: ['1 rose · 30 g', '3 or 5 roses · 137–217 g', '7 to 11 roses · 296–437 g', '13 to 19 roses · 513–747 g'] }],
+    ['roses', { button: 'Throw roses', row: 'Roses', label: 'Roses', readout: '3, 5 or 7 roses · 137–296 g', disabled: true }],
     ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm · 380 g', minimum: 1, maximum: 3, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {

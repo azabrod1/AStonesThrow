@@ -126,7 +126,7 @@
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
 // ball has one size; an iPad's device, a frying pan's size and a bouquet's
 // count are each a thing of their own, src/things.js variantAt, made ready
-// as the slider comes to them: readyToThrow; a bouquet's step is a few
+// as the slider comes to them: readyToThrow; a bouquet's one step is three
 // counts, each throw one of them, drawn from the seed its preview was made
 // from, pickFrom, so the bouquet in the hand is the one thrown). measureThing gives what a
 // throw is: its kind at that size, its radius, mass and density. A river
