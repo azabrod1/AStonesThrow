@@ -960,8 +960,9 @@ defineBuiltIn('pan', {
 // stems under and its blooms up, not on its blooms with its stems in the air. Its nominal radius is its ball's of like
 // volume (its splash a thing's that displaces as much). One rose's buoyancy is cut finer (`columns`), so its stem floats
 // as well as its bloom, and a big bouquet's, so its columns hold its body. It floats by its blooms' hulls, its petals
-// drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles slowly, end over end, and it sheds petals as
-// it is flung and as it strikes (src/petals.js).
+// drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles slowly, end over end, its flowers swaying on
+// their stems as it goes, whipping on as it strikes and drooping as it lies (src/rock.js swayStep), and it sheds petals
+// as it is flung and as it strikes (src/petals.js).
 defineBuiltIn('roses', {
   name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 25: it floats', called: 'roses',
   body: {

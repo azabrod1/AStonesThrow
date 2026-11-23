@@ -254,6 +254,11 @@
 // striking the water or the deck). A ball stays round: a real one gives
 // for a hundredth of a second when struck, less than a frame.
 //
+// A bouquet's flowers sway on their stems (swayStep, each physics step: each
+// bloom a damped spring bent across its stem by what the bouquet's motion
+// makes it feel, its weight lying, a blow, its tumble; flex bends its own
+// copy of the drawn mesh once a frame; the physics walks its hulls as ever).
+//
 // Its own parts (registerMesh `dress`: a pizza's toppings, a pie's filling)
 // are drawn as it is made, from a stream of their own seeded from its own
 // (dressThing), or from the seed it is given (`dressing`: a person's throw
@@ -521,6 +526,11 @@ const scratch = {
   bed: new THREE.Vector3(),
 };
 const UP = new THREE.Vector3(0, 1, 0);
+// A bouquet's flowers swaying on their stems (Rock.swayStep): their damping, a share of critical, in the air and in the
+// water (which stills them within a swing or two); the most a bouquet's motion is taken to press on them (m/s²: a
+// splash's first step is a jolt of thousands); the furthest a stem bends (rad).
+const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6 };
+const SWAY_SCRATCH = { felt: new THREE.Vector3(), turn: new THREE.Quaternion(), spin: new THREE.Vector3(), axis: new THREE.Vector3(), tip: new THREE.Vector3(), push: new THREE.Vector3(), inward: new THREE.Vector3(), inward2: new THREE.Vector3() };
 
 // The distinct points of a physics mesh (Rock.physicsPositions: separate triangles, each point repeated in every
 // triangle it touches, about six times), in first-seen order, made once per array and kept beside it. The walks for
@@ -1479,7 +1489,8 @@ export class Rock {
     this.dressing = dressedWith === null ? null : dressThing(this.thing, dressedWith);
     if (this.dressing && this.ownMass !== null) this.ownMass *= 1 + this.dressing.share;
     // (Its own copy, though a pie's parts are its filling's, kept: a mesh shared would stay on the GPU once drawn.)
-    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing;
+    // (A bouquet's too: its flowers sway, swayStep, so it bends a copy of its own.)
+    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing && !prepared.geometry.userData.sway;
     this.piece = piece;   // a shard's outline (src/ice.js), as it was broken
     this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip), ...(piece ? { piece } : {}) });
     // Only what its parts are, what they weigh and their seed are kept: their triangles are its geometry's now.
@@ -1531,6 +1542,10 @@ export class Rock {
     // A soft thing's rest shape, which flex bends what is drawn from; the physics reads the shared mesh's, without its
     // parts (physicsPositions).
     this.restShape = this.thing.body.soft ? this.geometry.attributes.position.array.slice() : null;
+    // A bouquet's flowers on their stems (src/thingMeshes.js roseSway): each bloom's bend, a rotation (rad) about its
+    // pivot in its own frame, and how fast it bends; the drawn mesh's rest shape it is bent from (flex).
+    const sway = this.geometry.userData.sway ?? null;
+    this.sway = sway ? { ...sway, bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), rest: null, restNormals: null, drawnStill: true } : null;
     this.physicsShape = physics ? physics.array : prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
@@ -2665,6 +2680,7 @@ export class Rock {
    * of a desktop's frame.
    */
   flex() {
+    if (this.sway) this.swayDrawn();
     const soft = this.thing.body.soft;
     if (!soft) return;
     const positions = this.geometry.attributes.position;
@@ -2690,6 +2706,91 @@ export class Rock {
     positions.needsUpdate = true;
     this.geometry.attributes.normal.needsUpdate = true;
     this.flexedDrawn = Math.abs(cup) >= 1e-4 || Math.abs(flap) >= 1e-4;
+  }
+
+  /**
+   * A bouquet's flowers in a physics step (the header's sway; src/thingMeshes.js roseSway): each bloom's stem a damped
+   * spring, bent across itself by what the bouquet's motion makes its bloom feel, the force a support or the air or the
+   * water gives it less its weight, as its stem holds it: lying, the blooms droop; as it strikes, they whip on and
+   * spring back; tumbling, they fling outward; in free flight they straighten. The drawn mesh alone is bent (flex): the
+   * physics walks its hulls as ever.
+   */
+  swayStep(dt) {
+    const sway = this.sway;
+    if (!sway || dt <= 0) return;
+    // What the bouquet feels (m/s²), in its own frame: its acceleration less gravity, kept within reason (a step that sets
+    // it down somewhere else is no blow).
+    const felt = SWAY_SCRATCH.felt.copy(this.velocity).sub(sway.lastVelocity).divideScalar(dt);
+    sway.lastVelocity.copy(this.velocity);
+    felt.y += GRAVITY;
+    if (felt.length() > SWAY.most) felt.setLength(SWAY.most);
+    const inverse = SWAY_SCRATCH.turn.copy(this.quaternion).invert();
+    felt.applyQuaternion(inverse);
+    // Its tumble, in its own frame: each bloom is flung out from its axis by it.
+    const tumbling = this.state === 'air' ? SWAY_SCRATCH.spin.copy(this.spinAxis).applyQuaternion(inverse).multiplyScalar(this.spinRate) : SWAY_SCRATCH.spin.set(0, 0, 0);
+    const damping = this.state === 'water' || this.state === 'float' || this.afloat ? SWAY.waterDamping : SWAY.airDamping;
+    const { bend, rate, axes, tips, rates, gives } = sway;
+    const axis = SWAY_SCRATCH.axis, tip = SWAY_SCRATCH.tip, push = SWAY_SCRATCH.push;
+    let moving = false;
+    for (let bloom = 0, at = 0; bloom < sway.count; bloom++, at += 3) {
+      axis.set(axes[at], axes[at + 1], axes[at + 2]);
+      // What its bloom feels: the bouquet's, and its tumble's pull in toward its axis (the bloom's place in metres).
+      tip.set(tips[at], tips[at + 1], tips[at + 2]).multiplyScalar(this.radius);
+      push.copy(felt).add(SWAY_SCRATCH.inward.copy(tumbling).cross(SWAY_SCRATCH.inward2.copy(tumbling).cross(tip)));   // Ω×(Ω×r), in toward its axis
+      // Where that bends it to (a rotation, rad): the bloom carried away from the push, across its stem, by its give.
+      const give = gives[bloom] / EARTH_GRAVITY;
+      const targetX = give * (push.y * axis.z - push.z * axis.y), targetY = give * (push.z * axis.x - push.x * axis.z), targetZ = give * (push.x * axis.y - push.y * axis.x);   // push × axis
+      const spring = rates[bloom] ** 2, drag = 2 * damping * rates[bloom];
+      for (let component = 0; component < 3; component++) {
+        const target = component === 0 ? targetX : component === 1 ? targetY : targetZ;
+        rate[at + component] += (spring * (target - bend[at + component]) - drag * rate[at + component]) * dt;
+        bend[at + component] += rate[at + component] * dt;
+      }
+      // Across its stem only (a twist about it shows nothing), and no further than a stem bends.
+      const along = bend[at] * axis.x + bend[at + 1] * axis.y + bend[at + 2] * axis.z;
+      bend[at] -= along * axis.x; bend[at + 1] -= along * axis.y; bend[at + 2] -= along * axis.z;
+      const size = Math.hypot(bend[at], bend[at + 1], bend[at + 2]);
+      if (size > SWAY.furthest) for (let component = 0; component < 3; component++) { bend[at + component] *= SWAY.furthest / size; rate[at + component] *= 0.5; }
+      if (size > 1e-4 || Math.hypot(rate[at], rate[at + 1], rate[at + 2]) > 1e-3) moving = true;
+    }
+    sway.moving = moving;
+  }
+
+  /**
+   * Its drawn mesh bent as its flowers sway (swayStep; flex, once a frame): each corner of a bloom's stem, petals and
+   * leaves turned about the stem's pivot by its share of the bloom's bend (a rotation to second order), its normal by
+   * as much; nothing redrawn while they hang still as last drawn.
+   */
+  swayDrawn() {
+    const sway = this.sway;
+    const positions = this.geometry.attributes.position, normals = this.geometry.attributes.normal;
+    sway.rest ??= positions.array.slice();
+    sway.restNormals ??= normals.array.slice();
+    const bendSize = Math.max(...Array.from({ length: sway.count }, (unused, bloom) => Math.hypot(sway.bend[bloom * 3], sway.bend[bloom * 3 + 1], sway.bend[bloom * 3 + 2])));
+    if (bendSize < 1e-4 && sway.drawnStill) return;
+    if (!sway.moving && sway.drawnStill && sway.drawnBend === bendSize) return;
+    const { rest, restNormals, bloom: bloomOf, share, pivots, bend } = sway;
+    const array = positions.array, normal = normals.array;
+    for (let corner = 0, index = 0; corner < bloomOf.length; corner++, index += 3) {
+      const which = bloomOf[corner];
+      if (which < 0) continue;
+      const weight = share[corner], at = which * 3;
+      const ax = bend[at] * weight, ay = bend[at + 1] * weight, az = bend[at + 2] * weight;
+      const rx = rest[index] - pivots[at], ry = rest[index + 1] - pivots[at + 1], rz = rest[index + 2] - pivots[at + 2];
+      // φ×r, then half of φ×(φ×r): a rotation by φ to second order.
+      const cx = ay * rz - az * ry, cy = az * rx - ax * rz, cz = ax * ry - ay * rx;
+      array[index] = rest[index] + cx + 0.5 * (ay * cz - az * cy);
+      array[index + 1] = rest[index + 1] + cy + 0.5 * (az * cx - ax * cz);
+      array[index + 2] = rest[index + 2] + cz + 0.5 * (ax * cy - ay * cx);
+      const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
+      const tx = nx + (ay * nz - az * ny), ty = ny + (az * nx - ax * nz), tz = nz + (ax * ny - ay * nx);
+      const length = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+      normal[index] = tx / length; normal[index + 1] = ty / length; normal[index + 2] = tz / length;
+    }
+    positions.needsUpdate = true;
+    normals.needsUpdate = true;
+    sway.drawnStill = !sway.moving;
+    sway.drawnBend = bendSize;
   }
 
   /**
@@ -3647,6 +3748,7 @@ export class Rock {
       if (this.settling) this.settleStep(dt);
     }
     this.bendStep(dt);
+    this.swayStep(dt);
     this.soak(dt);
     if (this.state !== 'rest' && !this.turned) {
       const clearBefore = this.state === 'air' && this.ground ? this.position.y - this.ellipsoidDepth() : null;

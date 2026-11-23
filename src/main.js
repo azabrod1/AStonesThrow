@@ -1378,7 +1378,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const prepared = prepareThing(thing);
       // Its parts (a pizza's toppings, a pie's filling, a cake's candles) from that seed, added to a copy of the shared
       // mesh as the throw given it adds them (src/rock.js); their triangles, copied, are let go as a throw lets them go.
-      const parts = dressing === null ? null : dressThing(thing, dressing);
+      const parts = dressing === null || !kind.dress ? null : dressThing(thing, dressing);   // (a bouquet's seed picks its count, and dresses nothing)
       const geometry = parts ? withParts(prepared.geometry, parts.geometry) : prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
       if (parts && !parts.shared) parts.geometry.dispose();
       if (!prepared) geometry.computeBoundingSphere();

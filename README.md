@@ -156,7 +156,11 @@ full screen, which only a press or a key may ask for):
   outer blooms. Their petals hold air, so they float, a third under, by
   each bloom's hull, the rose lying on the water and a bouquet as a raft,
   its blooms up and its stems under, its weight where its stems and blooms
-  put it (a bouquet that lands on its blooms may stay so). A bouquet sheds
+  put it (a bouquet that lands on its blooms may stay so). Its flowers are
+  not one solid thing: each stem gives, so the blooms fling out as it
+  tumbles, whip on and spring back as it strikes, droop as it lies on its
+  side and steady quickly in the water (`swayStep` in `src/rock.js`; only
+  what is drawn bends, the physics keeps its hulls). A bouquet sheds
   petals (`src/petals.js`): one or two as it leaves the hand, a handful
   when it strikes the water, the ice or the deck, the more the harder; they
   flutter down, float off on the rings and lie where they fall, and go
@@ -172,7 +176,8 @@ full screen, which only a press or a key may ask for):
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
   9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
-  way up, and the roses' with `--seed=5` at 11°, on which they stand). The
+  way up, and the roses' with `--seed=5` at 13°: nine, lying among their
+  shed petals). The
   water cannon's is a frame of its stream landing in the lake instead
   (`--thing=cannon --throws=0:-1.4:0 --times=0.6 --w=320 --h=180`).
 - The water cannon (`src/waterCannon.js`; `cannon` in `src/things.js`, a
