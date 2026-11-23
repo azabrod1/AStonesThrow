@@ -168,6 +168,21 @@ full screen, which only a press or a key may ask for):
   way up, and the roses' with `--seed=5` at 11°, on which they stand). The
   water cannon's is a frame of its stream landing in the lake instead
   (`--thing=cannon --throws=0:-1.4:0 --times=0.6 --w=320 --h=180`).
+- The throwing machine (`src/throwMachine.js`; Effects › Throwing machine,
+  on unless turned off, remembered on the device; `?machine=off`): a rail
+  launcher standing where the hand is, so a throw leaves from its sled and
+  not from the air. The throw is the hand's, unchanged: the thing waits on
+  the sled at the hand's point, the rail along the next throw's launch (the
+  aim's, else the last throw's), turning about that point on a pin beside
+  it and a turntable under it, on a tripod that stands on the bank, the
+  deck, the ice or, at the lake and the Reflecting Pool, the bed of the
+  shallows. After a throw it reloads by real time (drawn only): the sled
+  runs back, the next thing is pushed down out of the magazine over the
+  breech, and the sled carries it up, in about 0.6 s. Its cradle and
+  magazine are sized to the thing; a big thing's rail is longer and stops
+  short of the steepest lobs where the hand is low over the ground (a
+  bowling ball at 53° on the Koi pond's bank). The shoot harness leaves it
+  out with the preview unless `--preview=1`.
 - The water cannon (`src/waterCannon.js`; `cannon` in `src/things.js`, a
   thing with a `stream`) is held, not thrown: a fire truck's monitor nozzle,
   and a press fires a stream of water at the spot under the pointer for as
@@ -2363,6 +2378,12 @@ farther out, so it rises into the view rather than filling its corner.
   fast, or lobbed over it, never goes into the granite and never ends under
   the coping's top; the ground leaves the pool open and reaches the horizon,
   under its triangle bound.
+- `node tools/machine-probe.mjs` checks the throwing machine on the CPU:
+  the loaded thing sits at the hand's point whatever the aim; the rail
+  clears its turntable, mast, post, legs and the ground at every pitch it
+  takes, from a gem to the TV, on the lowest bank; the reload's sled and
+  magazine run as `CYCLE` says; and nothing it does after it is made draws
+  from `Math.random`.
 - `node tools/visitor-probe.mjs` checks whatever is out on Loch Ness
   (`src/lochVisitor.js`) on the CPU: over two hours it comes up within its
   first minute and every one to two and a half minutes after, every form

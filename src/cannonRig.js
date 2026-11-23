@@ -132,7 +132,7 @@ export const STAND = {
 };
 
 /** Triangles (position, normal, colour) collected from primitives, then made one geometry (Parts.geometry). */
-class Parts {
+export class Parts {
   constructor() { this.positions = []; this.normals = []; this.colours = []; }
   /** A primitive geometry (indexed or not), moved by `matrix`, of one colour. */
   add(geometry, matrix, colour) {
@@ -176,7 +176,7 @@ const place = (at, turn) => new THREE.Matrix4().compose(new THREE.Vector3(...at)
  * A rounded box (w, h, d), its corners and edges of `round` radius: a box's
  * corners pulled in round an inner box, each point its own normal.
  */
-function roundedBox(width, height, depth, round, segments = 5) {
+export function roundedBox(width, height, depth, round, segments = 5) {
   const geometry = new THREE.BoxGeometry(width, height, depth, segments, segments, segments);
   const positions = geometry.attributes.position, normals = geometry.attributes.normal;
   const inner = [width / 2 - round, height / 2 - round, depth / 2 - round];
