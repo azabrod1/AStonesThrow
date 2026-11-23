@@ -15,6 +15,7 @@
 //   pitch there (steepestFor), which for a stone is a hard lob's near the hand,
 //   at rest, at the reload's kick and as the next thing comes out; the legs
 //   are the stand's own (legsFor);
+// - only a tall thing that lobs steeper lying is laid on its side (fitFor);
 // - the steepest pitch found from the profile's convex hull (a few dozen
 //   corners) is the one all its thousands of corners give; and the stand's
 //   twin under the water is drawn only where its legs reach under it; and
@@ -35,15 +36,15 @@ const SKIP_OVER_BANK = 0.25;     // m: a skip's let-down hand (src/rock.js SKIP_
 const SKIPPERS = ['gem', 'stone', 'tv'];   // the loads that stand for what skips (a stone, a pizza, an iPhone: flat), at a skip's pitches (src/rock.js SKIP_THROW.elevation)
 const CLEAR = 0.004;             // m: the least gap counted as clear
 const PIN = 0.036;               // m: what lies this near the pin's axis is its joint (the bosses), not the rail
-// Loads as the page measures them (src/main.js buildPreview: m from the middle, in the thing's own frame), the slide's
-// longer side along its own x (the machine turns it across the rail).
+// Loads as the page measures them (src/main.js buildPreview: its bounding box in its own frame, m from the middle).
+const box = (alongX, lowest, highest, acrossZ) => ({ min: [-alongX, -lowest, -acrossZ], max: [alongX, highest, acrossZ] });
 const LOADS = {
-  gem: { lowest: 0.008, highest: 0.012, along: 0.015, across: 0.015 },
-  stone: { lowest: 0.0225, highest: 0.0212, along: 0.0318, across: 0.03 },
-  bowling: { lowest: 0.108, highest: 0.108, along: 0.108, across: 0.108 },
-  tall: { lowest: 0.15, highest: 0.15, along: 0.1, across: 0.1 },
-  tv: { lowest: 0.009, highest: 0.009, along: 0.27, across: 0.16 },
-  slide: { lowest: 0.3, highest: 0.3, along: 0.59, across: 0.2 },
+  gem: box(0.015, 0.008, 0.012, 0.015),
+  stone: box(0.0318, 0.0225, 0.0212, 0.03),
+  bowling: box(0.108, 0.108, 0.108, 0.108),
+  tall: box(0.1, 0.15, 0.15, 0.1),           // taller than wide: laid on its side
+  tv: box(0.27, 0.009, 0.009, 0.16),
+  slide: box(0.59, 0.3, 0.3, 0.2),           // a toy slide: its length across the rail; laid, its height would lie along it, no steeper
 };
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -132,6 +133,12 @@ for (const [name, extents] of Object.entries(LOADS)) {
 }
 check(steepestOf.gem >= 75 && steepestOf.stone >= 75 && steepestOf.bowling >= 50, `the rail pitches as steep as a hard lob near the hand for a stone (75°), and a bowling ball at least 50°, at the lowest bank: ${Object.entries(steepestOf).map(([name, degrees]) => `${name} ${degrees.toFixed(1)}°`).join(', ')}`);
 check(worstPlaced < 1e-6, `the loaded thing sits at the hand's point for every aim (worst ${(worstPlaced * 1e6).toFixed(3)} µm off)`);
+
+// Seated as the machine seats them: laid on its side only what stands tall and lobs steeper lying; the rest upright.
+{
+  const laid = Object.entries(LOADS).filter(([, extents]) => fitFor(extents).laid).map(([name]) => name);
+  check(laid.join() === 'tall', `only the tall load that lobs steeper lying is laid on its side (${laid.join(', ') || 'none'})`);
+}
 
 // The steepest pitch from the profile's hull is the one every corner gives; and the stand's twin under the water.
 {

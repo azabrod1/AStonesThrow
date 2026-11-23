@@ -180,7 +180,8 @@ full screen, which only a press or a key may ask for):
   runs back, the next thing is pushed down out of the magazine over the
   breech, and the sled carries it up, in about 0.6 s. Its cradle and
   magazine are sized to the thing, loaded with its longer side across the
-  rail; a big or tall thing's rail stops short of the steepest lobs, most
+  rail (a tall thing that lobs steeper lying, the roses, laid on its side);
+  a big or tall thing's rail stops short of the steepest lobs, most
   where the hand is low over the ground (a bowling ball at 53° on the Koi
   pond's bank; the toy slide, 0.6 m tall on the sled, at 21° even at the
   lake). A drag of the size slider rebuilds it at most every 0.1 s. The

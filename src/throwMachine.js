@@ -28,8 +28,8 @@
 // buffers at the muzzle; and over the breech a closed magazine, a box the
 // next things wait in, out of sight, so a reload comes out of it and not
 // out of the air. Its size is the thing's (fitFor): the cradle as far under
-// the thing's middle as its lowest point, the thing turned so its longer
-// side lies across the rail, the magazine as long and as wide as it is and
+// the thing's middle as its lowest point, a tall thing laid on its side
+// (when lying lets it lob steeper) and the thing turned so its longer side lies across the rail, the magazine as long and as wide as it is and
 // tall enough for a few, the rail long enough for the sled to run
 // from under the magazine to the muzzle (MACHINE.rail).
 //
@@ -80,27 +80,60 @@ export const MACHINE = {
 // the sled back to the breech, the next thing pushed out of the magazine onto it, and the sled up to the muzzle.
 // m: the turntable's underside (the mast's top) under the fork's crossbar, at the turntable's depth (forkGeometry).
 export const TURNTABLE_UNDER = 0.038;
+// A tall thing laid on its side (fitFor): when it stands taller than `taller` (m) and lying lets the rail lob `gains`
+// steeper or more, the rail reaching at most `deepest` under the pivot (about the lowest bank's) over a cradle `under`
+// below the thing's lowest point (about its own).
+const LAY = { taller: 0.15, gains: THREE.MathUtils.degToRad(5), deepest: 0.5, under: 0.06 };
+const QUARTER = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+const LYING = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1)].map((axis) => new THREE.Quaternion().setFromAxisAngle(axis, Math.PI / 2));
 export const CYCLE = { kick: 0.025, rise: 0.02, settle: 0.07, back: [0.04, 0.24], feed: [0.24, 0.36], load: [0.38, 0.62] };
 
 const smooth = (from, to, time) => { const share = THREE.MathUtils.clamp((time - from) / (to - from), 0, 1); return share * share * (3 - 2 * share); };
 
 /**
- * The machine's measures for a loaded thing of `extents` ({ lowest, highest, along, across }: m from its middle, in its
- * own frame as it lies on the sled: down to its lowest point, up to its highest, and out to its farthest along its own
- * x and across, its z). It is loaded with its longer side across the rail (`quarter`: turned a quarter about its own
- * up, when its x is the longer), so the rail need only be as long as its shorter side asks: a toy slide's a metre
- * across, not along.
+ * The machine's measures for a loaded thing of `extents` ({ min, max }: its bounding box in its own frame, [x, y, z] m
+ * from its middle, as the page has it). It is seated on the sled (`seat`, a quaternion turning its own frame into the
+ * head's): laid on a side when it stands taller than LAY.taller and lying lets the rail lob steeper (LAY: a tall thing
+ * standing holds the rail down for a lob, and a launcher's cradle would carry it lying), on the side that lets it most,
+ * and then turned about its up so its longer side lies across the rail
+ * (`quarter`), so the rail need only be as long as its shorter side asks.
  */
-export function fitFor({ lowest, highest, along, across }) {
+export function fitFor({ min, max }) {
   const { rail, magazine: box } = MACHINE;
-  const quarter = along > across;
-  const [shorter, longer] = quarter ? [across, along] : [along, across];
+  const corner = new THREE.Vector3();
+  const measure = (turn) => {   // its lowest, highest, along (x) and across (z) seated so
+    const sized = { lowest: 0, highest: 0, along: 0, across: 0 };
+    for (let index = 0; index < 8; index++) {
+      corner.set(index & 1 ? max[0] : min[0], index & 2 ? max[1] : min[1], index & 4 ? max[2] : min[2]).applyQuaternion(turn);
+      sized.lowest = Math.max(sized.lowest, -corner.y); sized.highest = Math.max(sized.highest, corner.y);
+      sized.along = Math.max(sized.along, Math.abs(corner.x)); sized.across = Math.max(sized.across, Math.abs(corner.z));
+    }
+    return sized;
+  };
+  // How steep the rail could lob, seated so: a rail of length L (the shorter side along it) under a cradle c below the
+  // pivot (the lowest point) reaches L sin θ + c cos θ under it, at most LAY.deepest (steepestFor's own, in closed form).
+  const steepness = ({ lowest, along, across }) => {
+    const length = Math.max(rail.least, 2 * (Math.min(along, across) + box.gap) + rail.travel), cradle = lowest + LAY.under;
+    const span = Math.hypot(length, cradle);
+    return Math.asin(Math.min(1, LAY.deepest / span)) - Math.atan2(cradle, length);
+  };
+  let seat = new THREE.Quaternion(), sized = measure(seat), laid = false;
+  if (sized.lowest + sized.highest > LAY.taller) {
+    for (const lying of LYING) {
+      const tried = measure(lying);
+      if (steepness(tried) >= steepness(sized) + LAY.gains) { seat = lying.clone(); sized = tried; laid = true; }
+    }
+  }
+  const quarter = sized.along > sized.across;
+  if (quarter) seat.premultiply(QUARTER);
+  const { lowest, highest } = sized;
+  const [shorter, longer] = quarter ? [sized.across, sized.along] : [sized.along, sized.across];
   const half = shorter + box.gap, wide = longer + box.gap;   // the magazine's inner half length along the rail and half width across it
   const tall = lowest + highest;
   const height = Math.max(box.least, Math.min(box.stack * tall, tall + box.most));
   const length = Math.max(rail.least, 2 * half + rail.travel);
   return {
-    lowest: Math.max(lowest, 0.004), highest, along: shorter, across: longer, quarter, half, wide, height, length,
+    lowest: Math.max(lowest, 0.004), highest, along: shorter, across: longer, seat, quarter, laid, half, wide, height, length,
     breech: -length + half + box.gap,               // the loaded thing's middle along the rail with the sled at the breech
     plate: Math.max(0.066, longer + 0.016),         // the pitch plate, this far to the left of the middle
   };
@@ -277,8 +310,6 @@ export function hullOf(points) {
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
 
-const QUARTER = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-
 const place = (at, turn = null) => new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromEuler(turn ?? new THREE.Euler()), new THREE.Vector3(1, 1, 1));
 
 export class ThrowMachine {
@@ -308,7 +339,7 @@ export class ThrowMachine {
       this.under.add(this.twin);
     }
     this.fit = null;                 // fitFor's, for the thing loaded now (load)
-    this.built = { lowest: NaN, highest: NaN, along: NaN, across: NaN };
+    this.built = [NaN, NaN, NaN, NaN, NaN, NaN];   // the bounding box last built for (load)
     this.builtAt = -Infinity;        // the real time the head was last built (load)
     this.standing = { x: NaN, y: NaN, z: NaN, depth: NaN, plate: NaN };
     this.heading = 0;                // rad about the vertical: the rail's x along (cos, 0, -sin)
@@ -331,10 +362,10 @@ export class ThrowMachine {
    */
   load(extents, seconds = Infinity) {
     const built = this.built;
-    if (['lowest', 'highest', 'along', 'across'].every((key) => Math.abs(extents[key] - built[key]) < 1e-6)) return;
+    if ([...extents.min, ...extents.max].every((value, index) => Math.abs(value - built[index]) < 1e-6)) return;
     if (this.fit && seconds - this.builtAt < MACHINE.rebuild) return;
     this.builtAt = Number.isFinite(seconds) ? seconds : -Infinity;
-    Object.assign(built, extents);
+    [...extents.min, ...extents.max].forEach((value, index) => { built[index] = value; });
     this.fit = fitFor(extents);
     const { head, sled } = withRandom(this.random, () => headGeometry(this.fit));
     this.head.geometry.dispose(); this.head.geometry = head;
@@ -428,7 +459,7 @@ export class ThrowMachine {
     if (loaded) {
       loaded.visible = visible;
       loaded.quaternion.copy(this.turn);
-      if (fit.quarter) loaded.quaternion.multiply(QUARTER);   // its longer side across the rail (fitFor)
+      loaded.quaternion.multiply(fit.seat);   // laid if tall, its longer side across the rail (fitFor)
       loaded.position.set(along, up, 0).applyQuaternion(this.turn).add(headAt);
     }
     if (this.twin) { this.twin.position.copy(this.stand.position); this.twin.quaternion.copy(this.stand.quaternion); }

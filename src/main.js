@@ -1288,7 +1288,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
   const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0,
-    hand: new THREE.Vector3(), extents: { lowest: 0, highest: 0, along: 0, across: 0 } };   // hand: where it is let go (the machine's loaded point); extents: its size as it lies (src/throwMachine.js fitFor)
+    hand: new THREE.Vector3(), extents: { min: [0, 0, 0], max: [0, 0, 0] } };   // hand: where it is let go (the machine's loaded point); extents: its bounding box, scaled (src/throwMachine.js fitFor)
   const previewMuzzle = { x: 0, y: 0, z: 0 };   // the nozzle's muzzle (updatePreview), worked out in place
   // The water cannon's pump and hoses (src/cannonRig.js), made the first time the cannon is in hand, shown with its
   // nozzle (made under the veil, warmUp, for its under-water program); set down again for each place (its land) and when
@@ -1440,9 +1440,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (!geometry.boundingBox) geometry.computeBoundingBox();
     }
     preview.radius = radius;
-    // Its size as it lies (in its own frame, scaled): how the machine's cradle and magazine are fitted to it.
+    // Its bounding box in its own frame, scaled: how the machine seats it and fits its cradle and magazine (fitFor).
     const { min, max } = preview.mesh.geometry.boundingBox;
-    Object.assign(preview.extents, { lowest: -min.y * radius, highest: max.y * radius, along: Math.max(-min.x, max.x) * radius, across: Math.max(-min.z, max.z) * radius });
+    preview.extents.min = [min.x * radius, min.y * radius, min.z * radius];
+    preview.extents.max = [max.x * radius, max.y * radius, max.z * radius];
     const hand = handPosition(radius, thing);
     if (skipsNow() && thing.skips) hand.y = Math.min(hand.y, SKIP_THROW.handHeight);
     preview.mesh.position.copy(hand);
@@ -3791,7 +3792,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const machineWarm = everything || (machineOn && previewOn && !fired);
     if (machineWarm) {
       const warming = ensureMachine();
-      warming.load({ lowest: WARM_UP.radius, highest: WARM_UP.radius, along: WARM_UP.radius, across: WARM_UP.radius });
+      warming.load({ min: [-WARM_UP.radius, -WARM_UP.radius, -WARM_UP.radius], max: [WARM_UP.radius, WARM_UP.radius, WARM_UP.radius] });
       warming.standAt(handPosition(WARM_UP.radius, THINGS[DEFAULT_THING]), false, true);
       warming.aim(machineLaunch.way);
       warming.show(true, null, 0);
