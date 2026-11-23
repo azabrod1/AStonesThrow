@@ -131,8 +131,15 @@
 // (FAN.frozen: src/spray.js sprites, which freeze as they fly, uDropFrost)
 // along the same launches as its parts', each step at a few places across
 // it; with no drag they fly the arcs the sheet would have, and its shape is
-// still the fan's, but a spray of ice and never a sheet of water. Its draws
-// are a stream of their own (grainRandom), so nothing else's shifts.
+// still the fan's, but a spray of ice and never a sheet of water. They are
+// few (FAN.frozen.share, no more than the tongue drops they replace), since
+// they share the spray's budget with everything else in the air: denser,
+// they crowded it into puffs of mist and took sprites still in flight from
+// its ring (tools/thing-probe.mjs measures both on Low's budget). Their draws
+// are a stream of their own (grainRandom); but in vacuum the fan's tongue
+// drops (stepFan) are no longer drawn, so the stream's own draws after the
+// first landing, and so its craters and rings, differ from before; in air
+// nothing does.
 //
 // Its boil (whiten, WHITE; src/whiteWater.js draws it): at the stream's foot
 // the water it drives air into heaps up white. Its scale is set by the
@@ -285,10 +292,11 @@ export const FAN = {
   dropShare: 0.1,       // this share of the flow in all...
   dropRadius: 0.0013,   // ...in drops of this mean radius (m)...
   kick: 0.06,           // ...kicked by this share of the sheet's speed there: they stream on off the tongue, a little apart
-  // In vacuum (the header) the whole fan is grains: `samples` places across it a step (the stronger of two parts
-  // drawn, so more of them off its fingers), each carrying an equal part of `share` of the flow, in grains of mean radius `radius` (m), kicked by `kick` of the
+  // In vacuum (the header) the fan is grains: `samples` places across it a step (the stronger of two parts drawn, so
+  // more of them off its fingers), each carrying an equal part of `share` of the flow (half the tongue drops' in air,
+  // FAN.dropShare, in drops of their size: the spray's budget, the header), in grains of mean radius `radius` (m), kicked by `kick` of the
   // part's speed (the drops' own flashing scatters them) and scattered over `spread` of the fan's width at its foot.
-  frozen: { samples: 6, share: 0.3, radius: 0.0008, kick: 0.05, spread: 0.5 },
+  frozen: { samples: 3, share: 0.05, radius: 0.0013, kick: 0.05, spread: 0.5 },
 };
 // The white water where it lands (the header; src/whiteWater.js): its scale is the length L = (QU/g)^(1/3) at which
 // the stream's momentum flux ρQU heaps water up against its weight (9 cm for the weakest jet, 27 at 3 bar, 74 for the
