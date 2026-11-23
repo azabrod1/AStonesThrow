@@ -125,9 +125,9 @@
 // On ice it glances the same, and leaves nothing where it lands, each drop
 // tested where it comes down (iceAt): a fan thrown by a hole's edge rains on
 // the water whichever side of the edge it was thrown from.
-// In vacuum (src/splash.js `airless`: Europa) there is no sheet: the water
-// the stream throws up is flashing as it was in flight, and a film a tenth
-// of a millimetre thick boils apart at once, so the fan is thrown as grains
+// In vacuum (src/splash.js `airless`: Europa) there is no sheet: the stream
+// comes down already flashed into a cone of drops (FLASH), so what it throws
+// up is drops too, flashing on as they fly, and the fan is thrown as grains
 // (FAN.frozen: src/spray.js sprites, which freeze as they fly, uDropFrost)
 // along the same launches as its parts', each step at a few places across
 // it; with no drag they fly the arcs the sheet would have, and its shape is
@@ -759,7 +759,7 @@ export class WaterCannon {
    * In vacuum its water leaves as grains (FAN.frozen), born at `splashTime`,
    * as the sprites of a stream landing `landed` wide (m).
    */
-  throwFan(x, z, speed, incidence, directionX, directionZ, sheath, flow, emitted, time, onIce, splashTime = time, landed = 0.03) {
+  throwFan(x, z, speed, incidence, directionX, directionZ, sheath, flow, emitted, time, onIce, splashTime, landed) {
     const tail = this.tail, parts = FAN_GRID.columns, controls = FAN.controls;
     const scale = Math.cbrt((flow * speed) / GRAVITY), period = Math.sqrt(scale / GRAVITY);
     const memory = FAN.sway.time * period, smoothing = FAN.sway.smooth * memory, dt = this.stepSeconds;
@@ -825,7 +825,10 @@ export class WaterCannon {
    * each part's launch with a kick, from its place across the foot; the
    * stronger part drawn is what weights them, so each carries an equal part
    * of FAN.frozen.share of the step's water. Its sprites are a stream
-   * landing `landed` wide's, as the glancing sheet's are (land).
+   * landing `landed` wide's, as the glancing sheet's are (land), but never
+   * fewer than a 3 cm stone's: a sprite of many drops is drawn as a puff of
+   * mist (src/spray.js), and a grain of ice must stay a grain (the deck gun's
+   * fan read as grey smoke).
    */
   throwGrains(slot, flow, splashTime, landed) {
     const spray = this.splash.spray;
@@ -833,7 +836,7 @@ export class WaterCannon {
     const tail = this.tail, parts = FAN_GRID.columns, frozen = FAN.frozen, random = this.grainRandom;
     const width = tail.width[slot];
     const drops = sprayDrops((flow * this.stepSeconds * frozen.share) / frozen.samples, frozen.radius);
-    const sizeFactor = Math.max(landed / 0.03, 0.25);
+    const sizeFactor = Math.min(Math.max(landed / 0.03, 0.25), 1);
     for (let sample = 0; sample < frozen.samples; sample++) {
       const one = Math.floor(random() * parts), other = Math.floor(random() * parts);
       const part = tail.strength[slot * parts + one] >= tail.strength[slot * parts + other] ? one : other;
