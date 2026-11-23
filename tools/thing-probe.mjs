@@ -608,6 +608,19 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   const inAir = churn(false), inVacuum = churn(true);
   check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
     `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
+  // In vacuum the fan is no sheet (FAN.frozen): its rows are never drawn, and its water leaves as grains instead.
+  const fanOf = (airless) => {
+    let rows = 0, grains = 0;
+    const fan = { room: Infinity, begin() {}, row: () => rows++, vertex() {}, finish() {}, hide() {} };
+    const spray = { burst: ({ drops }) => { grains += drops; return 0; } };
+    const own = new WaterCannon({ water, splash: { ...splash, airless, spray }, fan });
+    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
+    for (let step = 0; step < 120; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, []); own.drawAt(step * STEP); }
+    return { rows, grains };
+  };
+  const airFan = fanOf(false), vacuumFan = fanOf(true);
+  check(airFan.rows > 0 && vacuumFan.rows === 0 && vacuumFan.grains > 2 * airFan.grains,
+    `a squirt's fan in air draws ${airFan.rows} rows of sheet and throws ${airFan.grains.toExponential(1)} drops; in vacuum ${vacuumFan.rows} rows (none) and ${vacuumFan.grains.toExponential(1)} grains`);
   // The water it churns, which the fish keep out of (landing.churn, src/fish.js): none where it comes down on ice.
   const churnOf = (wetIce) => {
     const own = new WaterCannon({ water, splash, wetIce });
