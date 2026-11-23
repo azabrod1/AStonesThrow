@@ -48,7 +48,7 @@ an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or 
 shown last. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats, an iPad from an iPhone to an iPad Pro, a frying pan 20
-to 30 cm, roses one to 25, always an odd number; a golf or a tennis ball has one size). Then how it is
+to 30 cm, roses one to 19, always an odd number; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
 way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
 either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
@@ -147,8 +147,8 @@ full screen, which only a press or a key may ask for):
   0.8 m/s and lies on the bed on its base or its rim. Roses come one
   long-stemmed rose or a bouquet tied in a spiral under a satin ribbon,
   always an odd number of them: each step of the slider a few counts (3 or
-  5, 7 to 11, 13 to 19, 21 to 25) and each throw one of them at random, the
-  one the hand shows (30 to 40 g a rose: 29 g to about a kilogram). Each
+  5, 7 to 11, 13 to 19) and each throw one of them at random, the
+  one the hand shows (30 to 40 g a rose: 30 g to three quarters of a kilogram). Each
   bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
   heart to broad outer ones cupped and rolled back at their rims, its
   sepals turned down under it; each stem its own, with thorns, down to its

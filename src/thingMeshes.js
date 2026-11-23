@@ -3152,7 +3152,7 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // ---- the flowers -------------------------------------------------------------
 
 // A bouquet of red roses (src/things.js 'roses'), each count its own
-// (`look.count`: one long-stemmed rose, or an odd number up to 25 tied),
+// (`look.count`: one long-stemmed rose, or an odd number up to 19 tied),
 // built in metres, its blooms up (+y), and seeded (each count's from its own
 // stream, so it is built alike every time). A bloom as it is drawn
 // (rosePetals) is a hybrid tea's: its petals wound in a spiral, each the
@@ -3190,7 +3190,7 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // Set about its body's middle and scaled to a unit ball's volume of it: its
 // nominal radius is its ball's of like volume, its length roseLength().
 const ROSES = {
-  counts: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25],   // always odd, as a florist ties them
+  counts: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19],   // always odd, as a florist ties them
   // A bloom's hull (roseHull): its cup's profile, (radius, height) in centimetres from its hip at the stem up and out to
   // its outer petals' rims and in across its heart, round in `segments`; `reach`, its widest as drawn, its tips curled
   // out, for spacing blooms; each bloom's scale and turn drawn.
@@ -3210,17 +3210,17 @@ const ROSES = {
   petals: {
     count: 24,
     claw: [[0.18, -1.3], [0.85, -1.5]], tip: [[0.42, 2.0], [3.15, 1.0]], width: [0.62, 1.95], rise: [3.2, 2.1],
-    reflex: [[0, 0], [0.8, 0.75]], roll: [0, 0.1], cup: [0.12, 0.2], ruffle: 0.05, lean: 0.06,
+    reflex: [[0, 0], [0.8, 0.75]], roll: [0, 0], cup: [0.05, 0.1], ruffle: 0, lean: 0,
     // Its cells along and across at each level of detail, finest first (the coarser shown as it is smaller on the
     // screen: rosesWithDetail), and from how many roses a bouquet's outer stems carry one leaf, not two.
-    levels: [{ rows: [5, 12], columns: [3, 6] }, { rows: [3, 6], columns: [2, 4] }, { rows: [2, 4], columns: [2, 2] }],
+    levels: [{ rows: [6, 12], columns: [5, 6] }, { rows: [3, 6], columns: [3, 4] }, { rows: [2, 4], columns: [2, 2] }],
     fewerLeavesFrom: 9,
     open: [0.85, 1.1],
   },
   petal: 0.05,   // cm: a petal's thickness
   // Its heart: the bud's tip, a small cone under its innermost petals (hidden but where they part); its hip; its
   // sepals, green tongues turned down under it (cm), their cells along and across.
-  heart: { segments: 10, profile: [[0, -0.6], [0.3, -0.4], [0.32, 1.0], [0.2, 1.7], [0, 1.85]] },
+  heart: { segments: 16, profile: [[0, -0.6], [0.38, -0.4], [0.42, 1.0], [0.3, 1.75], [0.12, 1.95], [0, 1.98]] },
   hip: { segments: 10, profile: [[0, -2.5], [0.45, -2.45], [0.85, -2.1], [0.9, -1.75], [0.7, -1.55], [0, -1.5]] },
   sepals: { count: 5, from: [0.75, -1.65], length: 1.7, drop: 1.05, width: 0.32, thickness: 0.04, grid: [4, 2] },
   stem: { radius: 0.0032, sides: 12, length: 0.42, below: 0.14 },   // m: its radius, a single rose's length under its hip, a bunch's under the tie
@@ -3384,14 +3384,16 @@ function rosePetals(scale, phase, open, random, level = 0) {
     const middle = phase + petal * GOLDEN_ANGLE;
     const shade = 0.92 + 0.14 * random();
     const clawRadius = between([claw[0][0], claw[1][0]], out), clawHeight = between([claw[0][1], claw[1][1]], out);
-    const tipRadius = between([tip[0][0], tip[1][0]], out ** 1.25) * opened, tipHeight = between([tip[0][1], tip[1][1]], out ** 1.6) - 0.3 * (opened - 1);
+    const tipRadius = between([tip[0][0], tip[1][0]], out ** 1.1) * opened, tipHeight = between([tip[0][1], tip[1][1]], out ** 1.6) - 0.3 * (opened - 1);
     const halfWidth = between(width, out ** 0.8), power = between(rise, out);
     const [reflexOut, reflexDown] = [between([reflex[0][0], reflex[1][0]], out ** 2) * opened, between([reflex[0][1], reflex[1][1]], out ** 2) * opened];
     const rolled = between(roll, out ** 2), cupped = between(cup, out), wave = ruffle * out * out;
     const wobble = random() * Math.PI * 2;
     // Its outline: a narrow claw, widest some three fifths up, its top a round arch (its sides close in to its tip as an
-    // ellipse does, so its rim is a curve, not a cut with corners).
-    const outline = (along) => (along <= 0.6 ? 0.22 + 0.78 * Math.sin((Math.PI / 2) * (along / 0.6)) : Math.sqrt(Math.max(1 - ((along - 0.6) / 0.4) ** 2, 0.004)));
+    // ellipse does, so its rim is a curve, not a cut with corners); a bud's petal, wrapped round the heart, keeps a
+    // broad top (`arch` the less), so the heart's petals are not stacked spikes.
+    const arch = 0.35 + 0.65 * smoothstep(0.1, 0.6, out);
+    const outline = (along) => (along <= 0.6 ? 0.22 + 0.78 * Math.sin((Math.PI / 2) * (along / 0.6)) : Math.sqrt(Math.max(1 - arch * ((along - 0.6) / 0.4) ** 2, 0.004)));
     // Its rows closer together toward its rim, where its outline curves.
     const rowAt = (row) => 1 - (1 - row) ** 1.5;
     const shape = (along, across) => {
@@ -3408,21 +3410,20 @@ function rosePetals(scale, phase, open, random, level = 0) {
     const color = new THREE.Color();
     parts.push(shellMesh({
       at, rows: Math.round(between(rows, out)), columns: Math.round(between(columns, out)), thickness: ROSES.petal * metres, rim: false,
-      // Deep crimson, its claw darker and its rolled-back rim darker still (a red rose's velvet); its outer face a little
-      // lighter, its inner face deeper; the inner petals, in the bloom's shade, darker the deeper in.
+      // Deep crimson, its claw darker and its curled rim lighter; its outer face a little lighter, its inner face deeper; the inner petals, in the bloom's shade, darker the deeper in.
       paint: (row, across, normal) => {
         const along = rowAt(row), [x, , z] = shape(along, across);
         const facingOut = normal.dot(radial.set(x, 0, z).normalize()) > 0;
         color.copy(ROSES.claw).lerp(ROSES.red, smoothstep(0.0, 0.3, along)).lerp(ROSES.tipRed, 0.6 * smoothstep(0.55, 0.9, along));
-        color.lerp(ROSES.velvet, 0.35 * smoothstep(0.8, 1, along) * (0.3 + 0.7 * out));
+        color.lerp(ROSES.tipRed, 0.3 * smoothstep(0.8, 1, along));   // its rim, curled, catches the light
         if (facingOut) color.lerp(ROSES.pinker, 0.18 * out);
         else color.multiplyScalar(0.9);
-        return color.multiplyScalar(shade * (0.68 + 0.32 * smoothstep(-0.2, 0.7, out + 0.35 * along)));
+        return color.multiplyScalar(shade * (0.75 + 0.25 * smoothstep(-0.2, 0.7, out + 0.35 * along)));
       },
     }));
   }
   // Its heart, where the innermost petals part: dark.
-  parts.push(turnedPart(ROSES.heart.profile, ROSES.heart.segments, (radius, height, angle) => [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres], () => ROSES.dark));
+  parts.push(turnedPart(ROSES.heart.profile, ROSES.heart.segments, (radius, height, angle) => [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres], () => ROSES.velvet));
   // Its hip, and its sepals turned down under its outer petals.
   parts.push(turnedPart(ROSES.hip.profile, ROSES.hip.segments, (radius, height, angle) => [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres], () => ROSES.hipGreen));
   const sepals = ROSES.sepals;

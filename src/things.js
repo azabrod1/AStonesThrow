@@ -203,7 +203,7 @@
 //     2100 kg/m³: plates that sink, each but the iPhone its home screen
 //     painted on its glass), a cast-iron frying pan (20, 25 or 30 cm, 1.5 to
 //     3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside) and red roses
-//     (one, or an odd number up to 25 tied, drawn at random from the
+//     (one, or an odd number up to 19 tied, drawn at random from the
 //     step's few, blooms of petals wound in a spiral: 30 to 40 g a rose,
 //     250 to 350 kg/m³, floating by their blooms' hulls as a raft, blooms
 //     up, shedding petals as they are flung and as they strike);
@@ -964,7 +964,7 @@ defineBuiltIn('pan', {
 // their stems as it goes, whipping on as it strikes and drooping as it lies (src/rock.js swayStep), and it sheds petals
 // as it is flung and as it strikes (src/petals.js).
 defineBuiltIn('roses', {
-  name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 25: it floats', called: 'roses',
+  name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 19: it floats', called: 'roses',
   body: {
     shape: 'mesh',
     ballast: [0, -1.122, 0],
@@ -985,11 +985,6 @@ defineBuiltIn('roses', {
           { diameter: 0.1504, mass: 0.5934, look: { count: 15 }, body: { ballast: [0, -0.967, 0] } },
           { diameter: 0.1593, mass: 0.6916, look: { count: 17 }, body: { ballast: [0, -0.888, 0] } },
           { diameter: 0.1624, mass: 0.7467, look: { count: 19 }, water: { columns: 24 }, body: { ballast: [0, -0.901, 0] } },
-        ] },
-        { value: 5, name: '21 to 25 roses', label: '818–991 g', choices: [
-          { diameter: 0.1670, mass: 0.8180, look: { count: 21 }, water: { columns: 24 }, body: { ballast: [0, -0.884, 0] } },
-          { diameter: 0.1735, mass: 0.9080, look: { count: 23 }, water: { columns: 24 }, body: { ballast: [0, -0.853, 0] } },
-          { diameter: 0.1788, mass: 0.9913, look: { count: 25 }, water: { columns: 24 }, body: { ballast: [0, -0.834, 0] } },
         ] },
       ],
     },
