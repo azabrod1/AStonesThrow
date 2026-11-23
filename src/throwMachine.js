@@ -34,7 +34,7 @@
 //
 // The reload (CYCLE), after each throw, by real time: the sled is at the
 // muzzle as the thing leaves (it is let go at the hand's point, at once:
-// the stroke is done), the head kicks back a centimetre and settles, the
+// the stroke is done), the rail kicks up on its pin and settles, the
 // sled runs back to the breech, the next thing is pushed down out of the
 // magazine onto it, and the sled carries it up to the muzzle. About 0.6 s,
 // as long as the preview used to be gone; a throw before it ends fires at
@@ -73,9 +73,12 @@ export const MACHINE = {
     blue: [0.1, 0.32, 0.66], rubber: [0.4, 0.39, 0.37], receiver: [0.66, 0.64, 0.6], brass: [0.7, 0.5, 0.2],
   },
 };
-// The reload after a throw, in seconds of real time from it: the head's kick back (along the rail, m) and its settling;
+// The reload after a throw, in seconds of real time from it: the rail's kick up on its pin (rad, the muzzle jumping as
+// the sled stops on its buffers) and its settling;
 // the sled back to the breech, the next thing pushed out of the magazine onto it, and the sled up to the muzzle.
-export const CYCLE = { kick: 0.012, rise: 0.02, settle: 0.07, back: [0.04, 0.24], feed: [0.24, 0.36], load: [0.38, 0.62] };
+// m: the turntable's underside (the mast's top) under the fork's crossbar, at the turntable's depth (forkGeometry).
+export const TURNTABLE_UNDER = 0.038;
+export const CYCLE = { kick: 0.025, rise: 0.02, settle: 0.07, back: [0.04, 0.24], feed: [0.24, 0.36], load: [0.38, 0.62] };
 
 const smooth = (from, to, time) => { const share = THREE.MathUtils.clamp((time - from) / (to - from), 0, 1); return share * share * (3 - 2 * share); };
 
@@ -181,11 +184,28 @@ function forkGeometry(fit, depth) {
   return parts.geometry();
 }
 
-/** The mast and tripod (the header) in the world, from `top` (the turntable's underside) to feet on `groundAt`. */
-function standGeometry(top, groundAt) {
-  const { colours: colour, stand } = MACHINE, parts = new Parts();
+/**
+ * The tripod's layout under `top` (the turntable's underside, a Vector3) on `groundAt`: the collar's height and the
+ * three legs, each [hip, foot] (Vector3s), one back towards the shore (+z) and two forward. Its geometry's
+ * (standGeometry) and tools/machine-probe.mjs's.
+ */
+export function legsFor(top, groundAt) {
+  const { stand } = MACHINE;
   const ground = groundAt(top.x, top.z);
   const collar = ground + THREE.MathUtils.clamp(0.45 * (top.y - ground), 0.05, 0.4);
+  const legs = [0, 1, 2].map((leg) => {
+    const angle = Math.PI / 2 + (leg * 2 * Math.PI) / 3;
+    const footX = top.x + Math.cos(angle) * stand.splay, footZ = top.z + Math.sin(angle) * stand.splay;
+    return [new THREE.Vector3(top.x + Math.cos(angle) * stand.mast * 1.4, collar, top.z + Math.sin(angle) * stand.mast * 1.4),
+      new THREE.Vector3(footX, groundAt(footX, footZ) + 0.012, footZ)];
+  });
+  return { collar, legs };
+}
+
+/** The mast and tripod (the header) in the world, from `top` (the turntable's underside) to feet on `groundAt` (legsFor). */
+function standGeometry(top, groundAt) {
+  const { colours: colour, stand } = MACHINE, parts = new Parts();
+  const { collar, legs } = legsFor(top, groundAt);
   const sleeveTop = collar + 0.55 * (top.y - collar);
   parts.cylinder(stand.mast, sleeveTop - collar + 0.04, [top.x, (sleeveTop + collar) / 2 - 0.02, top.z], 'y', colour.paint, 24);
   parts.cylinder(stand.inner, top.y - sleeveTop + 0.02, [top.x, (top.y + sleeveTop) / 2, top.z], 'y', colour.steel, 24);
@@ -193,21 +213,16 @@ function standGeometry(top, groundAt) {
   parts.bar([top.x, sleeveTop - 0.01, top.z + stand.mast * 1.4], [top.x, sleeveTop - 0.01, top.z + stand.mast * 1.4 + 0.045], 0.005, colour.steel);
   parts.cylinder(0.009, 0.04, [top.x, sleeveTop - 0.01, top.z + stand.mast * 1.4 + 0.045], 'x', colour.orange, 12);
   parts.cylinder(stand.mast * 1.5, 0.05, [top.x, collar, top.z], 'y', colour.paint, 24);
-  // Three legs, one back towards the shore (+z) and two forward, each with a brace to the sleeve.
-  for (let leg = 0; leg < 3; leg++) {
-    const angle = Math.PI / 2 + (leg * 2 * Math.PI) / 3;
-    const footX = top.x + Math.cos(angle) * stand.splay, footZ = top.z + Math.sin(angle) * stand.splay;
-    const footY = groundAt(footX, footZ) + 0.012;
-    const hip = [top.x + Math.cos(angle) * stand.mast * 1.4, collar, top.z + Math.sin(angle) * stand.mast * 1.4];
-    parts.bar(hip, [footX, footY, footZ], stand.leg, colour.paint);
-    parts.cylinder(stand.foot, 0.024, [footX, footY, footZ], 'y', colour.rubber, 16);
+  for (const [hip, foot] of legs) {
+    parts.bar(hip.toArray(), foot.toArray(), stand.leg, colour.paint);
+    parts.cylinder(stand.foot, 0.024, foot.toArray(), 'y', colour.rubber, 16);
   }
   return parts.geometry();
 }
 
 /**
- * The steepest pitch (rad) at which nothing of the head and its sled (`profile`: their corners' x and y in the head's
- * frame, the sled's at both ends of its run) comes lower than `deepest` under the pivot: within MACHINE.pitch.
+ * The steepest pitch (rad) at which nothing of the head and its sled (`profile`: the convex hull of their corners' x and
+ * y in the head's frame, the sled's at both ends of its run) comes lower than `deepest` under the pivot: within MACHINE.pitch.
  */
 function steepestFor(profile, deepest) {
   const [least, most] = MACHINE.pitch.map((degrees) => THREE.MathUtils.degToRad(degrees));
@@ -221,6 +236,22 @@ function steepestFor(profile, deepest) {
     steepest = pitch;
   }
   return steepest;
+}
+
+/** The convex hull of 2-D `points` ([x, y] each), its corners in order (Andrew's monotone chain). */
+export function hullOf(points) {
+  const sorted = [...points].sort((one, other) => one[0] - other[0] || one[1] - other[1]);
+  const turn = (origin, one, other) => (one[0] - origin[0]) * (other[1] - origin[1]) - (one[1] - origin[1]) * (other[0] - origin[0]);
+  const lower = [], upper = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && turn(lower.at(-2), lower.at(-1), point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  for (const point of sorted.reverse()) {
+    while (upper.length >= 2 && turn(upper.at(-2), upper.at(-1), point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
 
 const place = (at, turn = null) => new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromEuler(turn ?? new THREE.Euler()), new THREE.Vector3(1, 1, 1));
@@ -262,8 +293,8 @@ export class ThrowMachine {
     this.point = new THREE.Vector3();
     this.forward = new THREE.Vector3();
     this.turn = new THREE.Quaternion();
-    this.local = new THREE.Vector3();
-    this.lowest = new THREE.Vector3();
+    this.euler = new THREE.Euler();   // the rail's turn as shown (show), kept so a frame makes no garbage
+    this.standLowest = Infinity;      // the stand's lowest point (standAt): its twin under the water is drawn only if it is under 0
     this.warming = false;
   }
 
@@ -279,10 +310,12 @@ export class ThrowMachine {
     this.standing.plate = NaN;   // the fork as wide as the new plate, and the steepest pitch found again (standAt)
     // Its corners' x and y in the head's frame, the sled's at both ends of its run: how steep it may pitch (steepestFor).
     const headCorners = head.attributes.position, sledCorners = sled.attributes.position;
-    this.profile = new Float32Array(2 * (headCorners.count + 2 * sledCorners.count));
-    let at = 0;
-    for (let index = 0; index < headCorners.count; index++) { this.profile[at++] = headCorners.getX(index); this.profile[at++] = headCorners.getY(index); }
-    for (const along of [0, this.fit.breech]) for (let index = 0; index < sledCorners.count; index++) { this.profile[at++] = sledCorners.getX(index) + along; this.profile[at++] = sledCorners.getY(index); }
+    // Only their outline's corners can be lowest at any pitch, so the profile is their convex hull (hullOf): a few dozen
+    // points, not thousands, for steepestFor to turn.
+    const points = [];
+    for (let index = 0; index < headCorners.count; index++) points.push([headCorners.getX(index), headCorners.getY(index)]);
+    for (const along of [0, this.fit.breech]) for (let index = 0; index < sledCorners.count; index++) points.push([sledCorners.getX(index) + along, sledCorners.getY(index)]);
+    this.profile = Float32Array.from(hullOf(points).flat());
   }
 
   /** The turntable's depth under `point` for a skip or not: its MACHINE.depth, kept `clear` over the ground and under the cradle. */
@@ -305,8 +338,10 @@ export class ThrowMachine {
     this.steepest = steepestFor(this.profile, depth - MACHINE.above);
     withRandom(this.random, () => {
       this.fork.geometry.dispose(); this.fork.geometry = forkGeometry(this.fit, depth);
-      this.stand.geometry.dispose(); this.stand.geometry = standGeometry(new THREE.Vector3(point.x, point.y - depth - 0.038, point.z), this.groundAt);
+      this.stand.geometry.dispose(); this.stand.geometry = standGeometry(new THREE.Vector3(point.x, point.y - depth - TURNTABLE_UNDER, point.z), this.groundAt);
     });
+    this.stand.geometry.computeBoundingBox();
+    this.standLowest = this.stand.geometry.boundingBox.min.y;
     if (this.twin) this.twin.geometry = this.stand.geometry;
   }
 
@@ -345,10 +380,11 @@ export class ThrowMachine {
         up = (1 - out) * (fit.highest + MACHINE.magazine.gap + fit.lowest + 0.004);
       }
     }
-    const recoil = since < 0 || since >= load[1] ? 0 : kick * (since < rise ? since / rise : Math.exp(-(since - rise) / settle));
-    this.turn.setFromEuler(new THREE.Euler(0, this.heading, this.pitch, 'YXZ'));
+    // The kick turns the rail about its pin (through the point), so the head stays on its mount and the point where it is.
+    const kicked = since < 0 || since >= load[1] ? 0 : kick * (since < rise ? since / rise : Math.exp(-(since - rise) / settle));
+    this.turn.setFromEuler(this.euler.set(0, this.heading, this.pitch + kicked, 'YXZ'));
     this.forward.set(1, 0, 0).applyQuaternion(this.turn);
-    const headAt = this.local.copy(this.point).addScaledVector(this.forward, -recoil);
+    const headAt = this.point;
     this.head.position.copy(headAt);
     this.head.quaternion.copy(this.turn);
     this.sled.position.copy(headAt).addScaledVector(this.forward, along);
@@ -365,10 +401,7 @@ export class ThrowMachine {
   }
 
   /** Whether the stand's legs reach under the still surface (its twin is drawn only then). */
-  reachesUnder() {
-    const sphere = this.stand.geometry.boundingSphere;
-    return Boolean(sphere) && sphere.center.y - sphere.radius < 0;
-  }
+  reachesUnder() { return this.standLowest < 0; }
 
   /** For the warm-up (src/main.js warmUp): everything shown, the twin too, while `on`, so their programs are built. */
   warmUp(on) {

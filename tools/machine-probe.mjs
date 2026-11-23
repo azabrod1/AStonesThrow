@@ -12,7 +12,12 @@
 //   the mast or the fork's post (bar the pin joint), or a leg, or under the
 //   ground, with the hand at its lowest over the ground (the Koi pond's bank:
 //   HAND_OVER_BANK; a skip's at SKIP_OVER_BANK), up to the steepest it may
-//   pitch there (steepestFor), which for a stone is a hard lob's near the hand;
+//   pitch there (steepestFor), which for a stone is a hard lob's near the hand,
+//   at rest, at the reload's kick and as the next thing comes out; the legs
+//   are the stand's own (legsFor);
+// - the steepest pitch found from the profile's convex hull (a few dozen
+//   corners) is the one all its thousands of corners give; and the stand's
+//   twin under the water is drawn only where its legs reach under it;
 // - the reload (CYCLE): the sled at the muzzle as the throw leaves, at the
 //   breech while the next thing comes out of the magazine (hidden before),
 //   and back at the muzzle with it at the end;
@@ -20,7 +25,7 @@
 //   from it, and a seeded throw after would draw otherwise): loading,
 //   standing and showing run with Math.random made to throw.
 import * as THREE from 'three';
-import { ThrowMachine, MACHINE, CYCLE, fitFor } from '../src/throwMachine.js';
+import { ThrowMachine, MACHINE, CYCLE, TURNTABLE_UNDER, fitFor, legsFor } from '../src/throwMachine.js';
 import { parkMiller, withRandom } from '../src/withRandom.js';
 
 const HAND_OVER_BANK = 0.636;    // m: the hand's point over the Koi pond's bank, the lowest over land of any place (src/main.js handPosition)
@@ -77,17 +82,6 @@ function toSegment(at, from, to) {
   const along = to.clone().sub(from), share = THREE.MathUtils.clamp(at.clone().sub(from).dot(along) / along.lengthSq(), 0, 1);
   return at.distanceTo(from.clone().addScaledVector(along, share));
 }
-/** The legs as src/throwMachine.js standGeometry lays them, for the turntable `depth` under the point. */
-function legsOf(depth) {
-  const { stand } = MACHINE, top = point.y - depth - 0.038;
-  const collar = groundY + THREE.MathUtils.clamp(0.45 * (top - groundY), 0.05, 0.4);
-  return [0, 1, 2].map((leg) => {
-    const angle = Math.PI / 2 + (leg * 2 * Math.PI) / 3;
-    return [new THREE.Vector3(point.x + Math.cos(angle) * stand.mast * 1.4, collar, point.z + Math.sin(angle) * stand.mast * 1.4),
-      new THREE.Vector3(point.x + Math.cos(angle) * stand.splay, groundY + 0.012, point.z + Math.sin(angle) * stand.splay)];
-  });
-}
-
 // The loaded thing at the point, every aim; and the rail clear of its mount and the ground.
 const [least, most] = MACHINE.pitch;
 let worstPlaced = 0;
@@ -100,7 +94,7 @@ for (const [name, extents] of Object.entries(LOADS)) {
     machine.standAt(hand, skip, true);
     const depth = machine.standing.depth, fit = machine.fit;
     const post = fit.plate + 0.034;
-    const legs = legsOf(depth).map(([from, to]) => [from.clone().setY(from.y - point.y + hand.y), to]);
+    const { legs } = legsFor(new THREE.Vector3(hand.x, hand.y - depth - TURNTABLE_UNDER, hand.z), groundAt);   // as the stand lays them
     const problems = new Set();
     const steepest = THREE.MathUtils.radToDeg(machine.steepest);
     const pitches = skip ? [-3, 0, 3, 6] : [...Array.from({ length: Math.floor((steepest - least) / 5) + 1 }, (unused, step) => least + 5 * step), steepest];
@@ -109,7 +103,7 @@ for (const [name, extents] of Object.entries(LOADS)) {
       for (let heading = 45; heading <= 135; heading += 15) {
         const radians = THREE.MathUtils.degToRad(heading), up = THREE.MathUtils.degToRad(pitch);
         machine.aim(new THREE.Vector3(Math.cos(up) * Math.cos(radians), Math.sin(up), -Math.cos(up) * Math.sin(radians)));
-        for (const since of [Infinity, (CYCLE.feed[0] + CYCLE.feed[1]) / 2]) {
+        for (const since of [Infinity, CYCLE.rise, (CYCLE.feed[0] + CYCLE.feed[1]) / 2]) {   // at rest, at the kick's top, as the next comes out
           machine.firedAt = since === Infinity ? -Infinity : 0;
           machine.show(true, loaded, since === Infinity ? 1 : since);
           if (since === Infinity) worstPlaced = Math.max(worstPlaced, loaded.position.distanceTo(hand));
@@ -133,6 +127,32 @@ for (const [name, extents] of Object.entries(LOADS)) {
 }
 check(steepestOf.gem >= 75 && steepestOf.stone >= 75 && steepestOf.bowling >= 50, `the rail pitches as steep as a hard lob near the hand for a stone (75°), and a bowling ball at least 50°, at the lowest bank: ${Object.entries(steepestOf).map(([name, degrees]) => `${name} ${degrees.toFixed(1)}°`).join(', ')}`);
 check(worstPlaced < 1e-6, `the loaded thing sits at the hand's point for every aim (worst ${(worstPlaced * 1e6).toFixed(3)} µm off)`);
+
+// The steepest pitch from the profile's hull is the one every corner gives; and the stand's twin under the water.
+{
+  groundY = point.y - HAND_OVER_BANK;
+  machine.load(LOADS.bowling);
+  machine.standAt(point, false, true);
+  const corners = [];
+  for (const [mesh, alongs] of [[machine.head, [0]], [machine.sled, [0, machine.fit.breech]]]) {
+    const positions = mesh.geometry.attributes.position;
+    for (const along of alongs) for (let index = 0; index < positions.count; index++) corners.push([positions.getX(index) + along, positions.getY(index)]);
+  }
+  const deepest = machine.standing.depth - MACHINE.above;
+  let steepest = THREE.MathUtils.degToRad(MACHINE.pitch[0]);
+  for (let pitch = 0; pitch <= THREE.MathUtils.degToRad(MACHINE.pitch[1]) + 1e-9; pitch += THREE.MathUtils.degToRad(0.5)) {
+    if (corners.some(([along, up]) => -(along * Math.sin(pitch) + up * Math.cos(pitch)) > deepest)) break;
+    steepest = pitch;
+  }
+  check(Math.abs(steepest - machine.steepest) < 1e-9 && machine.profile.length / 2 < 200,
+    `the steepest pitch from the hull's ${machine.profile.length / 2} corners is every corner's (${corners.length}): ${THREE.MathUtils.radToDeg(machine.steepest).toFixed(1)}°`);
+  const onLand = machine.reachesUnder();
+  groundY = -0.32;   // the lake's bed under the hand
+  machine.standAt(point, false, true);
+  const wading = machine.reachesUnder();
+  groundY = point.y - HAND_OVER_BANK;
+  check(!onLand && wading, `the stand's twin is drawn only when its legs reach under the water (on the bank: ${onLand}, in the shallows: ${wading})`);
+}
 
 // The reload.
 groundY = point.y - HAND_OVER_BANK;
