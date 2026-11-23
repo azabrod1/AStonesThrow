@@ -1680,7 +1680,9 @@
       birdsNote.textContent = BIRD_NOTES[birdsOn ? 'on' : 'off'];
       showMachine(pond.machineOn ? 'on' : 'off');
       machineNote.textContent = MACHINE_NOTES[pond.machineOn ? 'on' : 'off'];
-      settings.setValue('effects', fishOn && birdsOn ? 'On' : fishOn ? 'Fish only' : birdsOn ? 'Birds only' : 'Off');
+      // The row names what is on: On for all three, Off for none, else those that are ("Fish, Machine").
+      const effectsOn = [fishOn && 'Fish', birdsOn && 'Birds', pond.machineOn && 'Machine'].filter(Boolean);
+      settings.setValue('effects', effectsOn.length === 3 ? 'On' : effectsOn.length === 0 ? 'Off' : effectsOn.join(', '));
     }
     updateEffects();
     // The Full screen page (src/screen.js): On and Off where the browser lets a page have the whole screen, and the F

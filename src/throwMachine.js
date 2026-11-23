@@ -28,8 +28,9 @@
 // buffers at the muzzle; and over the breech a closed magazine, a box the
 // next things wait in, out of sight, so a reload comes out of it and not
 // out of the air. Its size is the thing's (fitFor): the cradle as far under
-// the thing's middle as its lowest point, the magazine as wide as it is
-// across and tall enough for a few, the rail long enough for the sled to run
+// the thing's middle as its lowest point, the thing turned so its longer
+// side lies across the rail, the magazine as long and as wide as it is and
+// tall enough for a few, the rail long enough for the sled to run
 // from under the magazine to the muzzle (MACHINE.rail).
 //
 // The reload (CYCLE), after each throw, by real time: the sled is at the
@@ -65,9 +66,10 @@ export const MACHINE = {
   stand: { splay: 0.36, mast: 0.024, inner: 0.019, leg: 0.014, foot: 0.022 },
   pitch: [-20, 80],   // degrees: the rail's travel, and no steeper than keeps all of it above the turntable (steepestFor)
   above: 0.035,       // m: the least the rail keeps over the turntable's top
-  // The magazine: as wide as the thing across plus `gap`, as tall as `stack` of it (at least `least`, at most the
+  rebuild: 0.1,       // s: the head built again for a new load at most this often (load)
+  // The magazine: as long and as wide as the thing plus `gap`, as tall as `stack` of it (at least `least`, at most the
   // thing's height and `most` more).
-  magazine: { gap: 0.012, stack: 2.4, least: 0.16, most: 0.12, sheet: 0.004 },
+  magazine: { gap: 0.012, stack: 2.4, least: 0.16, most: 0.06, sheet: 0.004 },
   colours: {
     alloy: [0.6, 0.58, 0.55], paint: [0.33, 0.32, 0.3], orange: [0.9, 0.36, 0.06], steel: [0.52, 0.51, 0.49],
     blue: [0.1, 0.32, 0.66], rubber: [0.4, 0.39, 0.37], receiver: [0.66, 0.64, 0.6], brass: [0.7, 0.5, 0.2],
@@ -83,19 +85,24 @@ export const CYCLE = { kick: 0.025, rise: 0.02, settle: 0.07, back: [0.04, 0.24]
 const smooth = (from, to, time) => { const share = THREE.MathUtils.clamp((time - from) / (to - from), 0, 1); return share * share * (3 - 2 * share); };
 
 /**
- * The machine's measures for a loaded thing of `extents` ({ lowest, highest, across }: m from its middle, in its own
- * frame as it lies on the sled: down to its lowest point, up to its highest, and out to its farthest across).
+ * The machine's measures for a loaded thing of `extents` ({ lowest, highest, along, across }: m from its middle, in its
+ * own frame as it lies on the sled: down to its lowest point, up to its highest, and out to its farthest along its own
+ * x and across, its z). It is loaded with its longer side across the rail (`quarter`: turned a quarter about its own
+ * up, when its x is the longer), so the rail need only be as long as its shorter side asks: a toy slide's a metre
+ * across, not along.
  */
-export function fitFor({ lowest, highest, across }) {
+export function fitFor({ lowest, highest, along, across }) {
   const { rail, magazine: box } = MACHINE;
-  const half = across + box.gap;                    // the magazine's inner half width, both ways
+  const quarter = along > across;
+  const [shorter, longer] = quarter ? [across, along] : [along, across];
+  const half = shorter + box.gap, wide = longer + box.gap;   // the magazine's inner half length along the rail and half width across it
   const tall = lowest + highest;
   const height = Math.max(box.least, Math.min(box.stack * tall, tall + box.most));
   const length = Math.max(rail.least, 2 * half + rail.travel);
   return {
-    lowest: Math.max(lowest, 0.004), highest, across, half, height, length,
+    lowest: Math.max(lowest, 0.004), highest, along: shorter, across: longer, quarter, half, wide, height, length,
     breech: -length + half + box.gap,               // the loaded thing's middle along the rail with the sled at the breech
-    plate: Math.max(0.066, across + 0.016),         // the pitch plate, this far to the left of the middle
+    plate: Math.max(0.066, longer + 0.016),         // the pitch plate, this far to the left of the middle
   };
 }
 
@@ -119,9 +126,9 @@ function headGeometry(fit) {
   // brackets to the cylinder's caps' level; the valve block and its solenoid at the breech, and the hose up to it.
   const receiverRadius = 0.038, receiverZ = cylinderZ + 0.021 + receiverRadius + 0.006, receiverY = cylinderY - 0.006;
   const receiverFrom = back + 0.06, receiverTo = Math.min(-0.16, back + 0.36);
-  head.cylinder(receiverRadius, receiverTo - receiverFrom, [(receiverFrom + receiverTo) / 2, receiverY, receiverZ], 'x', colour.receiver, 32);
+  head.cylinder(receiverRadius, receiverTo - receiverFrom, [(receiverFrom + receiverTo) / 2, receiverY, receiverZ], 'x', colour.receiver, 24);
   for (const end of [receiverFrom, receiverTo]) {
-    const dome = new THREE.SphereGeometry(receiverRadius, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+    const dome = new THREE.SphereGeometry(receiverRadius, 24, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     dome.scale(1, 0.5, 1);
     head.add(dome, place([end, receiverY, receiverZ], new THREE.Euler(0, 0, end === receiverFrom ? Math.PI / 2 : -Math.PI / 2)), colour.receiver);
   }
@@ -147,17 +154,17 @@ function headGeometry(fit) {
   head.cylinder(0.022, 0.026, [0, 0, -fit.plate - 0.013], 'z', colour.paint, 24);
   // The magazine over the breech: four sheets, a lid, its corner posts down to the walls' lips. Its mouth is its open
   // bottom, over the sled at the breech, so what waits in it is never seen.
-  const { half, height, breech } = fit, sheet = MACHINE.magazine.sheet;
+  const { half, wide, height, breech } = fit, sheet = MACHINE.magazine.sheet;
   const mouth = fit.highest + MACHINE.magazine.gap, middleY = mouth + height / 2;
   for (const side of [-1, 1]) {
-    head.box([2 * half + 2 * sheet, height, sheet], [breech, middleY, side * (half + sheet / 2)], colour.paint);
-    head.box([sheet, height, 2 * half], [breech + side * (half + sheet / 2), middleY, 0], colour.paint);
+    head.box([2 * half + 2 * sheet, height, sheet], [breech, middleY, side * (wide + sheet / 2)], colour.paint);
+    head.box([sheet, height, 2 * wide], [breech + side * (half + sheet / 2), middleY, 0], colour.paint);
   }
-  head.add(roundedBox(2 * half + 0.03, 0.014, 2 * half + 0.03, 0.004, 2), place([breech, mouth + height + 0.007, 0]), colour.orange);
+  head.add(roundedBox(2 * half + 0.03, 0.014, 2 * wide + 0.03, 0.004, 2), place([breech, mouth + height + 0.007, 0]), colour.orange);
   head.cylinder(0.012, 0.03, [breech, mouth + height + 0.028, 0], 'y', colour.paint, 16);   // its follower's knob
   const lip = webTop + rail.wall + rail.sheet / 2;
   for (const along of [-1, 1]) for (const side of [-1, 1]) {
-    head.bar([breech + along * half, mouth, side * half], [breech + along * half, lip, side * rail.half], 0.005, colour.steel);
+    head.bar([breech + along * half, mouth, side * wide], [breech + along * half, lip, side * rail.half], 0.005, colour.steel);
   }
   // The sled: its body, a V cradle and a pusher face, its carriage round the cylinder and the arm to it.
   const body = cradle - sled.height / 2;
@@ -191,8 +198,11 @@ function forkGeometry(fit, depth) {
  */
 export function legsFor(top, groundAt) {
   const { stand } = MACHINE;
-  const ground = groundAt(top.x, top.z);
-  const collar = ground + THREE.MathUtils.clamp(0.45 * (top.y - ground), 0.05, 0.4);
+  // The collar 45% of the way up the mast, at least 5 cm and at most 40 cm over the ground, and never past 60% of the
+  // way: where the hand is low over the ground (a skip from the Pool's deck, the mast some 3 cm tall) the legs splay
+  // nearly flat rather than the collar standing over the mast's top.
+  const ground = groundAt(top.x, top.z), rise = Math.max(top.y - ground, 0);
+  const collar = ground + Math.min(THREE.MathUtils.clamp(0.45 * rise, 0.05, 0.4), 0.6 * rise);
   const legs = [0, 1, 2].map((leg) => {
     const angle = Math.PI / 2 + (leg * 2 * Math.PI) / 3;
     const footX = top.x + Math.cos(angle) * stand.splay, footZ = top.z + Math.sin(angle) * stand.splay;
@@ -238,10 +248,23 @@ function steepestFor(profile, deepest) {
   return steepest;
 }
 
-/** The convex hull of 2-D `points` ([x, y] each), its corners in order (Andrew's monotone chain). */
+/**
+ * The convex hull of 2-D `points` ([x, y] each), its corners in order (Andrew's monotone chain), after dropping every
+ * point strictly inside the quadrilateral of the four extreme ones (Akl and Toussaint), which no hull can have: of the
+ * head's thousands of corners a few hundred are left to sort.
+ */
 export function hullOf(points) {
-  const sorted = [...points].sort((one, other) => one[0] - other[0] || one[1] - other[1]);
   const turn = (origin, one, other) => (one[0] - origin[0]) * (other[1] - origin[1]) - (one[1] - origin[1]) * (other[0] - origin[0]);
+  let left = points[0], right = points[0], low = points[0], high = points[0];
+  for (const point of points) {
+    if (point[0] < left[0]) left = point;
+    if (point[0] > right[0]) right = point;
+    if (point[1] < low[1]) low = point;
+    if (point[1] > high[1]) high = point;
+  }
+  const corners = [left, low, right, high];   // counterclockwise
+  const inside = (point) => corners.every((corner, index) => turn(corner, corners[(index + 1) % 4], point) > 0);
+  const sorted = points.filter((point) => !inside(point)).sort((one, other) => one[0] - other[0] || one[1] - other[1]);
   const lower = [], upper = [];
   for (const point of sorted) {
     while (lower.length >= 2 && turn(lower.at(-2), lower.at(-1), point) <= 0) lower.pop();
@@ -253,6 +276,8 @@ export function hullOf(points) {
   }
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
+
+const QUARTER = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
 
 const place = (at, turn = null) => new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromEuler(turn ?? new THREE.Euler()), new THREE.Vector3(1, 1, 1));
 
@@ -283,7 +308,8 @@ export class ThrowMachine {
       this.under.add(this.twin);
     }
     this.fit = null;                 // fitFor's, for the thing loaded now (load)
-    this.built = { lowest: NaN, highest: NaN, across: NaN };
+    this.built = { lowest: NaN, highest: NaN, along: NaN, across: NaN };
+    this.builtAt = -Infinity;        // the real time the head was last built (load)
     this.standing = { x: NaN, y: NaN, z: NaN, depth: NaN, plate: NaN };
     this.heading = 0;                // rad about the vertical: the rail's x along (cos, 0, -sin)
     this.pitch = 0;
@@ -298,10 +324,16 @@ export class ThrowMachine {
     this.warming = false;
   }
 
-  /** The thing loaded now: its `extents` (fitFor's), the head and sled built again only when they change. */
-  load(extents) {
+  /**
+   * The thing loaded now: its `extents` (fitFor's), the head and sled built again only when they change, at the real
+   * time `seconds` no sooner than MACHINE.rebuild after the last build (a drag of the size slider changes them every
+   * frame, and a build is some milliseconds): called every frame, it catches up with the last within that.
+   */
+  load(extents, seconds = Infinity) {
     const built = this.built;
-    if (Math.abs(extents.lowest - built.lowest) < 1e-6 && Math.abs(extents.highest - built.highest) < 1e-6 && Math.abs(extents.across - built.across) < 1e-6) return;
+    if (['lowest', 'highest', 'along', 'across'].every((key) => Math.abs(extents[key] - built[key]) < 1e-6)) return;
+    if (this.fit && seconds - this.builtAt < MACHINE.rebuild) return;
+    this.builtAt = Number.isFinite(seconds) ? seconds : -Infinity;
     Object.assign(built, extents);
     this.fit = fitFor(extents);
     const { head, sled } = withRandom(this.random, () => headGeometry(this.fit));
@@ -321,8 +353,9 @@ export class ThrowMachine {
   /** The turntable's depth under `point` for a skip or not: its MACHINE.depth, kept `clear` over the ground and under the cradle. */
   depthAt(point, skip) {
     const { depth } = MACHINE;
-    const room = point.y - this.groundAt(point.x, point.z) - depth.clear;
-    return Math.max(this.fit.lowest + depth.under, Math.min(skip ? depth.skip : depth.throw, room));
+    const over = point.y - this.groundAt(point.x, point.z), room = over - depth.clear;
+    // Never so deep that the mast's top is under the ground, whatever the cradle wants.
+    return Math.min(Math.max(this.fit.lowest + depth.under, Math.min(skip ? depth.skip : depth.throw, room)), over - TURNTABLE_UNDER - 0.02);
   }
 
   /**
@@ -395,6 +428,7 @@ export class ThrowMachine {
     if (loaded) {
       loaded.visible = visible;
       loaded.quaternion.copy(this.turn);
+      if (fit.quarter) loaded.quaternion.multiply(QUARTER);   // its longer side across the rail (fitFor)
       loaded.position.set(along, up, 0).applyQuaternion(this.turn).add(headAt);
     }
     if (this.twin) { this.twin.position.copy(this.stand.position); this.twin.quaternion.copy(this.stand.quaternion); }

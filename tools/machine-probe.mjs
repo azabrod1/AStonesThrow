@@ -17,7 +17,9 @@
 //   are the stand's own (legsFor);
 // - the steepest pitch found from the profile's convex hull (a few dozen
 //   corners) is the one all its thousands of corners give; and the stand's
-//   twin under the water is drawn only where its legs reach under it;
+//   twin under the water is drawn only where its legs reach under it; and
+//   where the hand is lowest over the ground (a skip from the Pool's deck)
+//   the mast still stands over the ground with its collar under its top;
 // - the reload (CYCLE): the sled at the muzzle as the throw leaves, at the
 //   breech while the next thing comes out of the magazine (hidden before),
 //   and back at the muzzle with it at the end;
@@ -33,12 +35,15 @@ const SKIP_OVER_BANK = 0.25;     // m: a skip's let-down hand (src/rock.js SKIP_
 const SKIPPERS = ['gem', 'stone', 'tv'];   // the loads that stand for what skips (a stone, a pizza, an iPhone: flat), at a skip's pitches (src/rock.js SKIP_THROW.elevation)
 const CLEAR = 0.004;             // m: the least gap counted as clear
 const PIN = 0.036;               // m: what lies this near the pin's axis is its joint (the bosses), not the rail
+// Loads as the page measures them (src/main.js buildPreview: m from the middle, in the thing's own frame), the slide's
+// longer side along its own x (the machine turns it across the rail).
 const LOADS = {
-  gem: { lowest: 0.008, highest: 0.012, across: 0.015 },
-  stone: { lowest: 0.0225, highest: 0.0212, across: 0.0318 },
-  bowling: { lowest: 0.108, highest: 0.108, across: 0.108 },
-  tall: { lowest: 0.15, highest: 0.15, across: 0.1 },
-  tv: { lowest: 0.009, highest: 0.009, across: 0.27 },
+  gem: { lowest: 0.008, highest: 0.012, along: 0.015, across: 0.015 },
+  stone: { lowest: 0.0225, highest: 0.0212, along: 0.0318, across: 0.03 },
+  bowling: { lowest: 0.108, highest: 0.108, along: 0.108, across: 0.108 },
+  tall: { lowest: 0.15, highest: 0.15, along: 0.1, across: 0.1 },
+  tv: { lowest: 0.009, highest: 0.009, along: 0.27, across: 0.16 },
+  slide: { lowest: 0.3, highest: 0.3, along: 0.59, across: 0.2 },
 };
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -152,6 +157,23 @@ check(worstPlaced < 1e-6, `the loaded thing sits at the hand's point for every a
   const wading = machine.reachesUnder();
   groundY = point.y - HAND_OVER_BANK;
   check(!onLand && wading, `the stand's twin is drawn only when its legs reach under the water (on the bank: ${onLand}, in the shallows: ${wading})`);
+}
+
+// The stand where the hand is lowest over the ground: a skip from the Pool's deck (0.1 m) and from the Koi pond's bank,
+// a toss from either: the mast's top over the ground and the collar under the mast's top.
+{
+  const lows = [];
+  for (const [name, ground, height, skip] of [['pool deck skip', 0.1, 0.3, true], ['koi bank skip', 0.05, 0.3, true], ['pool deck toss', 0.1, 0.686, false], ['koi bank toss', 0.05, 0.686, false]]) {
+    groundY = ground;
+    machine.load(LOADS.stone);
+    const hand = point.clone().setY(height);
+    machine.standAt(hand, skip, true);
+    const top = hand.y - machine.standing.depth - TURNTABLE_UNDER;
+    const { collar } = legsFor(new THREE.Vector3(hand.x, top, hand.z), groundAt);
+    if (!(top > ground && collar < top && collar >= ground)) lows.push(`${name}: mast top ${top.toFixed(3)}, collar ${collar.toFixed(3)}, ground ${ground}`);
+  }
+  groundY = point.y - HAND_OVER_BANK;
+  check(lows.length === 0, `the stand stays upright where the hand is low over the ground (skips and tosses from the Pool's deck and the Koi bank)${lows.length ? `: ${lows.join('; ')}` : ''}`);
 }
 
 // The reload.

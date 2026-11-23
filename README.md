@@ -179,10 +179,12 @@ full screen, which only a press or a key may ask for):
   shallows. After a throw it reloads by real time (drawn only): the sled
   runs back, the next thing is pushed down out of the magazine over the
   breech, and the sled carries it up, in about 0.6 s. Its cradle and
-  magazine are sized to the thing; a big thing's rail is longer and stops
-  short of the steepest lobs where the hand is low over the ground (a
-  bowling ball at 53° on the Koi pond's bank). The shoot harness leaves it
-  out with the preview unless `--preview=1`.
+  magazine are sized to the thing, loaded with its longer side across the
+  rail; a big or tall thing's rail stops short of the steepest lobs, most
+  where the hand is low over the ground (a bowling ball at 53° on the Koi
+  pond's bank; the toy slide, 0.6 m tall on the sled, at 21° even at the
+  lake). A drag of the size slider rebuilds it at most every 0.1 s. The
+  shoot harness leaves it out with the preview unless `--preview=1`.
 - The water cannon (`src/waterCannon.js`; `cannon` in `src/things.js`, a
   thing with a `stream`) is held, not thrown: a fire truck's monitor nozzle,
   and a press fires a stream of water at the spot under the pointer for as

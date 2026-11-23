@@ -1288,7 +1288,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
   const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0,
-    hand: new THREE.Vector3(), extents: { lowest: 0, highest: 0, across: 0 } };   // hand: where it is let go (the machine's loaded point); extents: its size as it lies (src/throwMachine.js fitFor)
+    hand: new THREE.Vector3(), extents: { lowest: 0, highest: 0, along: 0, across: 0 } };   // hand: where it is let go (the machine's loaded point); extents: its size as it lies (src/throwMachine.js fitFor)
   const previewMuzzle = { x: 0, y: 0, z: 0 };   // the nozzle's muzzle (updatePreview), worked out in place
   // The water cannon's pump and hoses (src/cannonRig.js), made the first time the cannon is in hand, shown with its
   // nozzle (made under the veil, warmUp, for its under-water program); set down again for each place (its land) and when
@@ -1442,7 +1442,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     preview.radius = radius;
     // Its size as it lies (in its own frame, scaled): how the machine's cradle and magazine are fitted to it.
     const { min, max } = preview.mesh.geometry.boundingBox;
-    Object.assign(preview.extents, { lowest: -min.y * radius, highest: max.y * radius, across: Math.max(-min.x, max.x, -min.z, max.z) * radius });
+    Object.assign(preview.extents, { lowest: -min.y * radius, highest: max.y * radius, along: Math.max(-min.x, max.x) * radius, across: Math.max(-min.z, max.z) * radius });
     const hand = handPosition(radius, thing);
     if (skipsNow() && thing.skips) hand.y = Math.min(hand.y, SKIP_THROW.handHeight);
     preview.mesh.position.copy(hand);
@@ -1510,7 +1510,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const again = machineFor.place !== placeName || machineFor.thickness !== ice.thickness || machineFor.opened !== ice.opened
         || machineFor.holes !== ice.holes.length || machineFor.openHoles !== ice.openHoles;
       if (again) Object.assign(machineFor, { place: placeName, thickness: ice.thickness, opened: ice.opened, holes: ice.holes.length, openHoles: ice.openHoles });
-      machine.load(preview.extents);
+      machine.load(preview.extents, now / 1000);   // a size slider's drag rebuilds it at most every MACHINE.rebuild
       machine.standAt(preview.hand, preview.flat || (skipsNow() && preview.thing.skips), again);
       machine.aim(machineWay());
       mesh.material.opacity = 1;
@@ -3791,7 +3791,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const machineWarm = everything || (machineOn && previewOn && !fired);
     if (machineWarm) {
       const warming = ensureMachine();
-      warming.load({ lowest: WARM_UP.radius, highest: WARM_UP.radius, across: WARM_UP.radius });
+      warming.load({ lowest: WARM_UP.radius, highest: WARM_UP.radius, along: WARM_UP.radius, across: WARM_UP.radius });
       warming.standAt(handPosition(WARM_UP.radius, THINGS[DEFAULT_THING]), false, true);
       warming.aim(machineLaunch.way);
       warming.show(true, null, 0);
