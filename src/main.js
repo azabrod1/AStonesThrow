@@ -68,7 +68,7 @@
 // arc of the throw in frame, and the thing about to be thrown is previewed
 // in the hand (buildPreview, PREVIEW: see-through, at the strip's size,
 // dressed as the next throw by hand will be, let down for a skip, turning
-// slowly, gone for a moment after each throw; ?preview=off leaves it out). The mirror image of the sky is
+// slowly, gone for a moment after each throw; ?preview=off leaves it out; with the Effects setting's throwing machine, src/throwMachine.js, it waits solid on the machine's sled there instead, the rail along the next launch, and comes out of its magazine after each throw). The mirror image of the sky is
 // re-rendered at the next frame whenever the view has changed, and while a
 // splash lives it is drawn over where the splash's own mirror image falls,
 // each frame (updateReflection); so is the region about a bird that is not
@@ -337,6 +337,7 @@ import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
 import { WaterCannon, CANNON, IMPACT, nozzle, nozzleScale } from './waterCannon.js';
 import { CannonRig } from './cannonRig.js';
+import { ThrowMachine, CYCLE } from './throwMachine.js';
 import { StreamSheath } from './streamSheath.js';
 import { SprayFan } from './sprayFan.js';
 import { ObjectGrab, GRAB_HOLD_MS } from './objectGrab.js';
@@ -528,7 +529,9 @@ const FARTHEST_BACK = 2.0;    // zoomed out past the frame, the eye steps back t
 // The thing about to be thrown, previewed in the hand (buildPreview): its opacity; how fast it turns about the
 // vertical (radians a second); how long it is gone after a person's throw (seconds of real time) and then takes to
 // fade back; and the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay).
-const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11, rigSeed: 12 };   // seed: its random draws; rigSeed: the cannon rig's meshes' ids (ensureCannonRig)
+const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11, rigSeed: 12, machineSeed: 13 };   // seed: its random draws; rigSeed: the cannon rig's meshes' ids (ensureCannonRig); machineSeed: the throwing machine's (ensureMachine)
+// The throwing machine's aim before any aim or throw (machineWay): the reference throw's spot.
+const MACHINE_TARGET = { x: 0, z: -1.4 };
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
@@ -601,6 +604,7 @@ const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice 
 const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
 const FISH_STORAGE_KEY = 'stone-pond-fish';     // the Effects setting's fish, last chosen on this device ('off', or on)
 const BIRDS_STORAGE_KEY = 'stone-pond-birds';   // the Effects setting's birds, likewise
+const MACHINE_STORAGE_KEY = 'stone-pond-machine';   // the Effects setting's throwing machine, likewise
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's: a clarity, or frozen
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's: a place (PLACES)
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
@@ -1209,6 +1213,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // over its water or at its edge (applyBirds); ?birds=off or none, or the Effects setting's Off remembered on this
   // device, leaves every place without (setBirds).
   let birdsOn = !['none', 'off'].includes(pageParameters.get('birds') ?? storedChoice(BIRDS_STORAGE_KEY));
+  // ?machine=off, or the Effects setting's Throwing machine Off remembered on this device, leaves the thing waiting at the hand alone (src/throwMachine.js).
+  let machineOn = !['none', 'off'].includes(pageParameters.get('machine') ?? storedChoice(MACHINE_STORAGE_KEY));
   // Each visit to the page sees its own comings and goings (a seed of its own); ?birdSeed= chooses one, and a page
   // driven by a tool (navigator.webdriver: the harness, the probes) has seed 1, so its frames are as they were.
   const birdSeed = pageParameters.get('birdSeed') ?? (navigator.webdriver ? 1 : crypto.getRandomValues(new Uint32Array(1))[0]);
@@ -1281,7 +1287,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // veil and keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the
   // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
-  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0 };
+  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, pressure: null, goneUntil: 0, turned: 0, drawnAt: 0,
+    hand: new THREE.Vector3(), extents: { min: [0, 0, 0], max: [0, 0, 0] } };   // hand: where it is let go (the machine's loaded point); extents: its bounding box, scaled (src/throwMachine.js fitFor)
   const previewMuzzle = { x: 0, y: 0, z: 0 };   // the nozzle's muzzle (updatePreview), worked out in place
   // The water cannon's pump and hoses (src/cannonRig.js), made the first time the cannon is in hand, shown with its
   // nozzle (made under the veil, warmUp, for its under-water program); set down again for each place (its land) and when
@@ -1318,6 +1325,37 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       landAt: rigLandAt, floorAt: rigFloorAt, groundAt: rigGroundAt, surfaceAt: () => (galeWaves.on ? galeSurfaceAt : null), random }));
     return cannonRig;
   }
+  // The throwing machine (src/throwMachine.js; the Effects setting's Throwing machine): the preview's scenery for anything thrown,
+  // standing at the hand, the thing about to be thrown on its sled, its rail along the next throw's launch (machineLaunch:
+  // the aim's, else the last throw's, else MACHINE_TARGET's, worked out again when what or how it throws changes), and
+  // reloading after each throw. Made the first time it is wanted (in the warm-up's first pass, for its programs), its
+  // meshes' ids from a stream of its own; stood again for each place and when the ice changes (`machineFor`).
+  let machine = null;
+  const machineFor = { place: null, thickness: NaN, opened: NaN, holes: NaN, openHoles: NaN };
+  const machineLaunch = { way: new THREE.Vector3(0, 1, -1), target: new THREE.Vector3(MACHINE_TARGET.x, 0, MACHINE_TARGET.z), thing: null, radius: NaN, flat: null, manner: null, power: null, place: null };
+  function ensureMachine() {
+    if (machine) return machine;
+    const random = parkMiller(PREVIEW.machineSeed);
+    machine = withRandom(random, () => new ThrowMachine({ scene: sceneMain, under: sceneUnder, material: rigMaterial, underMaterial: rigUnderMaterial, groundAt: rigGroundAt, random }));
+    return machine;
+  }
+  /** Whether the machine is shown with the preview now: the Effects setting on, and something thrown (not the cannon) in hand. */
+  const machineShown = () => machineOn && previewOn && Boolean(preview.mesh) && !preview.thing?.stream;
+  /** The launch the rail points along: the next throw's at machineLaunch.target, worked out again when what or how it throws has changed. */
+  function machineWay() {
+    const launch = machineLaunch;
+    if (launch.thing !== preview.thing || launch.radius !== preview.radius || launch.flat !== preview.flat || launch.manner !== manner || launch.power !== power || launch.place !== placeName) {
+      launch.way.copy(launchFor(launch.target).thrown.velocity);
+      Object.assign(launch, { thing: preview.thing, radius: preview.radius, flat: preview.flat, manner, power, place: placeName });
+    }
+    return launch.way;
+  }
+  /** The rail along `velocity`, the launch of a throw at `target` (an aim shown, or a throw made), for what and how it throws now. */
+  function aimMachine(velocity, target) {
+    machineLaunch.way.copy(velocity);
+    machineLaunch.target.set(target.x, 0, target.z);
+    Object.assign(machineLaunch, { thing: preview.thing, radius: preview.radius, flat: preview.flat, manner, power, place: placeName });
+  }
   /** The land's height at (x, z) for the rig (src/cannonRig.js landAt): the pool's deck outside its walls, else the shore's; null over the water. */
   function rigLandAt(x, z) {
     if (pooled) return outsidePool(x, z) > 0.02 ? POOL.deck : null;
@@ -1343,6 +1381,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   function disposePreview() {
     cannonRig?.hide();
+    machine?.hide();
     if (!preview.mesh) return;
     sceneMain.remove(preview.mesh);
     if (preview.ownsGeometry) preview.mesh.geometry.dispose();
@@ -1398,11 +1437,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       mesh.frustumCulled = false;
       sceneMain.add(mesh);
       Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared || Boolean(parts), dressedWith: dressing, parts: parts?.name ?? null });
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
     }
     preview.radius = radius;
+    // Its bounding box in its own frame, scaled: how the machine seats it and fits its cradle and magazine (fitFor).
+    const { min, max } = preview.mesh.geometry.boundingBox;
+    preview.extents.min = [min.x * radius, min.y * radius, min.z * radius];
+    preview.extents.max = [max.x * radius, max.y * radius, max.z * radius];
     const hand = handPosition(radius, thing);
     if (skipsNow() && thing.skips) hand.y = Math.min(hand.y, SKIP_THROW.handHeight);
     preview.mesh.position.copy(hand);
+    preview.hand.copy(hand);
     // The cannon's nozzle as big as its jet needs (src/waterCannon.js nozzleScale: a bigger tip for a bigger bore).
     preview.mesh.scale.setScalar(thing.stream ? nozzleScale(radius, nozzle(size, thing.stream).radius) : radius);
   }
@@ -1411,9 +1456,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * for PREVIEW.gone seconds, then fades back (updatePreview) as the next
    * one, its parts drawn from a new seed.
    */
-  function previewThrown() {
-    preview.goneUntil = performance.now() + PREVIEW.gone * 1000;
+  function previewThrown(rock = null, target = null) {
+    const now = performance.now();
+    // On the machine the next one is made as it comes out of the magazine (src/throwMachine.js CYCLE), while it is unseen.
+    preview.goneUntil = now + (machineShown() ? CYCLE.feed[0] : PREVIEW.gone) * 1000;
     preview.dressing = nextDressing();
+    if (machineShown() && rock) {
+      aimMachine(rock.velocity, target ?? rock.position);
+      ensureMachine().fired(now / 1000);
+    }
   }
   /** Once a frame (render), at the real time `now`: the preview turned on by the time since the last frame, gone after a throw and faded back. */
   function updatePreview(now) {
@@ -1454,10 +1505,28 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       return;
     }
     cannonRig?.hide();
+    if (machineShown()) {
+      // On the machine (src/throwMachine.js): solid, on its sled at the hand along the next launch, reloaded after a throw.
+      ensureMachine();
+      const again = machineFor.place !== placeName || machineFor.thickness !== ice.thickness || machineFor.opened !== ice.opened
+        || machineFor.holes !== ice.holes.length || machineFor.openHoles !== ice.openHoles;
+      if (again) Object.assign(machineFor, { place: placeName, thickness: ice.thickness, opened: ice.opened, holes: ice.holes.length, openHoles: ice.openHoles });
+      machine.load(preview.extents, now / 1000);   // a size slider's drag rebuilds it at most every MACHINE.rebuild
+      machine.standAt(preview.hand, preview.flat || (skipsNow() && preview.thing.skips), again);
+      machine.aim(machineWay());
+      mesh.material.opacity = 1;
+      mesh.material.depthWrite = true;
+      machine.show(true, mesh, now / 1000);
+      preview.drawnAt = now;
+      return;
+    }
+    machine?.hide();
+    mesh.position.copy(preview.hand);
+    mesh.material.depthWrite = false;
     const seconds = THREE.MathUtils.clamp((now - preview.drawnAt) / 1000, 0, 0.1);
     preview.drawnAt = now;
     preview.turned = (preview.turned + PREVIEW.turn * seconds) % (2 * Math.PI);
-    mesh.rotation.y = preview.turned;
+    mesh.rotation.set(0, preview.turned, 0);   // upright (the machine, if it was on, pitched it with its rail)
     const back = (now - preview.goneUntil) / 1000;
     mesh.visible = back > 0;
     mesh.material.opacity = PREVIEW.opacity * THREE.MathUtils.clamp(back / PREVIEW.fade, 0, 1);
@@ -1868,6 +1937,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     if (cannonRig) for (const mesh of [...cannonRig.meshes, ...cannonRig.below.map(({ twin }) => twin)]) mesh.material.envMap = environment.envTexture;
+    if (machine) for (const mesh of [...machine.meshes, ...(machine.twin ? [machine.twin] : [])]) mesh.material.envMap = environment.envTexture;
     applyWaterColor();
     ice.setGlow(environment.glow ?? 0);   // Europa's night ice glows (src/sky.js `glow`), and its frost beach
     setShoreGlow(environment.glow ?? 0);
@@ -2471,7 +2541,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function throwFromHand(x, z) {
     const rock = throwAt(x, z, { dressing: previewOn ? preview.dressing : null });   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
-    if (rock?.isRock !== false) previewThrown();   // a burst of the water cannon leaves the nozzle in the hand
+    if (rock?.isRock !== false) previewThrown(rock, { x, z });   // a burst of the water cannon leaves the nozzle in the hand
     onThrow?.(rock);
     return rock;
   }
@@ -2530,6 +2600,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Where a tap aims a throw: a skip keeps the tap's direction (skipThrow brings its touch onto the water). */
   const throwAim = (clientX, clientY) => aimPoint(clientX, clientY, throwMargin(), !skipsNow());
 
+  /**
+   * The next throw at `hit` by hand now, for `measured` (measureThing's): { skipped, skipThrow's for a skip; hand, where
+   * it is let go; thrown, its velocity and flight }. What the aim shows (showAim) and the machine points along (machineWay).
+   */
+  function launchFor(hit, measured = measureThing(thingName)) {
+    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius, measured.thing), hit, measured) : null;
+    const hand = skipped?.hand ?? handPosition(measured.radius, measured.thing);
+    // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
+    const shape = thingShapes.get(measured.thing) ?? prepareThing(measured.thing)?.shape;
+    const flight = measured.thing.air.model === 'flutter' && shape ? flutterTrial({ thing: measured.thing, shape, radius: measured.radius, density: measured.mass / (shape.volume * measured.radius ** 3), ownMass: measured.mass }) : null;
+    return { skipped, hand, thrown: skipped ?? thingVelocity(hand, hit, power, measured, flight) };
+  }
+
   function showAim(hit) {
     if (!hit) { marker.visible = false; arc.visible = false; return; }
     marker.visible = true;
@@ -2543,13 +2626,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       arc.visible = true;
       return;
     }
-    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius, measured.thing), hit, measured) : null;
-    const hand = skipped?.hand ?? handPosition(measured.radius, measured.thing);
-    // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
-    const shape = thingShapes.get(measured.thing) ?? prepareThing(measured.thing)?.shape;
-    const flight = measured.thing.air.model === 'flutter' && shape ? flutterTrial({ thing: measured.thing, shape, radius: measured.radius, density: measured.mass / (shape.volume * measured.radius ** 3), ownMass: measured.mass }) : null;
-    const thrown = skipped ?? thingVelocity(hand, hit, power, measured, flight);
+    const { skipped, hand, thrown } = launchFor(hit, measured);
     const { velocity, flightTime } = thrown;
+    if (previewOn) aimMachine(velocity, hit);   // the machine's rail along it (src/throwMachine.js)
     // Where it comes down: a skip's first touch; anything else's flown path's end (the air's drag, the fastest it can be thrown).
     const path = skipped ? null : thrown.path;
     const landing = skipped?.touch ?? (path ? thrown.landing : hit);
@@ -3291,7 +3370,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...(cannonRig ? cannonRig.meshes : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...(cannonRig ? cannonRig.meshes : []), ...(machine ? machine.meshes : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3708,6 +3787,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Its rig's under-water program (src/cannonRig.js `below`) in the pass of everything; drawn, where the cannon is in
     // hand, as the preview shows the rig (updatePreview), wherever it reaches under the water.
     if (everything) ensureCannonRig().warmUp(true);
+    // The throwing machine's (src/throwMachine.js: the nozzle's program, and its stand's twin's under the water) in the pass
+    // of everything, and drawn where it will be shown with the preview: set up for a stone at the hand, then hidden.
+    const machineWarm = everything || (machineOn && previewOn && !fired);
+    if (machineWarm) {
+      const warming = ensureMachine();
+      warming.load({ min: [-WARM_UP.radius, -WARM_UP.radius, -WARM_UP.radius], max: [WARM_UP.radius, WARM_UP.radius, WARM_UP.radius] });
+      warming.standAt(handPosition(WARM_UP.radius, THINGS[DEFAULT_THING]), false, true);
+      warming.aim(machineLaunch.way);
+      warming.show(true, null, 0);
+      warming.warmUp(true);
+    }
     // A floater of each program and a sinker of each besides the stone's (WARM_UP); drawn, the thing chosen alone, unless
     // it is the stone (or is fired, not thrown). A floater's mirror image (src/rock.js meshMirror), in the whole mirror
     // drawn now, and a textured thing's materials (a pizza's: above, below and in the mirror): their programs too.
@@ -3736,6 +3826,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     viewChanged = true;
     render();
     if (everything) cannonRig.warmUp(false);
+    if (machineWarm) { machine.warmUp(false); machine.hide(); }
     fishWarmUp?.done();
     birdWarmUp?.done();
     lifeWarmUp?.done();
@@ -3938,6 +4029,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       try { window.localStorage.setItem(BIRDS_STORAGE_KEY, birdsOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get birdsOn() { return birdsOn; },
+    /** The throwing machine shown or not (the Effects setting; src/throwMachine.js): the preview on its sled, or in the hand alone; remembered on this device. */
+    setMachine(on) {
+      machineOn = Boolean(on);
+      try { window.localStorage.setItem(MACHINE_STORAGE_KEY, machineOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get machineOn() { return machineOn; },
+    /** The throwing machine as posed now (src/throwMachine.js), or null if it is not shown: its heading and pitch (degrees), the turntable's depth and whether it is reloading. */
+    get machine() {
+      if (!machine || !machineShown()) return null;
+      return { heading: THREE.MathUtils.radToDeg(machine.heading), pitch: THREE.MathUtils.radToDeg(machine.pitch), depth: machine.standing.depth, reloading: machine.reloading(performance.now() / 1000), fit: { ...machine.fit } };
+    },
     /** The birds (src/birds.js), as they are posed now: each one's kind, habit, mode and pose; and the draw calls they take. */
     get birds() { return { drawCalls: birdView.drawCalls, birds: birds.report() }; },
     /** Bursts of open water boiling in vacuum since the pond was last cleared (src/boiling.js). */
@@ -4140,11 +4242,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       this.setSound(true);
       this.setFish(true);
       this.setBirds(true);
+      this.setMachine(true);
       if (!automaticQuality) this.setQuality('auto');   // already Auto: its calibration keeps what it found
       chosenClock = null;
       const place = requestPlace(...placeAndHour(DEFAULT_PLACE), { remember: false });
       showView('shore');
-      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, BIRDS_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
+      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, BIRDS_STORAGE_KEY, MACHINE_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
         try { window.localStorage.removeItem(key); } catch { /* storage refused: nothing was kept */ }
       }
       return Promise.all([place, weather]).then(() => undefined);

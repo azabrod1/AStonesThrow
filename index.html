@@ -1114,7 +1114,7 @@
     </button>
     <button type="button" class="menu-tier" data-open="effects">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10c2.2-3.3 4.9-5 8-5 2.3 0 4.3 1.1 6 3.2L18 6.6v6.8l-1.5-1.6c-1.7 2.1-3.7 3.2-6 3.2-3.1 0-5.8-1.7-8-5z"></path><circle cx="6.4" cy="9.2" r="0.7"></circle></svg>
-      <span class="menu-tier-name"><b>Effects</b><small>Fish in the water, birds about it</small></span>
+      <span class="menu-tier-name"><b>Effects</b><small>Fish in the water, birds about it, the throwing machine</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <hr class="menu-rule">
@@ -1301,6 +1301,14 @@
         <button type="button" role="radio" data-value="off">Off</button>
       </div>
       <div class="menu-note" id="birds-note"></div>
+    </div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="machine-label">Throwing machine</div>
+      <div class="menu-seg" id="machine" role="radiogroup" aria-labelledby="machine-label" aria-describedby="machine-note">
+        <button type="button" role="radio" data-value="on">On</button>
+        <button type="button" role="radio" data-value="off">Off</button>
+      </div>
+      <div class="menu-note" id="machine-note"></div>
     </div>
   </div>
   <div class="menu-page" data-page="quality" hidden>
@@ -1654,7 +1662,13 @@
       on: 'Every place but the Pool and Europa has its own birds, the ones that live where its photograph was taken: kelp gulls at the Rocky cove, a heron in the Koi pond, a fish eagle over Lakeside, frigatebirds over the lagoon. Throw near the heron and it flies off, and comes back within a minute. Europa’s atmosphere is a trillionth of Earth’s, nothing to fly in: a vent on the far ice erupts now and then, and a probe like NASA’s Europa Clipper crosses the sky in front of Jupiter.',
       off: 'No birds: the sky and the banks are empty.',
     };
+    const MACHINE_NOTES = {
+      on: 'A rail launcher stands where the hand is and throws for it: the same throw, from its sled. After each throw it reloads from the magazine over its breech.',
+      off: 'No machine: the next thing waits in the air at the hand, see-through and turning.',
+    };
     const fishNote = document.getElementById('fish-note');
+    const machineNote = document.getElementById('machine-note');
+    const showMachine = radioGroup(document.getElementById('machine'), (value) => { pond.setMachine(value === 'on'); updateEffects(); });
     const birdsNote = document.getElementById('birds-note');
     const showFish = radioGroup(document.getElementById('fish'), (value) => { pond.setFish(value === 'on'); updateEffects(); });
     const showBirds = radioGroup(document.getElementById('birds'), (value) => { pond.setBirds(value === 'on'); updateEffects(); });
@@ -1664,7 +1678,11 @@
       showBirds(birdsOn ? 'on' : 'off');
       fishNote.textContent = FISH_NOTES[fishOn ? 'on' : 'off'];
       birdsNote.textContent = BIRD_NOTES[birdsOn ? 'on' : 'off'];
-      settings.setValue('effects', fishOn && birdsOn ? 'On' : fishOn ? 'Fish only' : birdsOn ? 'Birds only' : 'Off');
+      showMachine(pond.machineOn ? 'on' : 'off');
+      machineNote.textContent = MACHINE_NOTES[pond.machineOn ? 'on' : 'off'];
+      // The row names what is on: On for all three, Off for none, else those that are ("Fish, Machine").
+      const effectsOn = [fishOn && 'Fish', birdsOn && 'Birds', pond.machineOn && 'Machine'].filter(Boolean);
+      settings.setValue('effects', effectsOn.length === 3 ? 'On' : effectsOn.length === 0 ? 'Off' : effectsOn.join(', '));
     }
     updateEffects();
     // The Full screen page (src/screen.js): On and Off where the browser lets a page have the whole screen, and the F
