@@ -33,7 +33,7 @@ import { AIR_DENSITY, EARTH_AIR } from './air.js';
 import { seededRandom } from './spray.js';
 
 const CAPACITY = 320;
-const PETAL = { length: [0.02, 0.034], width: 0.8, cup: 0.25, rows: 5, columns: 4 };   // m long; its width a share of its length, its cup a share of its width
+const PETAL = { length: [0.02, 0.034], width: 0.8, cup: 0.25, rows: 9, columns: 7 };   // m long; its width a share of its length, its cup a share of its width
 const TERMINAL = [0.7, 1.15];       // m/s: how fast a petal falls in Earth's air, each its own
 const DRAG_SECONDS = 0.12;          // how soon the air takes a flung petal's speed (its relaxation time)
 const SWAY = { speed: [0.25, 0.6], rate: [3, 7] };   // its swing from side to side as it falls: m/s, rad/s
@@ -55,7 +55,7 @@ export class Petals {
     this.petals = [];
     this.wind = { x: 0, z: 0 };
     this.mesh = new THREE.InstancedMesh(petalGeometry(), new THREE.MeshStandardMaterial({
-      vertexColors: true, side: THREE.DoubleSide, roughness: 0.55, metalness: 0, envMap: envTexture, envMapIntensity: 0.6,
+      vertexColors: true, side: THREE.DoubleSide, roughness: 0.88, metalness: 0, envMap: envTexture, envMapIntensity: 0.8,   // velvety: matte (the environment its light as much as its sheen)
     }), CAPACITY);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY * 3), 3).setUsage(THREE.DynamicDrawUsage);

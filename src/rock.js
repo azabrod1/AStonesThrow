@@ -1545,7 +1545,7 @@ export class Rock {
     // A bouquet's flowers on their stems (src/thingMeshes.js roseSway): each bloom's bend, a rotation (rad) about its
     // pivot in its own frame, and how fast it bends; the drawn mesh's rest shape it is bent from (flex).
     const sway = this.geometry.userData.sway ?? null;
-    this.sway = sway ? { ...sway, bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), rest: null, restNormals: null, drawnStill: true } : null;
+    this.sway = sway ? { count: sway.count, axes: sway.axes, tips: sway.tips, rates: sway.rates, gives: sway.gives, bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), moving: false, drawn: new Map() } : null;
     this.physicsShape = physics ? physics.array : prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
@@ -1635,6 +1635,8 @@ export class Rock {
     // anything without coarser ones.
     const detail = this.geometry.userData.detail ?? null;
     this.detail = detail ? [...detail.coarser, { geometry: this.geometry, spacing: detail.spacing }] : null;
+    // A bouquet bends each level it draws (swayDrawn), so it has its own copy of each.
+    if (this.detail && this.sway) this.detail = this.detail.map((level) => (level.geometry === this.geometry ? level : { geometry: level.geometry.clone(), spacing: level.spacing, own: true }));
     if (detail) detail.users = (detail.users ?? 0) + 1;   // the coarser meshes leave the GPU with the last that draws them (disposeGeometry)
     this.detailShown = detail ? { above: this.detail.length - 1, below: this.detail.length - 1, mirror: this.detail.length - 1 } : null;
     this.syncMeshes();
@@ -2757,40 +2759,44 @@ export class Rock {
   }
 
   /**
-   * Its drawn mesh bent as its flowers sway (swayStep; flex, once a frame): each corner of a bloom's stem, petals and
-   * leaves turned about the stem's pivot by its share of the bloom's bend (a rotation to second order), its normal by
-   * as much; nothing redrawn while they hang still as last drawn.
+   * Its drawn mesh bent as its flowers sway (swayStep; flex, once a frame): each level of detail a pass draws now, each
+   * corner of a bloom's stem, petals and leaves turned about the stem's pivot by its share of the bloom's bend (a
+   * rotation to second order), its normal by as much; nothing redrawn while they hang still as last drawn.
    */
   swayDrawn() {
     const sway = this.sway;
-    const positions = this.geometry.attributes.position, normals = this.geometry.attributes.normal;
-    sway.rest ??= positions.array.slice();
-    sway.restNormals ??= normals.array.slice();
-    const bendSize = Math.max(...Array.from({ length: sway.count }, (unused, bloom) => Math.hypot(sway.bend[bloom * 3], sway.bend[bloom * 3 + 1], sway.bend[bloom * 3 + 2])));
-    if (bendSize < 1e-4 && sway.drawnStill) return;
-    if (!sway.moving && sway.drawnStill && sway.drawnBend === bendSize) return;
-    const { rest, restNormals, bloom: bloomOf, share, pivots, bend } = sway;
-    const array = positions.array, normal = normals.array;
-    for (let corner = 0, index = 0; corner < bloomOf.length; corner++, index += 3) {
-      const which = bloomOf[corner];
-      if (which < 0) continue;
-      const weight = share[corner], at = which * 3;
-      const ax = bend[at] * weight, ay = bend[at + 1] * weight, az = bend[at + 2] * weight;
-      const rx = rest[index] - pivots[at], ry = rest[index + 1] - pivots[at + 1], rz = rest[index + 2] - pivots[at + 2];
-      // φ×r, then half of φ×(φ×r): a rotation by φ to second order.
-      const cx = ay * rz - az * ry, cy = az * rx - ax * rz, cz = ax * ry - ay * rx;
-      array[index] = rest[index] + cx + 0.5 * (ay * cz - az * cy);
-      array[index + 1] = rest[index + 1] + cy + 0.5 * (az * cx - ax * cz);
-      array[index + 2] = rest[index + 2] + cz + 0.5 * (ax * cy - ay * cx);
-      const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
-      const tx = nx + (ay * nz - az * ny), ty = ny + (az * nx - ax * nz), tz = nz + (ax * ny - ay * nx);
-      const length = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
-      normal[index] = tx / length; normal[index + 1] = ty / length; normal[index + 2] = tz / length;
+    let bendSize = 0;
+    for (let bloom = 0; bloom < sway.count; bloom++) bendSize = Math.max(bendSize, Math.hypot(sway.bend[bloom * 3], sway.bend[bloom * 3 + 1], sway.bend[bloom * 3 + 2]));
+    // Each level of detail a pass draws now (showDetail), bent from its own rest shape (src/thingMeshes.js roseSway).
+    for (const geometry of new Set([this.meshAbove?.geometry, this.meshBelow?.geometry, this.meshMirror?.geometry])) {
+      if (!geometry?.userData.sway) continue;
+      const positions = geometry.attributes.position, normals = geometry.attributes.normal;
+      let drawn = sway.drawn.get(geometry);
+      if (!drawn) sway.drawn.set(geometry, drawn = { rest: positions.array.slice(), restNormals: normals.array.slice(), bend: 0, still: true });
+      if (drawn.still && !sway.moving && drawn.bend === bendSize) continue;
+      const { rest, restNormals } = drawn, { bloom: bloomOf, share, pivots } = geometry.userData.sway, bend = sway.bend;
+      const array = positions.array, normal = normals.array;
+      for (let corner = 0, index = 0; corner < bloomOf.length; corner++, index += 3) {
+        const which = bloomOf[corner];
+        if (which < 0) continue;
+        const weight = share[corner], at = which * 3;
+        const ax = bend[at] * weight, ay = bend[at + 1] * weight, az = bend[at + 2] * weight;
+        const rx = rest[index] - pivots[at], ry = rest[index + 1] - pivots[at + 1], rz = rest[index + 2] - pivots[at + 2];
+        // φ×r, then half of φ×(φ×r): a rotation by φ to second order.
+        const cx = ay * rz - az * ry, cy = az * rx - ax * rz, cz = ax * ry - ay * rx;
+        array[index] = rest[index] + cx + 0.5 * (ay * cz - az * cy);
+        array[index + 1] = rest[index + 1] + cy + 0.5 * (az * cx - ax * cz);
+        array[index + 2] = rest[index + 2] + cz + 0.5 * (ax * cy - ay * cx);
+        const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
+        const tx = nx + (ay * nz - az * ny), ty = ny + (az * nx - ax * nz), tz = nz + (ax * ny - ay * nx);
+        const length = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+        normal[index] = tx / length; normal[index + 1] = ty / length; normal[index + 2] = tz / length;
+      }
+      positions.needsUpdate = true;
+      normals.needsUpdate = true;
+      drawn.still = !sway.moving;
+      drawn.bend = bendSize;
     }
-    positions.needsUpdate = true;
-    normals.needsUpdate = true;
-    sway.drawnStill = !sway.moving;
-    sway.drawnBend = bendSize;
   }
 
   /**
@@ -3790,6 +3796,7 @@ export class Rock {
   disposeGeometry() {
     if (!this.sharedGeometry) this.geometry.dispose();
     if (!this.detail) return;
+    for (const level of this.detail) if (level.own) level.geometry.dispose();
     const detail = this.geometry.userData.detail;
     if (--detail.users === 0) for (const { geometry } of detail.coarser) geometry.dispose();
     this.detail = null;

@@ -970,26 +970,26 @@ defineBuiltIn('roses', {
     ballast: [0, -1.122, 0],
     size: {
       by: 'preset', unit: 'roses', initial: 3, presets: [
-        { value: 1, name: '1 rose', label: '29 g', diameter: 0.0561, mass: 0.0292, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.345, 0] } },
-        { value: 2, name: '3 or 5 roses', label: '137–215 g', choices: [
-          { diameter: 0.0886, mass: 0.1367, look: { count: 3 }, body: { ballast: [0, -1.693, 0] } },
-          { diameter: 0.1045, mass: 0.2154, look: { count: 5 }, body: { ballast: [0, -1.397, 0] } },
+        { value: 1, name: '1 rose', label: '30 g', diameter: 0.0562, mass: 0.0298, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.388, 0] } },
+        { value: 2, name: '3 or 5 roses', label: '137–217 g', choices: [
+          { diameter: 0.0886, mass: 0.1374, look: { count: 3 }, body: { ballast: [0, -1.687, 0] } },
+          { diameter: 0.1046, mass: 0.2166, look: { count: 5 }, body: { ballast: [0, -1.392, 0] } },
         ] },
-        { value: 3, name: '7 to 11 roses', label: '294–434 g', choices: [
-          { diameter: 0.1178, mass: 0.2941, look: { count: 7 }, body: { ballast: [0, -1.221, 0] } },
-          { diameter: 0.1284, mass: 0.3692, look: { count: 9 }, body: { ballast: [0, -1.122, 0] } },
-          { diameter: 0.1349, mass: 0.4339, look: { count: 11 }, body: { ballast: [0, -1.074, 0] } },
+        { value: 3, name: '7 to 11 roses', label: '296–437 g', choices: [
+          { diameter: 0.1179, mass: 0.2958, look: { count: 7 }, body: { ballast: [0, -1.217, 0] } },
+          { diameter: 0.1285, mass: 0.3716, look: { count: 9 }, body: { ballast: [0, -1.118, 0] } },
+          { diameter: 0.1350, mass: 0.4369, look: { count: 11 }, body: { ballast: [0, -1.070, 0] } },
         ] },
-        { value: 4, name: '13 to 19 roses', label: '510–741 g', choices: [
-          { diameter: 0.1427, mass: 0.5096, look: { count: 13 }, body: { ballast: [0, -1.025, 0] } },
-          { diameter: 0.1502, mass: 0.5891, look: { count: 15 }, body: { ballast: [0, -0.971, 0] } },
-          { diameter: 0.1591, mass: 0.6866, look: { count: 17 }, body: { ballast: [0, -0.891, 0] } },
-          { diameter: 0.1622, mass: 0.7409, look: { count: 19 }, water: { columns: 24 }, body: { ballast: [0, -0.905, 0] } },
+        { value: 4, name: '13 to 19 roses', label: '513–747 g', choices: [
+          { diameter: 0.1429, mass: 0.5132, look: { count: 13 }, body: { ballast: [0, -1.021, 0] } },
+          { diameter: 0.1504, mass: 0.5934, look: { count: 15 }, body: { ballast: [0, -0.967, 0] } },
+          { diameter: 0.1593, mass: 0.6916, look: { count: 17 }, body: { ballast: [0, -0.888, 0] } },
+          { diameter: 0.1624, mass: 0.7467, look: { count: 19 }, water: { columns: 24 }, body: { ballast: [0, -0.901, 0] } },
         ] },
-        { value: 5, name: '21 to 25 roses', label: '811–983 g', choices: [
-          { diameter: 0.1669, mass: 0.8114, look: { count: 21 }, water: { columns: 24 }, body: { ballast: [0, -0.887, 0] } },
-          { diameter: 0.1734, mass: 0.9006, look: { count: 23 }, water: { columns: 24 }, body: { ballast: [0, -0.856, 0] } },
-          { diameter: 0.1786, mass: 0.9829, look: { count: 25 }, water: { columns: 24 }, body: { ballast: [0, -0.838, 0] } },
+        { value: 5, name: '21 to 25 roses', label: '818–991 g', choices: [
+          { diameter: 0.1670, mass: 0.8180, look: { count: 21 }, water: { columns: 24 }, body: { ballast: [0, -0.884, 0] } },
+          { diameter: 0.1735, mass: 0.9080, look: { count: 23 }, water: { columns: 24 }, body: { ballast: [0, -0.853, 0] } },
+          { diameter: 0.1788, mass: 0.9913, look: { count: 25 }, water: { columns: 24 }, body: { ballast: [0, -0.834, 0] } },
         ] },
       ],
     },
@@ -997,7 +997,7 @@ defineBuiltIn('roses', {
   material: { bounce: [0.05, 0.12], friction: 0.8 },
   air: { drag: 1.0, spin: [1.5, 6] },
   water: { restingHeight: 0.5, columnsAlong: [0, 1, 0] },
-  look: { mesh: 'roses', count: 9, roughness: 0.75, reflection: 0.7, wet: { darker: 0.1, glossier: 0.4 } },
+  look: { mesh: 'roses', count: 9, roughness: 0.9, reflection: 0.85, wet: { darker: 0.05, glossier: 0.15 } },
 });
 // A water cannon (the header's `stream`; src/waterCannon.js): a fire truck's monitor nozzle held in the hand, which
 // shoots a stream of water where it is aimed for as long as the press lasts. The slider is its pressure, 0.5 to 10 bar:

@@ -153,7 +153,8 @@ full screen, which only a press or a key may ask for):
   heart to broad outer ones cupped and rolled back at their rims, its
   sepals turned down under it; each stem its own, with thorns, down to its
   own cut end below the ribbon, and leaves of serrated leaflets under the
-  outer blooms. Their petals hold air, so they float, a third under, by
+  outer blooms; matte, velvety petals, drawn from one of three levels of
+  detail by how big the bouquet is on the screen. Their petals hold air, so they float, a third under, by
   each bloom's hull, the rose lying on the water and a bouquet as a raft,
   its blooms up and its stems under, its weight where its stems and blooms
   put it (a bouquet that lands on its blooms may stay so). Its flowers are
