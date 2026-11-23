@@ -287,7 +287,7 @@ export const FAN = {
   kick: 0.06,           // ...kicked by this share of the sheet's speed there: they stream on off the tongue, a little apart
   // In vacuum (the header) the whole fan is grains: `samples` places across it a step (the stronger of two parts
   // drawn, so more of them off its fingers), each carrying an equal part of `share` of the flow, in grains of mean radius `radius` (m), kicked by `kick` of the
-  // part's speed (the boiling that tears the film apart) and scattered over `spread` of the fan's width at its foot.
+  // part's speed (the drops' own flashing scatters them) and scattered over `spread` of the fan's width at its foot.
   frozen: { samples: 6, share: 0.3, radius: 0.0008, kick: 0.05, spread: 0.5 },
 };
 // The white water where it lands (the header; src/whiteWater.js): its scale is the length L = (QU/g)^(1/3) at which
