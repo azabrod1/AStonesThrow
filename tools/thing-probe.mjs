@@ -610,20 +610,35 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
     `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
   // In vacuum the fan is no sheet (FAN.frozen): its rows are never drawn, and FAN.frozen.share of the water landed
-  // leaves as its grains instead (the bursts of its grains' radius, their drops turned back into water).
-  const fanOf = (airless) => {
-    let rows = 0, grainWater = 0;
+  // leaves as its grains instead (the bursts of its grains' radius, their drops turned back into water), at the
+  // slider's ends as in its middle, and never as sprites heavier than a 3 cm stone's (sizeFactor at most 1: heavier
+  // ones are drawn as puffs of mist, and the deck gun's fan read as grey smoke). Its own stand-in splash, its clock
+  // stepped with it.
+  const fanOf = (airless, pressure) => {
+    let rows = 0, grainWater = 0, heaviest = 0;
     const fan = { room: Infinity, begin() {}, row: () => rows++, vertex() {}, finish() {}, hide() {} };
-    const spray = { burst: ({ drops, radius }) => { if (radius === FAN.frozen.radius) grainWater += drops / sprayDrops(1, radius); return 0; } };
-    const own = new WaterCannon({ water, splash: { ...splash, airless, spray }, fan });
-    own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
-    for (let step = 0; step < 120; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, []); own.drawAt(step * STEP); }
-    return { rows, grainWater, landedWater: own.landings * nozzle(3, thing.stream).flow * STEP };
+    const spray = { burst: ({ drops, radius, sizeFactor = 1 }) => {
+      if (radius === FAN.frozen.radius) { grainWater += drops / sprayDrops(1, radius); heaviest = Math.max(heaviest, sizeFactor); }
+      return 0;
+    } };
+    // Vacuum is Europa's whole: no air (so the stream flashes into its cone and lands as wide) and its gravity.
+    if (airless) { setAirDensity(0); setGravity(PLACES.europa.gravity); }
+    try {
+      const own = new WaterCannon({ water, splash: { ...splash, time: 0, airless, spray }, fan });
+      own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure, thing, radius: 0.025, time: 0, seconds: 0.3 });
+      for (let step = 0; step < 4 * 240; step++) { own.splash.time = step * STEP; own.step(step * STEP, STEP, []); own.drawAt(step * STEP); }
+      return { rows, grainWater, heaviest, landedWater: own.landings * nozzle(pressure, thing.stream).flow * STEP };
+    } finally {
+      setAirDensity(EARTH_AIR);
+      setGravity(EARTH_GRAVITY);
+    }
   };
-  const airFan = fanOf(false), vacuumFan = fanOf(true);
-  const grainShare = vacuumFan.grainWater / Math.max(vacuumFan.landedWater, 1e-12);
-  check(airFan.rows > 0 && airFan.grainWater === 0 && vacuumFan.rows === 0 && vacuumFan.landedWater > 0 && Math.abs(grainShare / FAN.frozen.share - 1) < 0.01,
-    `a squirt's fan in air draws ${airFan.rows} rows of sheet and throws ${airFan.grainWater} of its water as grains; in vacuum ${vacuumFan.rows} rows (none) and ${grainShare.toFixed(3)} of it (FAN.frozen.share ${FAN.frozen.share})`);
+  for (const pressure of [thing.slider.min, thing.slider.initial, thing.slider.max]) {
+    const airFan = fanOf(false, pressure), vacuumFan = fanOf(true, pressure);
+    const grainShare = vacuumFan.grainWater / Math.max(vacuumFan.landedWater, 1e-12);
+    check(airFan.rows > 0 && airFan.grainWater === 0 && vacuumFan.rows === 0 && vacuumFan.landedWater > 0 && Math.abs(grainShare / FAN.frozen.share - 1) < 0.01 && vacuumFan.heaviest <= 1,
+      `at ${pressure} bar a squirt's fan in air draws ${airFan.rows} rows of sheet and throws ${airFan.grainWater} of its water as grains; in vacuum ${vacuumFan.rows} rows (none) and ${grainShare.toFixed(3)} of it (FAN.frozen.share ${FAN.frozen.share}), its sprites at most a size factor of ${vacuumFan.heaviest.toFixed(2)} (1)`);
+  }
   // The water it churns, which the fish keep out of (landing.churn, src/fish.js): none where it comes down on ice.
   const churnOf = (wetIce) => {
     const own = new WaterCannon({ water, splash, wetIce });

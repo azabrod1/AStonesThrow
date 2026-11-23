@@ -668,7 +668,7 @@ export class WaterCannon {
     const random = this.random;
     const footprint = IMPACT.footprint * radius;
     const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch, records.flash[index]).radius;
-    this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce, splashTime, radius);
+    this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce, splashTime);
     {
       // Only the stream's centre is tested above (onIce), but near a hole's edge its footprint straddles it, on
       // either side: each thing laid off the centre is tested where it is laid, and over ice does nothing, its draws
@@ -756,10 +756,9 @@ export class WaterCannon {
    * from the water) and more, about the stream's way (the direction given),
    * as the fan wanders there; `sheath` the stream's sheath's radius there,
    * `flow` the stream's (m³/s), `emitted` when the water left the nozzle.
-   * In vacuum its water leaves as grains (FAN.frozen), born at `splashTime`,
-   * as the sprites of a stream landing `landed` wide (m).
+   * In vacuum its water leaves as grains (FAN.frozen), born at `splashTime`.
    */
-  throwFan(x, z, speed, incidence, directionX, directionZ, sheath, flow, emitted, time, onIce, splashTime, landed) {
+  throwFan(x, z, speed, incidence, directionX, directionZ, sheath, flow, emitted, time, onIce, splashTime) {
     const tail = this.tail, parts = FAN_GRID.columns, controls = FAN.controls;
     const scale = Math.cbrt((flow * speed) / GRAVITY), period = Math.sqrt(scale / GRAVITY);
     const memory = FAN.sway.time * period, smoothing = FAN.sway.smooth * memory, dt = this.stepSeconds;
@@ -816,7 +815,7 @@ export class WaterCannon {
     tail.grain[slot] = Math.min(Math.max((FAN.speed[0] * speed) ** 2 / GRAVITY / FAN.grain, 0.35), 4);
     tail.ice[slot] = onIce ? 1 : 0;
     tail.count++;
-    if (this.splash.airless) this.throwGrains(slot, flow, splashTime, landed);
+    if (this.splash.airless) this.throwGrains(slot, flow, splashTime);
   }
 
   /**
@@ -824,19 +823,19 @@ export class WaterCannon {
    * FAN.frozen.samples places across it, the stronger of two parts drawn,
    * each part's launch with a kick, from its place across the foot; the
    * stronger part drawn is what weights them, so each carries an equal part
-   * of FAN.frozen.share of the step's water. Its sprites are a stream
-   * landing `landed` wide's, as the glancing sheet's are (land), but never
-   * fewer than a 3 cm stone's: a sprite of many drops is drawn as a puff of
-   * mist (src/spray.js), and a grain of ice must stay a grain (the deck gun's
-   * fan read as grey smoke).
+   * of FAN.frozen.share of the step's water. Its sprites are a 3 cm stone's
+   * (the spray's sizeFactor 1), not the landing stream's as the glancing
+   * sheet's are (land): in vacuum the stream lands as wide as its flashed
+   * cone, always wider than that (2 to 10 times), and a bigger size factor
+   * writes fewer, heavier sprites, drawn as puffs of mist (src/spray.js); a
+   * grain of ice must stay a grain (so scaled, the fan read as grey smoke).
    */
-  throwGrains(slot, flow, splashTime, landed) {
+  throwGrains(slot, flow, splashTime) {
     const spray = this.splash.spray;
     if (!spray) return;
     const tail = this.tail, parts = FAN_GRID.columns, frozen = FAN.frozen, random = this.grainRandom;
     const width = tail.width[slot];
     const drops = sprayDrops((flow * this.stepSeconds * frozen.share) / frozen.samples, frozen.radius);
-    const sizeFactor = Math.min(Math.max(landed / 0.03, 0.25), 1);
     for (let sample = 0; sample < frozen.samples; sample++) {
       const one = Math.floor(random() * parts), other = Math.floor(random() * parts);
       const part = tail.strength[slot * parts + one] >= tail.strength[slot * parts + other] ? one : other;
@@ -846,7 +845,7 @@ export class WaterCannon {
         x: tail.x[slot] + tail.sideX[slot] * place * 0.5 * width, y: 0.01, z: tail.z[slot] + tail.sideZ[slot] * place * 0.5 * width,
         vx, vy, vz,
         drops, radius: frozen.radius,
-        kick: frozen.kick * Math.hypot(vx, vy, vz), spread: frozen.spread * width, time: splashTime, random, sizeFactor,
+        kick: frozen.kick * Math.hypot(vx, vy, vz), spread: frozen.spread * width, time: splashTime, random,
       });
     }
   }
