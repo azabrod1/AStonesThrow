@@ -147,7 +147,8 @@ import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
-import { WaterCannon, CANNON, nozzle } from '../src/waterCannon.js';
+import { WaterCannon, CANNON, FAN, nozzle } from '../src/waterCannon.js';
+import { sprayDrops } from '../src/spray.js';
 import { EARTH_GRAVITY, setGravity } from '../src/gravity.js';
 import { EARTH_AIR, setAirDensity } from '../src/air.js';
 import { PLACES } from '../src/places.js';
@@ -608,19 +609,21 @@ console.log('\nThe water cannon (src/waterCannon.js): a squirt at three aims at 
   const inAir = churn(false), inVacuum = churn(true);
   check(inAir.foam > 0 && inAir.puffs > 0 && inVacuum.foam === 0 && inVacuum.puffs === 0,
     `a squirt in air churns ${inAir.foam} foam stamps and ${inAir.puffs} puffs of white water, in vacuum ${inVacuum.foam} and ${inVacuum.puffs} (none)`);
-  // In vacuum the fan is no sheet (FAN.frozen): its rows are never drawn, and its water leaves as grains instead.
+  // In vacuum the fan is no sheet (FAN.frozen): its rows are never drawn, and FAN.frozen.share of the water landed
+  // leaves as its grains instead (the bursts of its grains' radius, their drops turned back into water).
   const fanOf = (airless) => {
-    let rows = 0, grains = 0;
+    let rows = 0, grainWater = 0;
     const fan = { room: Infinity, begin() {}, row: () => rows++, vertex() {}, finish() {}, hide() {} };
-    const spray = { burst: ({ drops }) => { grains += drops; return 0; } };
+    const spray = { burst: ({ drops, radius }) => { if (radius === FAN.frozen.radius) grainWater += drops / sprayDrops(1, radius); return 0; } };
     const own = new WaterCannon({ water, splash: { ...splash, airless, spray }, fan });
     own.start({ hand: handFor(0.025, thing), x: 0.4, z: -1.5, pressure: 3, thing, radius: 0.025, time: 0, seconds: 0.3 });
     for (let step = 0; step < 120; step++) { splash.time = step * STEP; own.step(step * STEP, STEP, []); own.drawAt(step * STEP); }
-    return { rows, grains };
+    return { rows, grainWater, landedWater: own.landings * nozzle(3, thing.stream).flow * STEP };
   };
   const airFan = fanOf(false), vacuumFan = fanOf(true);
-  check(airFan.rows > 0 && vacuumFan.rows === 0 && vacuumFan.grains > 2 * airFan.grains,
-    `a squirt's fan in air draws ${airFan.rows} rows of sheet and throws ${airFan.grains.toExponential(1)} drops; in vacuum ${vacuumFan.rows} rows (none) and ${vacuumFan.grains.toExponential(1)} grains`);
+  const grainShare = vacuumFan.grainWater / Math.max(vacuumFan.landedWater, 1e-12);
+  check(airFan.rows > 0 && airFan.grainWater === 0 && vacuumFan.rows === 0 && vacuumFan.landedWater > 0 && Math.abs(grainShare / FAN.frozen.share - 1) < 0.01,
+    `a squirt's fan in air draws ${airFan.rows} rows of sheet and throws ${airFan.grainWater} of its water as grains; in vacuum ${vacuumFan.rows} rows (none) and ${grainShare.toFixed(3)} of it (FAN.frozen.share ${FAN.frozen.share})`);
   // The water it churns, which the fish keep out of (landing.churn, src/fish.js): none where it comes down on ice.
   const churnOf = (wetIce) => {
     const own = new WaterCannon({ water, splash, wetIce });
