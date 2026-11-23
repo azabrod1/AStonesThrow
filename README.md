@@ -147,12 +147,12 @@ full screen, which only a press or a key may ask for):
   0.8 m/s and lies on the bed on its base or its rim. Roses come as a
   bouquet tied in a spiral under a satin ribbon, of 3, 5 or 7 (an odd
   number, as a florist ties them), each throw one of them at random, the
-  one the hand shows (about 45 g a rose: 137 to 296 g). Each
+  one the hand shows (about 45 g a rose: 136 to 310 g). Each
   bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
   heart to broad outer ones cupped and rolled back at their rims, its
-  sepals turned down under it; each stem its own, with thorns, down to its
-  own cut end below the ribbon, and leaves of serrated leaflets under the
-  outer blooms; matte, velvety petals, drawn from one of three levels of
+  sepals turned down under it; each stem its own, stripped but for a few
+  thorns, down to its own cut end below the ribbon, and a leaf of serrated
+  leaflets close under each outer bloom; matte, velvety petals, drawn from one of three levels of
   detail by how big the bouquet is on the screen. Their petals hold air, so they float, a third under, by
   each bloom's hull, the rose lying on the water and a bouquet as a raft,
   its blooms up and its stems under, its weight where its stems and blooms

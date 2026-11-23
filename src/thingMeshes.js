@@ -3175,8 +3175,8 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // stem slanting from its bloom down to its own place in the bunch at the
 // tie, a little round from under its bloom, and on below it to its own cut
 // end, fanning out a little, all cut across at one height, their ends pale;
-// a cream satin ribbon round the tie and its bow; leaves under the outer
-// blooms, a skirt of green. To the physics the bunch below the tie is a
+// a cream satin ribbon round the tie and its bow; a leaf close under each
+// outer bloom, a collar of green, the stems below them stripped (a few thorns). To the physics the bunch below the tie is a
 // cone round its stems, as heavy as they and the water between them (drawn
 // as the stems themselves). Its body's parts meet without overlapping (a
 // stem ends at its bloom's hip and at the bunch's top). Every bouquet has
@@ -3221,10 +3221,10 @@ const ROSES = {
   hip: { segments: 10, profile: [[0, -2.5], [0.45, -2.45], [0.85, -2.1], [0.9, -1.75], [0.7, -1.55], [0, -1.5]] },
   sepals: { count: 5, from: [0.75, -1.65], length: 1.7, drop: 1.05, width: 0.32, thickness: 0.04, grid: [4, 2] },
   stem: { radius: 0.0032, sides: 12, below: 0.14 },   // m: its radius, its length under the tie
-  thorns: { every: 0.07, length: 0.005, radius: 0.0021, tilt: 0.6 },   // m: one about this far apart up a stem, its length and its base's radius; its slant down the stem (rad)
+  thorns: { every: 0.12, length: 0.004, radius: 0.0018, tilt: 0.6 },   // m: one about this far apart up a stem, its length and its base's radius; its slant down the stem (rad)
   // A leaf (roseLeaf): its stalk's length and radius, its terminal leaflet's length, half-width and thickness, each
   // pair's share of that size and where up the stalk they spring, splayed by `splay` (rad); each leaflet's outline's points.
-  leaf: { stalk: [0.045, 0.0009], length: 0.032, width: 0.0105, thickness: 0.0012, pairs: [[0.85, 0.58], [0.68, 0.2]], splay: 0.95, points: [18, 12, 8], serrations: 7 },
+  leaf: { stalk: [0.03, 0.0011], length: 0.04, width: 0.0145, thickness: 0.0012, pairs: [[0.85, 0.6], [0.7, 0.22]], splay: 0.9, points: [18, 14, 12], serrations: 7 },
   // Its radius on the screen (pixels) under which its coarsest level of detail is enough, and its middle one (rosesWithDetail).
   detail: [45, 160],
   // How its stems give (roseSway, src/rock.js swayStep): each a spring of `rate` rad/s (2.5 to 4 swings a second), bent
@@ -3595,16 +3595,14 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
     const foot = new THREE.Vector3(spot.x * (1 + flare) + 0.003 * (random() - 0.5), -below, spot.z * (1 + flare) + 0.003 * (random() - 0.5));
     draw([roseStem(foot, spot, stemRadius, random, { cut: true })]);
     draw(roseThorns(foot, spot, stemRadius, random));
-    // The outer blooms' leaves (every one's in a small bunch), out from under them, hiding the stems: a skirt of
-    // green under the dome.
+    // The outer blooms' leaves (every one's in a small bunch): one each, close under its bloom, spread outward and a
+    // little down, a collar of green under the dome; the stems below them bare but for a few thorns, as a florist
+    // strips them.
     if (count <= 5 || polar > 0.55 * outerPolar) {
       owner = index;
-      const out = new THREE.Vector3(Math.cos(azimuth + 0.3), 0, Math.sin(azimuth + 0.3));
+      const out = new THREE.Vector3(Math.cos(azimuth + 0.3), 0, Math.sin(azimuth + 0.3)).projectOnPlane(axis).normalize();
       const along = hip.distanceTo(spot);
-      for (const [share, swing, lift] of [[0.1, 0.35, 0.15], [0.32, -0.3, 0.45]]) {
-        const turned = out.clone().applyAxisAngle(axis, swing);
-        leaf(hip.clone().addScaledVector(axis, -along * share).addScaledVector(turned, stemRadius * 0.9), turned.clone().multiplyScalar(0.75).addScaledVector(axis, lift).normalize(), axis, 2);
-      }
+      leaf(hip.clone().addScaledVector(axis, -along * 0.07).addScaledVector(out, stemRadius * 0.9), out.clone().addScaledVector(axis, -0.15).normalize(), axis, 2);
       owner = -1;
     }
   });

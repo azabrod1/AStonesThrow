@@ -969,13 +969,13 @@ defineBuiltIn('roses', {
   name: 'Roses', group: 'Other', note: 'A bouquet of 3, 5 or 7: it floats', called: 'roses',
   body: {
     shape: 'mesh',
-    ballast: [0, -1.392, 0],
+    ballast: [0, -1.340, 0],
     size: {
       by: 'preset', unit: 'roses', initial: 1, presets: [
-        { value: 1, name: '3, 5 or 7 roses', label: '137–296 g', choices: [
-          { diameter: 0.0886, mass: 0.1374, look: { count: 3 }, body: { ballast: [0, -1.687, 0] } },
-          { diameter: 0.1046, mass: 0.2166, look: { count: 5 }, body: { ballast: [0, -1.392, 0] } },
-          { diameter: 0.1179, mass: 0.2958, look: { count: 7 }, body: { ballast: [0, -1.217, 0] } },
+        { value: 1, name: '3, 5 or 7 roses', label: '136–310 g', choices: [
+          { diameter: 0.0881, mass: 0.1356, look: { count: 3 }, body: { ballast: [0, -1.708, 0] } },
+          { diameter: 0.1072, mass: 0.2237, look: { count: 5 }, body: { ballast: [0, -1.340, 0] } },
+          { diameter: 0.1213, mass: 0.3103, look: { count: 7 }, body: { ballast: [0, -1.155, 0] } },
         ] },
       ],
     },
