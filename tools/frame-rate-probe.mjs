@@ -119,7 +119,7 @@ const SCENES = [
     ],
   },
   {
-    // Bouquets (src/things.js 'roses', each its count drawn from Math.random), each shedding petals as it is flung and
+    // Bouquets (src/things.js 'roses', at the slider's first step), each shedding petals as it is flung and
     // as it strikes (src/petals.js: shed and stepped in the physics steps), the second onto the first, afloat.
     name: 'roses', place: 'lakeside', ice: 'none', until: 10,
     throws: [

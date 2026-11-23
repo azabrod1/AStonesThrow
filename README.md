@@ -48,7 +48,7 @@ an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or 
 shown last. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats, an iPad from an iPhone to an iPad Pro, a frying pan 20
-to 30 cm; a golf or a tennis ball has one size). Then how it is
+to 30 cm, roses one to 9, an odd number; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
 way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
 either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
@@ -144,10 +144,10 @@ full screen, which only a press or a key may ask for):
   3.4 kg, a Lodge's sizes, the largest with a helper handle), its walls as
   thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
   and spinning, it slaps the water, flutters down broadside at about
-  0.8 m/s and lies on the bed on its base or its rim. Roses come as a
-  bouquet tied in a spiral under a satin ribbon, of 3, 5 or 7 (an odd
-  number, as a florist ties them), each throw one of them at random, the
-  one the hand shows (about 45 g a rose: 136 to 310 g). Each
+  0.8 m/s and lies on the bed on its base or its rim. Roses come one
+  long-stemmed rose or 3, 5, 7 or 9 tied in a spiral under a satin ribbon,
+  always an odd number, as a florist ties them (30 to 45 g a rose: 32 to
+  382 g). Each
   bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
   heart to broad outer ones cupped and rolled back at their rims, its
   sepals turned down under it; each stem its own, stripped but for a few
@@ -595,10 +595,7 @@ definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
 A size preset may have a look of its own (and water, air and ballast), so
 one slider can run through things of different shapes: each step is then a
 thing of its own (`variantAt`), made ready as the slider comes to it (the
-iPad's devices, the frying pan's sizes); a step may
-instead have `choices`, each a thing of its own, one drawn for each throw
-(`variantAt`'s pick: a bouquet's 3, 5 or 7 roses, the one its preview in
-the hand showed). A mesh may give
+iPad's devices, the frying pan's sizes, the roses' counts). A mesh may give
 the physics a closed body of its own (`userData.physics`: a rose's blooms,
 whose petals are drawn open, float by their hulls).
 `tools/thing-probe.mjs` checks them.
@@ -2479,7 +2476,7 @@ farther out, so it rises into the view rather than filling its corner.
   throwing and the keyboard works it, its tabs included; that choosing a
   long group's last card on What to throw never scrolls that page back up
   to its tabs; that a thing whose steps are things of
-  their own (an iPad, a frying pan) reads each step on the strip
+  their own (an iPad, a frying pan, roses) reads each step on the strip
   without overflowing it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
   reachable by scrolling, its Frozen freezing the water, Thin and Thick

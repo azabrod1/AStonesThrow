@@ -126,9 +126,7 @@
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
 // ball has one size; an iPad's device, a frying pan's size and a bouquet's
 // count are each a thing of their own, src/things.js variantAt, made ready
-// as the slider comes to them: readyToThrow; a bouquet's one step is three
-// counts, each throw one of them, drawn from the seed its preview was made
-// from, pickFrom, so the bouquet in the hand is the one thrown). measureThing gives what a
+// as the slider comes to them: readyToThrow). measureThing gives what a
 // throw is: its kind at that size, its radius, mass and density. A river
 // stone is thrown as stones always were (throwVelocity, at the manner's and the strength's flight time: ARC over
 // src/rock.js throwFlightTime, a hard toss let go at 12 m/s, fast and flat,
@@ -1367,18 +1365,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function buildPreview(name = thingName) {
     if (!previewOn) return;
-    // At a step with choices (a bouquet's counts), the one its seed picks, as the throw given that seed is (throwAt).
-    const { thing, radius, size } = measureThing(name, undefined, undefined, pickFrom(preview.dressing));
+    const { thing, radius, size } = measureThing(name);
     preview.pressure = size;   // a stream's (the nozzle points as its pressure's launch does: updatePreview)
     const flat = skipsNow() && thing.skips && Boolean(thing.byDiameter);
     const kind = meshKind(thing.look.mesh);
-    const dressing = (kind.fixed && kind.dress) || hasChoices(name, size) ? preview.dressing : null;   // the seed of its parts, or of its pick, if it has any
+    const dressing = kind.fixed && kind.dress ? preview.dressing : null;   // the seed of its parts, if it has any
     if (!preview.mesh || preview.thing !== thing || preview.flat !== flat || preview.dressedWith !== dressing) {
       disposePreview();
       const prepared = prepareThing(thing);
       // Its parts (a pizza's toppings, a pie's filling, a cake's candles) from that seed, added to a copy of the shared
       // mesh as the throw given it adds them (src/rock.js); their triangles, copied, are let go as a throw lets them go.
-      const parts = dressing === null || !kind.dress ? null : dressThing(thing, dressing);   // (a bouquet's seed picks its count, and dresses nothing)
+      const parts = dressing === null ? null : dressThing(thing, dressing);
       const geometry = parts ? withParts(prepared.geometry, parts.geometry) : prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
       if (parts && !parts.shared) parts.geometry.dispose();
       if (!prepared) geometry.computeBoundingSphere();
@@ -2258,12 +2255,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function prepareNamed(name) {
     const thing = THINGS[name];
-    readyAt(name);
+    readyToThrow(measureThing(name).thing);
     thing.measure(thing.slider?.initial);
-  }
-  /** Everything a throw of `name` at its slider's value now may be (src/things.js choicesAt: a bouquet's step, each of its counts) made ready to throw. */
-  function readyAt(name) {
-    for (const thing of THINGS[name].choicesAt(measureThing(name).size)) readyToThrow(thing);
   }
   /** A thing (a preset's own: src/things.js variantAt) made ready to throw (src/rock.js prepareThing) and its shape kept for the aim, once. */
   function readyToThrow(thing) {
@@ -2351,31 +2344,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * variantAt), its radius and mass at its slider's value `size` (kept
    * within its slider), else at the one it has now (its own, or its
    * family's); a thing sized by its diameter may be given its radius
-   * `radius` instead. At a step with choices (a bouquet's counts), the one
-   * `pick` (0 to 1) falls on; the first without one.
+   * `radius` instead.
    */
-  function measureThing(name, size, radius, pick) {
+  function measureThing(name, size, radius) {
     const thing = THINGS[name];
     const value = size !== undefined && size !== null ? withinSlider(thing, size) : thingSizes[sizeKey(thing)] ?? thing.slider?.initial;
     if (thing.byDiameter) {
       const nominal = radius ?? value / 200;
       return { thing, radius: nominal, mass: thing.measure(200 * nominal).mass, size: null };
     }
-    return { thing: thing.variantAt(value, pick), ...thing.measure(value, pick), size: value, pick };
+    return { thing: thing.variantAt(value), ...thing.measure(value), size: value };
   }
-  /** The pick (0 to 1) among a step's choices (measureThing) a seed gives: a throw by hand's from its preview's, so the bouquet shown is the one thrown. */
-  function pickFrom(seed) { return (Math.imul((seed ^ 0x9e3779b9) >>> 0, 0x85ebca6b) >>> 0) / 4294967296; }
-  /** Whether a throw of `name` at its slider's value `size` may be more than one thing (src/things.js choicesAt: a bouquet's counts). */
-  const hasChoices = (name, size) => THINGS[name].choicesAt(size).length > 1;
 
   function throwAt(x, z, options = {}) {
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
-    // At a step with choices (a bouquet's counts), one drawn: by hand the preview's (its seed, `dressing`), else from
-    // Math.random (a seeded throw's, so the tools' throws are the same every run; mixed, as a Park–Miller stream's first
-    // draw from a small seed is near nothing); none drawn for anything else.
-    const sized = measureThing(name, options.size, options.radius);
-    const pick = !hasChoices(name, sized.size) ? undefined : options.pick ?? pickFrom(options.dressing ?? Math.floor(Math.random() * 4294967296));
-    const { thing, radius, mass, size } = pick === undefined ? sized : measureThing(name, options.size, options.radius, pick);
+    const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
     // A thing with a stream is not thrown: its throw is a burst of the stream at the aim (src/waterCannon.js; a press by
     // hand fires it for as long as it lasts, the pointer handlers'). `seconds` sets the burst's length.
     if (thing.stream) return startStream(x, z, { thing, radius, size }, options.seconds ?? CANNON.burstSeconds);
@@ -2386,7 +2369,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, rideValues: floaterRide.values, dressing: options.dressing ?? null, size, pick });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, rideValues: floaterRide.values, dressing: options.dressing ?? null, size });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
@@ -3771,11 +3754,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A floater of each program and a sinker of each besides the stone's (WARM_UP); drawn, the thing chosen alone, unless
     // it is the stone (or is fired, not thrown). A floater's mirror image (src/rock.js meshMirror), in the whole mirror
     // drawn now, and a textured thing's materials (a pizza's: above, below and in the mirror): their programs too.
-    const chosen = everything || thingName === DEFAULT_THING || fired ? [] : [throwAt(WARM_UP.x, WARM_UP.z, { thing: thingName, pick: 0 })];   // a step's first choice (a bouquet's count): no draw
-    const floaters = [...(everything ? WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name, pick: 0 })) : []), ...chosen.filter((rock) => rock.floats)];
+    const chosen = everything || thingName === DEFAULT_THING || fired ? [] : [throwAt(WARM_UP.x, WARM_UP.z, { thing: thingName })];
+    const floaters = [...(everything ? WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name })) : []), ...chosen.filter((rock) => rock.floats)];
     for (const floater of floaters) floater.meshMirror.visible = true;
     // A textured sinker's three: above, below and, as anything but a floater is given on the ice, its mirror image.
-    const sinkers = [...(everything ? WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name, pick: 0 })) : []), ...chosen.filter((rock) => !rock.floats)];
+    const sinkers = [...(everything ? WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name })) : []), ...chosen.filter((rock) => !rock.floats)];
     if (everything || iced) for (const sinker of sinkers) Object.assign(sinker.prepareMirror(), { visible: true, frustumCulled: false });
     // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
@@ -3937,7 +3920,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const thing = THINGS[thingName];
       if (!thing.slider || !Number.isFinite(value)) return;
       thingSizes[sizeKey(thing)] = withinSlider(thing, value);
-      readyAt(thingName);   // a preset with a look of its own made ready now (each of a step's choices), not as it is thrown
+      readyToThrow(measureThing(thingName).thing);   // a preset with a look of its own made ready now, not as it is thrown
       buildPreview();
     },
     get size() { return thingSizes[sizeKey(THINGS[thingName])] ?? THINGS[thingName].slider?.initial; },
