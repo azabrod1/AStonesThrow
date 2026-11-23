@@ -126,7 +126,9 @@
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
 // ball has one size; an iPad's device, a frying pan's size and a bouquet's
 // count are each a thing of their own, src/things.js variantAt, made ready
-// as the slider comes to them: readyToThrow). measureThing gives what a
+// as the slider comes to them: readyToThrow; a bouquet's step is a few
+// counts, each throw one of them, drawn from the seed its preview was made
+// from, pickFrom, so the bouquet in the hand is the one thrown). measureThing gives what a
 // throw is: its kind at that size, its radius, mass and density. A river
 // stone is thrown as stones always were (throwVelocity, at the manner's and the strength's flight time: ARC over
 // src/rock.js throwFlightTime, a hard toss let go at 12 m/s, fast and flat,
@@ -322,6 +324,7 @@ import { createBoilingVapour } from './boilingVapour.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
 import { SplashSystem, MIRROR_LAYER, SAND_ALBEDO } from './splash.js';
+import { Petals } from './petals.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { Glare } from './glare.js';
 import { Reeds } from './reeds.js';
@@ -746,6 +749,10 @@ function migrateStoredSettings() {
 // A floater of each program (pumice the stones', a pizza its textured one, a shard of ice its clear one: src/rock.js
 // seenThrough), and a sinker of each besides the stone's (an iPad its textured one: a floater's rides the water, so a
 // textured sinker's is a program of its own).
+// The petals a bouquet sheds (shedPetals, src/petals.js), each for a rose and scaled by the root of how many it holds:
+// flung from the hand, a petal or so; struck on the water at the hardest, `struck`; knocked on the ground, `knocked`;
+// from `softest` m/s, all of them from `hardest` m/s more; no more than `most` at once, flung up to `kick` m/s.
+const PETALS_SHED = { flung: 0.7, struck: 5, knocked: 3, softest: 1, hardest: 6, most: 40, kick: 1.6 };
 const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6, cannonSeconds: 1.2 };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
@@ -929,6 +936,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, nearLand: environment.nearLandUniforms, gale: galeWaves, ice, visitor, lean: pageParameters.get('lean') !== '0' });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
+  // The petals a bouquet sheds (src/petals.js): scenery, stepped in the physics steps (simulate), drawn once a frame.
+  const petals = new Petals({ envTexture: environment.envTexture });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
   splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
@@ -950,6 +959,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     water.setWindStrength(WIND_STRENGTHS[name]);
     rain.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
     snow.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
+    petals.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
     spindrift.setWind(windDirection);
     const windLength = Math.hypot(windDirection[0], windDirection[1]);
     splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
@@ -1119,7 +1129,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneMain = new THREE.Scene();
   // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
   sceneMain.fog = environment.fog;
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, splash.whiteWater.mesh, sun, rain.streaks, rain.flecks, spindrift.points, snow.flakes);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, splash.whiteWater.mesh, petals.mesh, sun, rain.streaks, rain.flecks, spindrift.points, snow.flakes);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -1357,11 +1367,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function buildPreview(name = thingName) {
     if (!previewOn) return;
-    const { thing, radius, size } = measureThing(name);
+    // At a step with choices (a bouquet's counts), the one its seed picks, as the throw given that seed is (throwAt).
+    const { thing, radius, size } = measureThing(name, undefined, undefined, pickFrom(preview.dressing));
     preview.pressure = size;   // a stream's (the nozzle points as its pressure's launch does: updatePreview)
     const flat = skipsNow() && thing.skips && Boolean(thing.byDiameter);
     const kind = meshKind(thing.look.mesh);
-    const dressing = kind.fixed && kind.dress ? preview.dressing : null;   // the seed of its parts, if it has any
+    const dressing = (kind.fixed && kind.dress) || hasChoices(name, size) ? preview.dressing : null;   // the seed of its parts, or of its pick, if it has any
     if (!preview.mesh || preview.thing !== thing || preview.flat !== flat || preview.dressedWith !== dressing) {
       disposePreview();
       const prepared = prepareThing(thing);
@@ -2247,8 +2258,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function prepareNamed(name) {
     const thing = THINGS[name];
-    readyToThrow(measureThing(name).thing);
+    readyAt(name);
     thing.measure(thing.slider?.initial);
+  }
+  /** Everything a throw of `name` at its slider's value now may be (src/things.js choicesAt: a bouquet's step, each of its counts) made ready to throw. */
+  function readyAt(name) {
+    for (const thing of THINGS[name].choicesAt(measureThing(name).size)) readyToThrow(thing);
   }
   /** A thing (a preset's own: src/things.js variantAt) made ready to throw (src/rock.js prepareThing) and its shape kept for the aim, once. */
   function readyToThrow(thing) {
@@ -2336,21 +2351,31 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * variantAt), its radius and mass at its slider's value `size` (kept
    * within its slider), else at the one it has now (its own, or its
    * family's); a thing sized by its diameter may be given its radius
-   * `radius` instead.
+   * `radius` instead. At a step with choices (a bouquet's counts), the one
+   * `pick` (0 to 1) falls on; the first without one.
    */
-  function measureThing(name, size, radius) {
+  function measureThing(name, size, radius, pick) {
     const thing = THINGS[name];
     const value = size !== undefined && size !== null ? withinSlider(thing, size) : thingSizes[sizeKey(thing)] ?? thing.slider?.initial;
     if (thing.byDiameter) {
       const nominal = radius ?? value / 200;
       return { thing, radius: nominal, mass: thing.measure(200 * nominal).mass, size: null };
     }
-    return { thing: thing.variantAt(value), ...thing.measure(value), size: value };
+    return { thing: thing.variantAt(value, pick), ...thing.measure(value, pick), size: value, pick };
   }
+  /** The pick (0 to 1) among a step's choices (measureThing) a seed gives: a throw by hand's from its preview's, so the bouquet shown is the one thrown. */
+  function pickFrom(seed) { return (Math.imul((seed ^ 0x9e3779b9) >>> 0, 0x85ebca6b) >>> 0) / 4294967296; }
+  /** Whether a throw of `name` at its slider's value `size` may be more than one thing (src/things.js choicesAt: a bouquet's counts). */
+  const hasChoices = (name, size) => THINGS[name].choicesAt(size).length > 1;
 
   function throwAt(x, z, options = {}) {
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
-    const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
+    // At a step with choices (a bouquet's counts), one drawn: by hand the preview's (its seed, `dressing`), else from
+    // Math.random (a seeded throw's, so the tools' throws are the same every run; mixed, as a Park–Miller stream's first
+    // draw from a small seed is near nothing); none drawn for anything else.
+    const sized = measureThing(name, options.size, options.radius);
+    const pick = !hasChoices(name, sized.size) ? undefined : options.pick ?? pickFrom(options.dressing ?? Math.floor(Math.random() * 4294967296));
+    const { thing, radius, mass, size } = pick === undefined ? sized : measureThing(name, options.size, options.radius, pick);
     // A thing with a stream is not thrown: its throw is a burst of the stream at the aim (src/waterCannon.js; a press by
     // hand fires it for as long as it lasts, the pointer handlers'). `seconds` sets the burst's length.
     if (thing.stream) return startStream(x, z, { thing, radius, size }, options.seconds ?? CANNON.burstSeconds);
@@ -2361,7 +2386,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, rideValues: floaterRide.values, dressing: options.dressing ?? null, size });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, rideValues: floaterRide.values, dressing: options.dressing ?? null, size, pick });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
@@ -2961,6 +2986,30 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function containThings(rock) {
     return (pooled ? holdInPool(rock, pool.square) : null) ?? (mallHere ? holdInPool(rock, MALL_BASIN) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null) ?? boulders.contain(rock);
   }
+  /**
+   * The petals a bouquet sheds (src/petals.js), in a physics step: `flung` from the hand, a petal or two; `struck` on
+   * the water at `speed`, or `knocked` on the ground or by another thing, the more the harder and the more roses, up
+   * to PETALS_SHED.most; a knock too soft to bruise a bloom sheds none.
+   */
+  function shedPetals(rock, how, speed = 0) {
+    const roses = rock.thing.look.count ?? 1;
+    const hard = THREE.MathUtils.clamp((speed - PETALS_SHED.softest) / PETALS_SHED.hardest, 0, 1);
+    const count = how === 'flung' ? Math.round(PETALS_SHED.flung * Math.sqrt(roses) * (0.5 + petals.random()))
+      : Math.min(Math.round(PETALS_SHED[how] * hard * Math.sqrt(roses) * (0.6 + 0.8 * petals.random())), PETALS_SHED.most);
+    if (count === 0) return;
+    const { position, velocity } = rock;
+    const kick = how === 'flung' ? 0.3 : how === 'struck' ? PETALS_SHED.kick * hard : 0.5 * PETALS_SHED.kick * hard;
+    const carried = how === 'flung' ? 0.85 : 0.15;   // the share of the bouquet's own speed a petal leaves with
+    petals.shed({ at: { x: position.x, y: Math.max(position.y, 0) + 0.02, z: position.z }, spread: rock.radius * Math.min(rock.reach, 3), velocity: { x: velocity.x * carried, y: Math.max(velocity.y * carried, 0), z: velocity.z * carried }, kick, count });
+  }
+  /** The ground's height at (x, z) for a petal (src/petals.js): the ice's top, the deck's or the land's; null over open water. */
+  function petalGround(x, z) {
+    const ground = ice.on ? ice.ground : pooled ? poolGround(pool.square) : mallHere ? poolGround(MALL_BASIN) : koiPond ? koiGround : null;
+    const height = ground?.at(x, z);
+    if (height !== null && height !== undefined) return height;
+    const depth = bedDepthAt(x, z);
+    return depth <= 0 ? -depth : null;
+  }
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
@@ -2989,6 +3038,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       for (const rock of stepping) {
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
+        // A bouquet flung from the hand loses a petal or two at its first step (src/petals.js).
+        if (rock.thing.look.mesh === 'roses' && !rock.petalsFlung && rock.state === 'air') { rock.petalsFlung = true; shedPetals(rock, 'flung'); }
         const impact = rock.update(PHYSICS_STEP, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
         if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
         if (impact?.skim) { splash.skim(impact, water); sound.skip(impact, seenAfter()); }
@@ -2999,9 +3050,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
           if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity, rock);
           sound.splash(impact, seenAfter());
         }
+        // A bouquet striking the water sheds a handful of petals, the more the harder it struck (src/petals.js).
+        if (impact && !impact.ripple && !impact.skim && rock.thing.look.mesh === 'roses') shedPetals(rock, 'struck', impact.speed);
         if (impact && readyForInput) dropRings.load();   // their table, at the first impact after the warm-up (src/dropRings.js)
         // On ice its knock chirps (src/sound.js), the longer the farther from the ear (the eye).
         for (const knock of rock.heard.splice(0)) {
+          if (knock.ground && rock.thing.look.mesh === 'roses') shedPetals(rock, 'knocked', knock.speed);   // and on the ice, the deck or the land
           sound.knock(knock.surface === 'ice' ? { ...knock, thickness: ice.thickness, distance: camera.position.distanceTo(rock.position) } : knock, seenAfter());
         }
         if (impact && !impact.ripple) lastImpact = { x: impact.x, z: impact.z };
@@ -3020,6 +3074,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // their sides, src/pool.js), a hole in the ice holding a floater in (src/ice.js contain): src/collide.js; the
       // knocked floater rings and throws off spray.
       for (const { ripple, knock } of collideThings(stepping, containThings)) {
+        if (ripple.rock.thing.look.mesh === 'roses') shedPetals(ripple.rock, 'knocked', knock.closing);   // a bouquet knocked by something thrown
         splash.ripple(ripple, water);
         splash.knock(knock);
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());
@@ -3041,6 +3096,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       visitor.step(stepsTime, rocks, { open: !ice.on && !galeWaves.on, near: WEATHERS[weatherName].visibility < 200 });
       // The birds (src/birds.js): a heron sees what is thrown coming down near it and goes, and comes back later.
       birds.step(stepsTime, rocks);
+      // The petals shed (src/petals.js): falling, floating, lying, going.
+      petals.step(PHYSICS_STEP, petalGround, galeWaves.on && !pooled ? galeSurfaceAt : null);
       endStep(stepping);
     }
     advanceSplash(end);
@@ -3049,6 +3106,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     poseBirds(end);   // the birds, posed at the frame's time (src/birds.js) and drawn so (src/birdViews.js)
     vapour.update(ice, water, end);   // the vapour over open water boiling in vacuum (src/boilingVapour.js)
     cannon.drawAt(end);   // the stream in the air as it is now (src/waterCannon.js: its parcels' closed-form flight)
+    petals.drawAt(1 - (stepsTime - end) / PHYSICS_STEP);   // each petal between its last two steps
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
     for (const rock of rocks) {
@@ -3291,7 +3349,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...(cannonRig ? cannonRig.meshes : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, visitor.above, birdView.above, europaSceneryView.above, vapour.group, pool.walls, pool.yard, ...garden.meshes, ...mallPool.meshes, marker, arc, petals.mesh, ...(preview.mesh ? [preview.mesh] : []), ...(cannonRig ? cannonRig.meshes : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3518,6 +3576,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     cannon.reset();
     rings.reset();
     dropRings.reset();
+    petals.clear();   // and their stream from its start
     simulationTime = 0;
     stepsTime = 0;
     fishes.resetClock();
@@ -3680,6 +3739,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const iced = chosenIce !== 'none';
     const atThrowDraw = (name) => { if (everything) throwDraws[name] = stream.draws; else stream.seek(throwDraws[name]); };
     marker.visible = arc.visible = true;   // the aim marker's programs too
+    if (everything || THINGS[thingName].look.mesh === 'roses') petals.warmUp(WARM_UP.x, WARM_UP.z);   // the petals' program (gone with the pond's clearing)
     rain.show(Boolean(WEATHERS[weatherName].rain));   // only selected rain needs these programs now
     const galeWarmUp = galeWaves.on ? galeWaves.warmUp() : null;   // only a selected gale needs these passes now
     snow.show(Boolean(WEATHERS[weatherName].snow));   // only selected snow needs its program now
@@ -3711,11 +3771,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A floater of each program and a sinker of each besides the stone's (WARM_UP); drawn, the thing chosen alone, unless
     // it is the stone (or is fired, not thrown). A floater's mirror image (src/rock.js meshMirror), in the whole mirror
     // drawn now, and a textured thing's materials (a pizza's: above, below and in the mirror): their programs too.
-    const chosen = everything || thingName === DEFAULT_THING || fired ? [] : [throwAt(WARM_UP.x, WARM_UP.z, { thing: thingName })];
-    const floaters = [...(everything ? WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name })) : []), ...chosen.filter((rock) => rock.floats)];
+    const chosen = everything || thingName === DEFAULT_THING || fired ? [] : [throwAt(WARM_UP.x, WARM_UP.z, { thing: thingName, pick: 0 })];   // a step's first choice (a bouquet's count): no draw
+    const floaters = [...(everything ? WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name, pick: 0 })) : []), ...chosen.filter((rock) => rock.floats)];
     for (const floater of floaters) floater.meshMirror.visible = true;
     // A textured sinker's three: above, below and, as anything but a floater is given on the ice, its mirror image.
-    const sinkers = [...(everything ? WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name })) : []), ...chosen.filter((rock) => !rock.floats)];
+    const sinkers = [...(everything ? WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name, pick: 0 })) : []), ...chosen.filter((rock) => !rock.floats)];
     if (everything || iced) for (const sinker of sinkers) Object.assign(sinker.prepareMirror(), { visible: true, frustumCulled: false });
     // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
@@ -3877,7 +3937,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const thing = THINGS[thingName];
       if (!thing.slider || !Number.isFinite(value)) return;
       thingSizes[sizeKey(thing)] = withinSlider(thing, value);
-      readyToThrow(measureThing(thingName).thing);   // a preset with a look of its own made ready now, not as it is thrown
+      readyAt(thingName);   // a preset with a look of its own made ready now (each of a step's choices), not as it is thrown
       buildPreview();
     },
     get size() { return thingSizes[sizeKey(THINGS[thingName])] ?? THINGS[thingName].slider?.initial; },
@@ -4213,6 +4273,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     clear() { clearPond(); },
     /** Whether a stone has met the water: gone in, or skipped (a skip's touch can be over within a frame); or the cannon's stream has. */
     hasImpacted() { return rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0) || cannon.landed; },
+    /** The loose petals bouquets have shed (src/petals.js): each one's state (0 falling, 1 afloat, 2 lying) and where it is. */
+    get petals() { return petals.petals.map((petal) => ({ state: petal.state, position: petal.position.toArray() })); },
     /** Where the eye would stand at `steps` + 1 even shares of a glide from where it is to the view `name` (tools/zoom-probe.mjs). */
     glidePath(name, steps = 50) {
       const from = { ...orbit }, target = viewsNow()[name];

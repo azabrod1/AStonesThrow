@@ -369,14 +369,21 @@ for (const preset of THINGS.pan.body.size.presets) {
   geometry.dispose();
 }
 for (const preset of THINGS.roses.body.size.presets) {
-  const thing = THINGS.roses.variantAt(preset.value);
-  const built = createRosesGeometry(thing, { metres: true });
-  const radius = Math.cbrt((3 * meshVolume(built.userData.physics)) / (4 * Math.PI));
-  const weight = built.userData.massCentre.map((offset) => offset / radius), ballast = thing.body.ballast;
+  // Each of a step's counts (its `choices`, one drawn for each throw: src/things.js variantAt), odd, as a florist ties them.
   const { floats, text } = THINGS.roses.properties(preset.value);
-  check(thing.look.count === Number.parseInt(preset.name, 10) && near(built.userData.mass, preset.mass, 0.0005) && near(radius, preset.diameter / 2, 0.0002) && near(weight[1], ballast[1], 0.002) && floats && text === `${preset.name} · ${preset.label}`,
-    `${preset.name}: ${(1000 * built.userData.mass).toFixed(1)} g (${1000 * preset.mass}), its ball ${centimetres(2 * radius)} cm (${centimetres(preset.diameter)}), its weight ${weight[1].toFixed(3)} radii up (${ballast[1]}), ${floats ? 'floats' : 'sinks'}, "${text}"`);
-  built.dispose();
+  check(text === `${preset.name} · ${preset.label}` && floats, `${preset.name}: "${text}", ${floats ? 'floats' : 'sinks'}`);
+  const choices = preset.choices ?? [preset];
+  choices.forEach((choice, index) => {
+    const pick = (index + 0.5) / choices.length;
+    const thing = THINGS.roses.variantAt(preset.value, pick), measured = THINGS.roses.measure(preset.value, pick);
+    const built = createRosesGeometry(thing, { metres: true });
+    const radius = Math.cbrt((3 * meshVolume(built.userData.physics)) / (4 * Math.PI));
+    const weight = built.userData.massCentre.map((offset) => offset / radius), ballast = thing.body.ballast;
+    const count = thing.look.count, density = measured.mass / ((4 / 3) * Math.PI * measured.radius ** 3);
+    check(count === choice.look.count && count % 2 === 1 && near(built.userData.mass, choice.mass, 0.0005) && near(measured.mass, choice.mass, 1e-9) && near(radius, choice.diameter / 2, 0.0002) && near(weight[1], ballast[1], 0.002) && density < WATER_DENSITY,
+      `${count} roses: ${(1000 * built.userData.mass).toFixed(1)} g (${1000 * choice.mass}), its ball ${centimetres(2 * radius)} cm (${centimetres(choice.diameter)}), its weight ${weight[1].toFixed(3)} radii up (${ballast[1]})`);
+    built.dispose();
+  });
 }
 
 // ---- each thing in the lake ----
@@ -1539,7 +1546,7 @@ console.log('\nThings meeting things (src/collide.js):');
   let fuzzRandom = 12345;
   const pick = (count) => { fuzzRandom = (fuzzRandom * 16807) % 2147483647; return fuzzRandom % count; };
   const sources = [good, ...['stone', 'slate', 'basketball', 'bowling', 'diamond', 'pizza', 'watermelon', 'brick'].map((key) => {
-    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, properties, fastest, fastestFor, skips, variantAt, variants, ...rest } = THINGS[key];
+    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, properties, fastest, fastestFor, skips, variantAt, choicesAt, variants, ...rest } = THINGS[key];
     return structuredClone({ ...rest, material: { ...rest.material, roll: rest.material.roll === null ? undefined : rest.material.roll === 5 / 7 ? 'solid' : 'shell' } });
   })];
   let tried = 0, threw = 0, taken = 0, broken = 0;

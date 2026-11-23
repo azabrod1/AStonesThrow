@@ -48,7 +48,7 @@ an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or 
 shown last. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats, an iPad from an iPhone to an iPad Pro, a frying pan 20
-to 30 cm, roses one to 24; a golf or a tennis ball has one size). Then how it is
+to 30 cm, roses one to 25, always an odd number; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
 way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
 either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
@@ -145,15 +145,22 @@ full screen, which only a press or a key may ask for):
   thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
   and spinning, it slaps the water, flutters down broadside at about
   0.8 m/s and lies on the bed on its base or its rim. Roses come one
-  long-stemmed rose or 3, 6, 12 or 24 tied in a spiral under a satin ribbon
-  (about 30 g a rose: 29 g to 0.8 kg), each bloom of layered petals (five
-  outer ones cupped and curled back at their tips, five inside them, four
-  round a spiralled heart, its sepals turned down under it), thorns up
-  their stems and leaves of three serrated leaflets; their petals hold
-  air, so they float, a third under, by each bloom's hull, the rose lying
-  on the water and a bouquet as a raft, its blooms up and its stems under,
-  its weight where its stems and blooms put it (a bouquet that lands on its
-  blooms may stay so). A
+  long-stemmed rose or a bouquet tied in a spiral under a satin ribbon,
+  always an odd number of them: each step of the slider a few counts (3 or
+  5, 7 to 11, 13 to 19, 21 to 25) and each throw one of them at random, the
+  one the hand shows (30 to 40 g a rose: 29 g to about a kilogram). Each
+  bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
+  heart to broad outer ones cupped and rolled back at their rims, its
+  sepals turned down under it; each stem its own, with thorns, down to its
+  own cut end below the ribbon, and leaves of serrated leaflets under the
+  outer blooms. Their petals hold air, so they float, a third under, by
+  each bloom's hull, the rose lying on the water and a bouquet as a raft,
+  its blooms up and its stems under, its weight where its stems and blooms
+  put it (a bouquet that lands on its blooms may stay so). A bouquet sheds
+  petals (`src/petals.js`): one or two as it leaves the hand, a handful
+  when it strikes the water, the ice or the deck, the more the harder; they
+  flutter down, float off on the rings and lie where they fall, and go
+  after half a minute or so. A
   long thin thing's nominal radius (a banana's, the slide's, the roses')
   is its ball's of like volume, so its splash is sized by what it
   displaces; the strip shows its length. Fish eat what is edible (an apple, a banana, a
@@ -583,7 +590,10 @@ definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
 A size preset may have a look of its own (and water, air and ballast), so
 one slider can run through things of different shapes: each step is then a
 thing of its own (`variantAt`), made ready as the slider comes to it (the
-iPad's devices, the frying pan's sizes, the roses' counts). A mesh may give
+iPad's devices, the frying pan's sizes, the roses' counts); a step may
+instead have `choices`, each a thing of its own, one drawn for each throw
+(`variantAt`'s pick: a bouquet's 7, 9 or 11 roses, the one its preview in
+the hand showed). A mesh may give
 the physics a closed body of its own (`userData.physics`: a rose's blooms,
 whose petals are drawn open, float by their hulls).
 `tools/thing-probe.mjs` checks them.

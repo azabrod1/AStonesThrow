@@ -1421,8 +1421,9 @@ export class Rock {
    * @param piece a shard's own outline (src/ice.js shards: its corners about its middle and its thickness, in radii), which its mesh is built to
    * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
    * @param size its slider's value (src/things.js): at a preset with a look of its own it is that preset's own thing (variantAt: an iPad's step, a bouquet's count), else its slider's first
+   * @param pick at a step with choices (src/things.js variantAt: a bouquet's counts), which one it is, 0 to 1 (src/main.js throwAt draws it)
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, rideValues = null, piece = null, dressing = null, size = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, rideValues = null, piece = null, dressing = null, size = null, pick = undefined }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1430,7 +1431,7 @@ export class Rock {
     this.state = 'air';
     // A skip stone's state; `inside(x, z)`, given in a pool (src/main.js), says where its walls let it touch and skim.
     this.skip = skip ? { normal: new THREE.Vector3(0, 1, 0), skips: 0, contact: null, inside: null } : null;
-    this.thing = (THINGS[thing] ?? THINGS[DEFAULT_THING]).variantAt(size);
+    this.thing = (THINGS[thing] ?? THINGS[DEFAULT_THING]).variantAt(size, pick);
     this.sphere = this.thing.sphere;   // its body a sphere (the header), not its mesh's own shape
     // Its own mass, unless sized by its diameter: then its density's (`mass`, as a stone's always was).
     this.ownMass = this.thing.byDiameter ? null : mass ?? this.thing.measure(this.thing.slider?.initial).mass;
