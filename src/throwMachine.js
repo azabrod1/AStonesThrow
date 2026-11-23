@@ -29,9 +29,10 @@
 // next things wait in, out of sight, so a reload comes out of it and not
 // out of the air. Its size is the thing's (fitFor): the cradle as far under
 // the thing's middle as its lowest point, a tall thing laid on its side
-// (when lying lets it lob steeper) and the thing turned so its longer side lies across the rail, the magazine as long and as wide as it is and
-// tall enough for a few, the rail long enough for the sled to run
-// from under the magazine to the muzzle (MACHINE.rail).
+// when lying lets it lob steeper, the thing turned so its longer side lies
+// across the rail, the magazine as long and as wide as it is and tall
+// enough for a few, the rail long enough for the sled to run from under the
+// magazine to the muzzle (MACHINE.rail).
 //
 // The reload (CYCLE), after each throw, by real time: the sled is at the
 // muzzle as the thing leaves (it is let go at the hand's point, at once:
