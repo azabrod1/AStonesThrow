@@ -147,10 +147,11 @@ full screen, which only a press or a key may ask for):
   0.8 m/s and lies on the bed on its base or its rim. Roses come one
   long-stemmed rose or 3, 5, 7 or 9 tied in a spiral under a satin ribbon,
   always an odd number, as a florist ties them (30 to 45 g a rose: 32 to
-  382 g). Each
+  373 g). Each
   bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
   heart to broad outer ones cupped and rolled back at their rims, its
-  sepals turned down under it; each stem its own, stripped but for a few
+  sepals turned down under it from its hip, a smooth green urn the stem
+  swells into; each stem its own, stripped but for a few
   thorns, down to its own cut end below the ribbon, and a leaf of serrated
   leaflets close under each outer bloom; matte, velvety petals, drawn from one of three levels of
   detail by how big the bouquet is on the screen. Their petals hold air, so they float, a third under, by

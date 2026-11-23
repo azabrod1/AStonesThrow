@@ -1634,8 +1634,9 @@ export class Rock {
     // anything without coarser ones.
     const detail = this.geometry.userData.detail ?? null;
     this.detail = detail ? [...detail.coarser, { geometry: this.geometry, spacing: detail.spacing }] : null;
-    // A bouquet bends each level it draws (swayDrawn), so it has its own copy of each.
-    if (this.detail && this.sway) this.detail = this.detail.map((level) => (level.geometry === this.geometry ? level : { geometry: level.geometry.clone(), spacing: level.spacing, own: true }));
+    // A bouquet bends each level it draws (swayDrawn), so it has its own copy of each, made as it is first shown
+    // (showDetail): a throw costs no more for levels it never draws.
+    if (this.detail && this.sway) this.detail = this.detail.map((level) => (level.geometry === this.geometry ? level : { geometry: level.geometry, spacing: level.spacing, copyOnShow: true }));
     if (detail) detail.users = (detail.users ?? 0) + 1;   // the coarser meshes leave the GPU with the last that draws them (disposeGeometry)
     this.detailShown = detail ? { above: this.detail.length - 1, below: this.detail.length - 1, mirror: this.detail.length - 1 } : null;
     this.syncMeshes();
@@ -1891,7 +1892,9 @@ export class Rock {
       const chosen = needed > shown ? needed : Math.min(shown, coarsestWithin(DETAIL.hold * DETAIL.pixels));
       if (chosen === shown) continue;
       this.detailShown[part] = chosen;
-      mesh.geometry = this.detail[chosen].geometry;
+      const level = this.detail[chosen];
+      if (level.copyOnShow) Object.assign(level, { geometry: level.geometry.clone(), copyOnShow: false, own: true });
+      mesh.geometry = level.geometry;
     }
   }
 

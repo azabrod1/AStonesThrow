@@ -3162,7 +3162,8 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // its width so that it overlaps the next, deep crimson, darker at its claw
 // and its rolled rim, its outer face a little lighter, the inner petals
 // darker the deeper in (the bloom's own shade); each bloom its own size and
-// openness; its five sepals green lances turned down under it, and its hip.
+// openness; its five sepals green lances turned down under it, and its hip,
+// an urn swelling out of its stem, narrowing to a neck and flaring at its rim.
 // To the water and the deck a bloom is a cup (roseHull), turned about its
 // stem from a profile, so a rose floats by a closed body (its geometry's
 // `userData.physics`, src/rock.js prepareThing). A stem is a closed tube
@@ -3219,7 +3220,10 @@ const ROSES = {
   // Its heart: the bud's tip, a small cone under its innermost petals (hidden but where they part); its hip; its
   // sepals, green tongues turned down under it (cm), their cells along and across.
   heart: { segments: 16, profile: [[0, -0.6], [0.38, -0.4], [0.42, 1.0], [0.3, 1.75], [0.12, 1.95], [0, 1.98]] },
-  hip: { segments: 10, profile: [[0, -2.5], [0.45, -2.45], [0.85, -2.1], [0.9, -1.75], [0.7, -1.55], [0, -1.5]] },
+  // Its hip, an urn (radius, height, cm) swelling out of the stem, its widest under the sepals' neck, flaring a little at
+  // the rim they spring from; its first rows are the stem's own radius, standing straight (rosePetals fits them), so the
+  // stem runs into it with no seam.
+  hip: { segments: 20, profile: [[0, -3.3], [0.32, -3.3], [0.32, -3.29], [0.36, -3.05], [0.48, -2.75], [0.6, -2.4], [0.66, -2.1], [0.63, -1.88], [0.56, -1.72], [0.62, -1.6], [0.74, -1.52], [0.5, -1.47], [0, -1.45]] },
   sepals: { count: 5, from: [0.75, -1.65], length: 1.7, drop: 1.05, width: 0.32, thickness: 0.04, grid: [4, 2] },
   stem: { radius: 0.0032, sides: 12, length: 0.42, below: 0.14 },   // m: its radius, a single rose's length under its hip, a bunch's under the tie
   thorns: { every: 0.12, length: 0.004, radius: 0.0018, tilt: 0.6 },   // m: one about this far apart up a stem, its length and its base's radius; its slant down the stem (rad)
@@ -3235,7 +3239,7 @@ const ROSES = {
   dome: { radius: 0.17, perRose: 0.003, spacing: 1.72, packing: 1.05, jitter: 0.06 },   // m from the tie to its blooms, and more for each rose; blooms this many reaches apart; a sunflower's cap this much roomier than its blooms; each bloom's distance this share nearer or farther
   bunch: { spacing: 2.15, flare: 0.7, band: 0.035, ribbonOut: 0.004, twist: 0.6 },   // stems this many radii apart at the tie, how much farther out each stem's cut end is than its place at the tie, the ribbon's height and stand, the spiral's turn (rad)
   claw: linear(84, 6, 16), red: linear(176, 12, 30), tipRed: linear(196, 24, 40), velvet: linear(120, 6, 20), pinker: linear(204, 38, 58), dark: linear(92, 4, 18), light: linear(222, 54, 72),
-  green: linear(64, 116, 44), hipGreen: linear(78, 112, 42), sepal: linear(58, 100, 38), leafGreen: linear(34, 80, 30), midrib: linear(100, 142, 70), leafEdge: linear(96, 62, 34), cut: linear(168, 196, 120),
+  green: linear(64, 116, 44), hipGreen: linear(104, 140, 64), sepal: linear(70, 112, 46), leafGreen: linear(34, 80, 30), midrib: linear(100, 142, 70), leafEdge: linear(96, 62, 34), cut: linear(168, 196, 120),
   thornBase: linear(96, 104, 46), thornTip: linear(122, 52, 32),
   ribbon: linear(246, 238, 222), ribbonShade: linear(214, 202, 182),
   // kg/m³: a bloom's air between its petals makes it light; a fresh stem and its leaves float, a little lighter than
@@ -3423,7 +3427,12 @@ function rosePetals(scale, phase, open, random, level = 0) {
   // Its heart, where the innermost petals part: dark.
   parts.push(turnedPart(ROSES.heart.profile, ROSES.heart.segments, (radius, height, angle) => [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres], () => ROSES.velvet));
   // Its hip, and its sepals turned down under its outer petals.
-  parts.push(turnedPart(ROSES.hip.profile, ROSES.hip.segments, (radius, height, angle) => [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres], () => ROSES.hipGreen));
+  const hipColour = new THREE.Color(), [, foot] = ROSES.hip.profile[0], swell = ROSES.hip.profile[6][1];
+  const stemRadius = (ROSES.stem.radius * 100) / scale;   // the stem's radius in this bloom's centimetres
+  const hipProfile = ROSES.hip.profile.map(([radius, height], row) => [row === 1 || row === 2 ? stemRadius * 1.02 : radius, height]);
+  parts.push(turnedPart(hipProfile, ROSES.hip.segments, (radius, height, angle) => [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres],
+    // The stem's green where it runs in, waxier and lighter over its swell.
+    (radius, height) => hipColour.copy(ROSES.green).lerp(ROSES.hipGreen, smoothstep(foot, swell, height))));
   const sepals = ROSES.sepals;
   const sepalColour = new THREE.Color();
   for (let sepal = 0; sepal < sepals.count; sepal++) {
@@ -3449,7 +3458,7 @@ function roseStem(from, to, radius, random, { cut = false, sides = ROSES.stem.si
   const length = from.distanceTo(to);
   const color = new THREE.Color(), shade = 0.85 + 0.25 * random();
   // `cut`: its foot a florist's cut, pale and wet (the rows on the axis and round its rim at `from`).
-  const tube = turnedPart([[0, 0], [radius * 0.999, 0], [radius, 0.0005], [radius, length / 2], [radius, length], [0, length]], sides,
+  const tube = turnedPart([[0, 0], [radius * 0.999, 0], [radius, 0.0005], [radius, length / 2], [radius, length - 0.0005], [radius, length], [0, length]], sides,
     (out, along, angle) => [out * Math.cos(angle), along, out * Math.sin(angle)],
     (out, along, angle) => (cut && along === 0 ? color.copy(ROSES.cut) : color.copy(ROSES.green).multiplyScalar(shade * (0.9 + 0.2 * Math.cos(angle - 0.8)))));
   const direction = to.clone().sub(from).normalize();
@@ -3563,7 +3572,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
   // A part of its body (drawn too unless `hidden`: a bloom's hull), of its density; or one only drawn.
   const add = (part, density, { hidden = false } = {}) => { body.push(part); densities.push(density); if (!hidden) { drawn.push(part); owners.push(owner); } };
   const draw = (parts) => { drawn.push(...parts); owners.push(...parts.map(() => owner)); };
-  const hipDepth = (scale) => (-ROSES.bloom.profile[0][1] * scale) / 100;   // its hip under its middle, m
+  const hipDepth = (scale) => (-ROSES.hip.profile[0][1] * scale) / 100;   // its hip's foot under its middle, m: where its stem meets it
   const placed = (part, centre, axis) => part.applyMatrix4(new THREE.Matrix4().compose(centre, new THREE.Quaternion().setFromUnitVectors(up, axis), new THREE.Vector3(1, 1, 1)));
   // A bloom set at `centre`, facing along `axis`, its scale and turn drawn: its petals drawn, its hull its body; where its stem meets its hip.
   const placeBloom = (centre, axis) => {
@@ -3571,7 +3580,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
     const scale = least + (most - least) * random(), phase = random() * Math.PI * 2, open = ROSES.petals.open[0] + (ROSES.petals.open[1] - ROSES.petals.open[0]) * random();
     add(placed(roseHull(scale), centre, axis), ROSES.densities.bloom, { hidden: true });
     draw(rosePetals(scale, phase, open, random, level).map((part) => placed(part, centre, axis)));
-    return centre.clone().addScaledVector(axis, -hipDepth(scale) - 0.0003);
+    return centre.clone().addScaledVector(axis, -hipDepth(scale) + 0.002);   // its stem runs 2 mm up into it, its end hidden
   };
   const leaf = (base, along, facing, pairs = 1) => { for (const part of roseLeaf(base, along, facing, random, pairs, level)) add(part, ROSES.densities.leaf); };
   const stem = (from, to) => { add(roseStem(from, to, stemRadius, random), ROSES.densities.stem); draw(roseThorns(from, to, stemRadius, random)); };

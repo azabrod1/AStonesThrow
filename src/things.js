@@ -934,14 +934,14 @@ defineBuiltIn('roses', {
   name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 9: it floats', called: 'roses',
   body: {
     shape: 'mesh',
-    ballast: [0, -1.340, 0],
+    ballast: [0, -1.350, 0],
     size: {
       by: 'preset', unit: 'roses', initial: 3, presets: [
-        { value: 1, name: '1 rose', label: '32 g', diameter: 0.0567, mass: 0.0316, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.374, 0] } },
-        { value: 2, name: '3 roses', label: '136 g', diameter: 0.0881, mass: 0.1356, look: { count: 3 }, body: { ballast: [0, -1.708, 0] } },
-        { value: 3, name: '5 roses', label: '224 g', diameter: 0.1072, mass: 0.2237, look: { count: 5 }, body: { ballast: [0, -1.340, 0] } },
-        { value: 4, name: '7 roses', label: '310 g', diameter: 0.1213, mass: 0.3103, look: { count: 7 }, body: { ballast: [0, -1.155, 0] } },
-        { value: 5, name: '9 roses', label: '382 g', diameter: 0.1296, mass: 0.3816, look: { count: 9 }, body: { ballast: [0, -1.090, 0] } },
+        { value: 1, name: '1 rose', label: '32 g', diameter: 0.0567, mass: 0.0316, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.431, 0] } },
+        { value: 2, name: '3 roses', label: '135 g', diameter: 0.0880, mass: 0.1352, look: { count: 3 }, body: { ballast: [0, -1.719, 0] } },
+        { value: 3, name: '5 roses', label: '223 g', diameter: 0.1071, mass: 0.2226, look: { count: 5 }, body: { ballast: [0, -1.350, 0] } },
+        { value: 4, name: '7 roses', label: '309 g', diameter: 0.1212, mass: 0.3092, look: { count: 7 }, body: { ballast: [0, -1.162, 0] } },
+        { value: 5, name: '9 roses', label: '373 g', diameter: 0.1283, mass: 0.3734, look: { count: 9 }, body: { ballast: [0, -1.122, 0] } },
       ],
     },
   },
