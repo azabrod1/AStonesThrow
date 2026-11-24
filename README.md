@@ -164,7 +164,7 @@ full screen, which only a press or a key may ask for):
   what is drawn bends, the physics keeps its hulls). A bouquet sheds
   petals (`src/petals.js`): one or two as it leaves the hand, a handful
   when it strikes the water, the ice or the deck, the more the harder; they
-  flutter down, float off on the rings and lie where they fall, and go
+  flutter down, float off downwind and lie where they fall, and go
   after half a minute or so. A
   long thin thing's nominal radius (a banana's, the slide's, the roses')
   is its ball's of like volume, so its splash is sized by what it

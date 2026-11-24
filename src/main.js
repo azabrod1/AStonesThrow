@@ -2957,6 +2957,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // world rather than piling up steps it cannot afford.
   let stepsTime = 0;
   let holesSeen = 0;   // the holes the ice had opened when things at rest on it were last looked over (endStep)
+  let petalHoles = 0;   // and when the petals lying on it last looked (src/petals.js step)
   splash.setStoneStep(PHYSICS_STEP);   // its cavities trace their stones in the stones' own steps, not its pieces of them
   function advanceSplash(until) {
     while (simulationTime < until - 1e-9) {
@@ -3080,7 +3081,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // The birds (src/birds.js): a heron sees what is thrown coming down near it and goes, and comes back later.
       birds.step(stepsTime, rocks);
       // The petals shed (src/petals.js): falling, floating, lying, going.
-      petals.step(PHYSICS_STEP, petalGround, galeWaves.on && !pooled ? galeSurfaceAt : null);
+      petals.step(PHYSICS_STEP, petalGround, galeWaves.on && !pooled ? galeSurfaceAt : null, ice.opened !== petalHoles);
+      petalHoles = ice.opened;
       endStep(stepping);
     }
     advanceSplash(end);

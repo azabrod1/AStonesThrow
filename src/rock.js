@@ -529,7 +529,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 // A bouquet's flowers swaying on their stems (Rock.swayStep): their damping, a share of critical, in the air and in the
 // water (which stills them within a swing or two); the most a bouquet's motion is taken to press on them (m/s²: a
 // splash's first step is a jolt of thousands); the furthest a stem bends (rad).
-const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6 };
+const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6, settled: 2e-3 };   // `settled`: rad and rad/s within which it hangs still (swayDrawn redraws nothing)
 const SWAY_SCRATCH = { felt: new THREE.Vector3(), turn: new THREE.Quaternion(), spin: new THREE.Vector3(), axis: new THREE.Vector3(), tip: new THREE.Vector3(), push: new THREE.Vector3(), inward: new THREE.Vector3(), inward2: new THREE.Vector3() };
 
 // The distinct points of a physics mesh (Rock.physicsPositions: separate triangles, each point repeated in every
@@ -1544,7 +1544,7 @@ export class Rock {
     // A bouquet's flowers on their stems (src/thingMeshes.js roseSway): each bloom's bend, a rotation (rad) about its
     // pivot in its own frame, and how fast it bends; the drawn mesh's rest shape it is bent from (flex).
     const sway = this.geometry.userData.sway ?? null;
-    this.sway = sway ? { count: sway.count, axes: sway.axes, tips: sway.tips, rates: sway.rates, gives: sway.gives, bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), moving: false, drawn: new Map() } : null;
+    this.sway = sway ? { count: sway.count, axes: sway.axes, tips: sway.tips, rates: sway.rates, gives: sway.gives, bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), fresh: true, moving: false, drawn: new Map() } : null;
     this.physicsShape = physics ? physics.array : prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
@@ -2723,9 +2723,11 @@ export class Rock {
     const sway = this.sway;
     if (!sway || dt <= 0) return;
     // What the bouquet feels (m/s²), in its own frame: its acceleration less gravity, kept within reason (a step that sets
-    // it down somewhere else is no blow).
-    const felt = SWAY_SCRATCH.felt.copy(this.velocity).sub(sway.lastVelocity).divideScalar(dt);
+    // it down somewhere else is no blow). Its first step after its velocity was set from outside (thrown: src/main.js
+    // gives it its launch after making it; let go from the hand) feels gravity's share alone, not the launch as a jolt.
+    const felt = sway.fresh ? SWAY_SCRATCH.felt.set(0, 0, 0) : SWAY_SCRATCH.felt.copy(this.velocity).sub(sway.lastVelocity).divideScalar(dt);
     sway.lastVelocity.copy(this.velocity);
+    sway.fresh = false;
     felt.y += GRAVITY;
     if (felt.length() > SWAY.most) felt.setLength(SWAY.most);
     const inverse = SWAY_SCRATCH.turn.copy(this.quaternion).invert();
@@ -2755,7 +2757,8 @@ export class Rock {
       bend[at] -= along * axis.x; bend[at + 1] -= along * axis.y; bend[at + 2] -= along * axis.z;
       const size = Math.hypot(bend[at], bend[at + 1], bend[at + 2]);
       if (size > SWAY.furthest) for (let component = 0; component < 3; component++) { bend[at + component] *= SWAY.furthest / size; rate[at + component] *= 0.5; }
-      if (size > 1e-4 || Math.hypot(rate[at], rate[at + 1], rate[at + 2]) > 1e-3) moving = true;
+      // Still moving while it swings or has yet to reach where it hangs (a steady droop, lying, is settled).
+      if (Math.hypot(rate[at], rate[at + 1], rate[at + 2]) > SWAY.settled || Math.hypot(targetX - bend[at], targetY - bend[at + 1], targetZ - bend[at + 2]) > SWAY.settled) moving = true;
     }
     sway.moving = moving;
   }
@@ -2767,15 +2770,14 @@ export class Rock {
    */
   swayDrawn() {
     const sway = this.sway;
-    let bendSize = 0;
-    for (let bloom = 0; bloom < sway.count; bloom++) bendSize = Math.max(bendSize, Math.hypot(sway.bend[bloom * 3], sway.bend[bloom * 3 + 1], sway.bend[bloom * 3 + 2]));
     // Each level of detail a pass draws now (showDetail), bent from its own rest shape (src/thingMeshes.js roseSway).
     for (const geometry of new Set([this.meshAbove?.geometry, this.meshBelow?.geometry, this.meshMirror?.geometry])) {
       if (!geometry?.userData.sway) continue;
       const positions = geometry.attributes.position, normals = geometry.attributes.normal;
       let drawn = sway.drawn.get(geometry);
-      if (!drawn) sway.drawn.set(geometry, drawn = { rest: positions.array.slice(), restNormals: normals.array.slice(), bend: 0, still: true });
-      if (drawn.still && !sway.moving && drawn.bend === bendSize) continue;
+      if (!drawn) sway.drawn.set(geometry, drawn = { rest: positions.array.slice(), restNormals: normals.array.slice(), still: false });
+      // Hanging still as it was last drawn (swayStep `moving`: a steady droop is still): nothing to redraw or upload.
+      if (drawn.still && !sway.moving) continue;
       const { rest, restNormals } = drawn, { bloom: bloomOf, share, pivots } = geometry.userData.sway, bend = sway.bend;
       const array = positions.array, normal = normals.array;
       for (let corner = 0, index = 0; corner < bloomOf.length; corner++, index += 3) {
@@ -2797,7 +2799,6 @@ export class Rock {
       positions.needsUpdate = true;
       normals.needsUpdate = true;
       drawn.still = !sway.moving;
-      drawn.bend = bendSize;
     }
   }
 
@@ -3619,6 +3620,7 @@ export class Rock {
    */
   update(dt, pondDepth, surfaceAt = null) {
     if (this.state === 'held') {
+      if (this.sway) this.sway.fresh = true;   // its velocity is the hand's to set: let go, its first step feels no jolt (swayStep)
       const surface = surfaceAt?.(this.position.x, this.position.z) ?? 0;
       const bedDepth = typeof pondDepth === 'function' ? pondDepth(this.position.x, this.position.z) : pondDepth;
       if (this.position.y + this.lowestOffset() < surface) this.wet = 1;
