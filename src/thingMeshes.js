@@ -3350,23 +3350,22 @@ function shellMesh({ at, rows, columns, thickness, paint, rim: withRim = true })
   }
   // Its rim, round its edge, each point's normal the way out from the surface's middle through it, across its normal
   // (none, `rim` false, for a petal: its edge is thinner than a pixel and its faces close enough).
-  if (withRim) addRim();
-  function addRim() {
-  const middle = point(Math.round(rows / 2) * (columns + 1) + Math.round(columns / 2));
-  const outward = (index) => {
-    const [x, y, z] = point(index), [nx, ny, nz] = normalOf(index, 1);
-    const out = new THREE.Vector3(x - middle[0], y - middle[1], z - middle[2]);
-    out.addScaledVector(new THREE.Vector3(nx, ny, nz), -(out.x * nx + out.y * ny + out.z * nz));
-    return out.normalize().toArray();
-  };
-  const rim = loop.map((index) => { const normal = outward(index), colour = painted(index, normal); return [[offsetOf(index, 1), normal, colour], [offsetOf(index, -1), normal, colour]]; });
-  const facing = rim[0][0][1].map((value, axis) => value + rim[1][0][1][axis]);
-  const flip = turned(rim[0][0][0], rim[1][0][0], rim[1][1][0], facing);
-  rim.forEach(([outer, inner], position) => {
-    const [nextOuter, nextInner] = rim[(position + 1) % rim.length];
-    triangle([outer, nextOuter, nextInner], flip);
-    triangle([outer, nextInner, inner], flip);
-  });
+  if (withRim) {
+    const middle = point(Math.round(rows / 2) * (columns + 1) + Math.round(columns / 2));
+    const outward = (index) => {
+      const [x, y, z] = point(index), [nx, ny, nz] = normalOf(index, 1);
+      const out = new THREE.Vector3(x - middle[0], y - middle[1], z - middle[2]);
+      out.addScaledVector(new THREE.Vector3(nx, ny, nz), -(out.x * nx + out.y * ny + out.z * nz));
+      return out.normalize().toArray();
+    };
+    const rim = loop.map((index) => { const normal = outward(index), colour = painted(index, normal); return [[offsetOf(index, 1), normal, colour], [offsetOf(index, -1), normal, colour]]; });
+    const facing = rim[0][0][1].map((value, axis) => value + rim[1][0][1][axis]);
+    const flip = turned(rim[0][0][0], rim[1][0][0], rim[1][1][0], facing);
+    rim.forEach(([outer, inner], position) => {
+      const [nextOuter, nextInner] = rim[(position + 1) % rim.length];
+      triangle([outer, nextOuter, nextInner], flip);
+      triangle([outer, nextInner, inner], flip);
+    });
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));

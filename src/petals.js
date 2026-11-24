@@ -135,8 +135,8 @@ export class Petals {
         terminal: within(TERMINAL, random),
         sway: within(SWAY.speed, random), swayRate: within(SWAY.rate, random), swayPhase: random() * 6.3, swayHeading: random() * 6.3,
         tumbleAxis, tumble: within(TUMBLE, random),
-        // Come down, it lies its cup up or (a third of them) over, turned as it fell.
         overGround: null,   // whether the ground was under it at its last step (null before its first)
+        // Come down, it lies its cup up or (a third of them) over, turned as it fell.
         rest: new THREE.Quaternion().setFromAxisAngle(UP, random() * 6.3).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), random() < 0.33 ? Math.PI : 0)),
         color: [shade, shade * (0.9 + 0.2 * random()), shade],
         age: 0, still: 0, life: within(LIFE, random), gone: 0,
