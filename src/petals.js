@@ -13,10 +13,12 @@
 // src/air.js) it flies as anything does, under the place's gravity
 // (src/gravity.js). Come down on the water it floats, flat, slowing to a
 // stop (WATER_DRAG_SECONDS) and drifting downwind (at a wall's foot it
-// stays). Under a gale it is worked out on still water and lifted on the
-// waves as it is drawn (galeLift, as the splash is: LIFT_FROM); on the ice,
-// the deck or the land it lies where it fell, and afloat again if a hole
-// opens under it. After its LIFE it shrinks away (FADE_SECONDS), as anything that
+// stays). It is worked out on still water and lifted as it is drawn by the
+// water's height under it, a gale's sea and the ripples and rings on it, as
+// the floaters ride them (LIFT_FROM); falling, it stops at a wall's foot; on
+// the ice, the deck or the land it lies where it fell, and afloat again if a
+// hole opens under it. It is in no mirror image: a few centimetres of red,
+// it would have the mirror drawn again as it drifts. After its LIFE it shrinks away (FADE_SECONDS), as anything that
 // goes in src/main.js does; no more than CAPACITY are about at once, the
 // oldest giving way.
 //
@@ -32,7 +34,7 @@ import * as THREE from 'three';
 import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 import { AIR_DENSITY, EARTH_AIR } from './air.js';
 import { seededRandom } from './spray.js';
-import { GALE_SURFACE } from './shaders/gale.js';
+import { FLOATER_WATER } from './shaders/scene.js';
 
 const CAPACITY = 320;
 const PETAL = { length: [0.02, 0.034], width: 0.8, cup: 0.25, rows: 9, columns: 7 };   // m long; its width a share of its length, its cup a share of its width
@@ -46,9 +48,10 @@ const SETTLE_SECONDS = 0.25;        // how soon it lies flat, come down
 const LIFE = [25, 45];              // s it lies or floats before it goes
 const FADE_SECONDS = 2.5;
 const AIR = 0, FLOAT = 1, LYING = 2;
-// Under a gale its petals are worked out on still water and lifted as drawn (galeLift, src/shaders/gale.js), as the
-// splash is: afloat by the sea's height under it, falling by a share of it that grows from none LIFT_FROM over the
-// still surface (no crest reaches higher) to all of it at the surface, lying on the ground not at all.
+// Its petals are worked out on still water and lifted as drawn by the water's height under each (a gale's sea, the
+// solver's ripples, the wind's, the rings: as the floaters ride it, FLOATER_WATER and galeHeight): afloat all of it,
+// falling over the water a share that grows from none LIFT_FROM over the still surface (no crest reaches higher) to all
+// of it at the surface, lying on the ground, or falling over it, none.
 const LIFT_FROM = 1.2;
 const WALL = 0.02;   // m: ground higher than this over the water is a wall's top (the Pool's deck, the Reflecting Pool's coping): a petal afloat stays at its foot
 const UP = new THREE.Vector3(0, 1, 0);
@@ -57,10 +60,11 @@ const turning = new THREE.Quaternion();   // a step's turn of a falling petal
 
 export class Petals {
   /**
-   * `envTexture`, the environment map things are lit by (src/rock.js makeMaterial's); `gale`, the gale's uniforms
-   * (src/galeWaves.js uniforms()), by which its petals on the water are lifted as drawn.
+   * `envTexture`, the environment map things are lit by (src/rock.js makeMaterial's); `water`, the water's ride
+   * uniforms (src/waterSurface.js rideUniforms: its gale's, solver's, wind's and rings'), by which its petals on the
+   * water ride it as drawn.
    */
-  constructor({ envTexture = null, gale = null } = {}) {
+  constructor({ envTexture = null, water = null } = {}) {
     this.random = seededRandom(SEED);
     this.petals = [];
     this.wind = { x: 0, z: 0 };
@@ -69,18 +73,24 @@ export class Petals {
     }), CAPACITY);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY * 3), 3).setUsage(THREE.DynamicDrawUsage);
-    // Each petal's share of the gale's lift (galeLift): 1 afloat, growing to it as it falls near the water, 0 lying.
+    // Each petal's share of the water's lift (LIFT_FROM): 1 afloat, growing to it as it falls near the water, 0 lying.
     this.lift = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY), 1).setUsage(THREE.DynamicDrawUsage);
-    this.mesh.geometry.setAttribute('aGaleLift', this.lift);
-    if (gale) {
+    this.mesh.geometry.setAttribute('aWaterLift', this.lift);
+    if (water) {
       const material = this.mesh.material;
       material.onBeforeCompile = (shader) => {
-        Object.assign(shader.uniforms, gale);
-        shader.vertexShader = `${GALE_SURFACE}\nattribute float aGaleLift;\n${shader.vertexShader}`.replace('#include <project_vertex>', `
+        Object.assign(shader.uniforms, water);
+        shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${FLOATER_WATER}\nattribute float aWaterLift;`).replace('#include <project_vertex>', `
           vec4 mvPosition = vec4(transformed, 1.0);
           mvPosition = instanceMatrix * mvPosition;
-          // Lifted on the gale's sea by the height under the petal's middle (its share of it, aGaleLift).
-          if (uGaleMetresPerUnit > 0.0 && aGaleLift > 0.0) mvPosition.y += aGaleLift * galeHeight(instanceMatrix[3].xz);
+          // Lifted on the water as drawn by its height under the petal's middle (its share of it, aWaterLift): a gale's
+          // sea, and on it the solver's ripples, the wind's and the rings, as a floater rides them.
+          if (aWaterLift > 0.0) {
+            vec2 middle = instanceMatrix[3].xz;
+            float height = floaterWaterHeight(middle);
+            if (uGaleMetresPerUnit > 0.0) height += galeHeight(middle);
+            mvPosition.y += aWaterLift * height;
+          }
           mvPosition = modelViewMatrix * mvPosition;
           gl_Position = projectionMatrix * mvPosition;`);
       };
@@ -121,6 +131,7 @@ export class Petals {
         sway: SWAY.speed[0] + (SWAY.speed[1] - SWAY.speed[0]) * random(), swayRate: SWAY.rate[0] + (SWAY.rate[1] - SWAY.rate[0]) * random(), swayPhase: random() * 6.3, swayHeading: random() * 6.3,
         tumbleAxis, tumble: TUMBLE[0] + (TUMBLE[1] - TUMBLE[0]) * random(),
         // Come down, it lies its cup up or (a third of them) over, turned as it fell.
+        overGround: null,   // whether the ground was under it at its last step (null before its first)
         rest: new THREE.Quaternion().setFromAxisAngle(UP, random() * 6.3).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), random() < 0.33 ? Math.PI : 0)),
         color: [shade, shade * (0.9 + 0.2 * random()), shade],
         age: 0, still: 0, life: LIFE[0] + (LIFE[1] - LIFE[0]) * random(), gone: 0,
@@ -156,9 +167,17 @@ export class Petals {
           velocity.y += (-petal.terminal * fallScale - velocity.y) * share;
           velocity.z += (towardZ - velocity.z) * share;
         } else velocity.y -= GRAVITY * seconds;
+        const fromX = position.x, fromZ = position.z;
         position.addScaledVector(velocity, seconds);
         petal.turn.premultiply(turning.setFromAxisAngle(petal.tumbleAxis, petal.tumble * seconds));
-        const ground = groundAt(position.x, position.z);
+        let ground = groundAt(position.x, position.z);
+        if (ground !== null && ground > WALL && petal.overGround === false && position.y < ground) {
+          // Below a wall's top (the Pool's deck, the Reflecting Pool's coping) it does not pass through: it falls on at its foot.
+          position.x = fromX; position.z = fromZ;
+          velocity.x = 0; velocity.z = 0;
+          ground = groundAt(position.x, position.z);
+        }
+        petal.overGround = ground !== null;   // over land, the ice or the deck: no lift from the water as drawn
         const floor = ground ?? 0;
         if (position.y <= floor) {
           position.y = floor;
@@ -209,7 +228,7 @@ export class Petals {
       scale.setScalar(petal.size * (1 - THREE.MathUtils.smoothstep(petal.gone, 0, FADE_SECONDS)));
       mesh.setMatrixAt(index, matrix.compose(position, turn, scale));
       mesh.setColorAt(index, color.setRGB(...petal.color));
-      this.lift.array[index] = petal.state === FLOAT ? 1 : petal.state === LYING ? 0 : THREE.MathUtils.clamp(1 - position.y / LIFT_FROM, 0, 1);
+      this.lift.array[index] = petal.state === FLOAT ? 1 : petal.state === LYING || petal.overGround ? 0 : THREE.MathUtils.clamp(1 - position.y / LIFT_FROM, 0, 1);
     });
     mesh.count = this.petals.length;
     mesh.visible = mesh.count > 0;
@@ -238,6 +257,9 @@ export class Petals {
   }
 
   get count() { return this.petals.length; }
+
+  /** Whether any petal is still falling (src/main.js keeps the frame rate up while one is: its idle cap). */
+  get falling() { return this.petals.some((petal) => petal.state === AIR); }
 }
 
 /**

@@ -936,7 +936,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The petals a bouquet sheds (src/petals.js): scenery, stepped in the physics steps (simulate), drawn once a frame.
-  const petals = new Petals({ envTexture: environment.envTexture, gale: galeWaves.uniforms() });
+  const petals = new Petals({ envTexture: environment.envTexture, water: surface.rideUniforms });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
   splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
@@ -3549,7 +3549,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const renderStart = performance.now();
     render();
     const renderEnd = performance.now();
-    if (splash.inMotion || rain.on || snow.on || cannon.active || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
+    if (splash.inMotion || rain.on || snow.on || cannon.active || petals.falling || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
     profiler?.frame({ interval, simulateMilliseconds: renderStart - simulateStart, renderMilliseconds: renderEnd - renderStart, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles });
   }
 
