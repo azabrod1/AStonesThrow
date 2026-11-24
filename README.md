@@ -48,7 +48,7 @@ an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or 
 shown last. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats, an iPad from an iPhone to an iPad Pro, a frying pan 20
-to 30 cm, roses one to 24; a golf or a tennis ball has one size). Then how it is
+to 30 cm, roses one to 9, an odd number; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
 way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
 either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
@@ -145,15 +145,28 @@ full screen, which only a press or a key may ask for):
   thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
   and spinning, it slaps the water, flutters down broadside at about
   0.8 m/s and lies on the bed on its base or its rim. Roses come one
-  long-stemmed rose or 3, 6, 12 or 24 tied in a spiral under a satin ribbon
-  (about 30 g a rose: 29 g to 0.8 kg), each bloom of layered petals (five
-  outer ones cupped and curled back at their tips, five inside them, four
-  round a spiralled heart, its sepals turned down under it), thorns up
-  their stems and leaves of three serrated leaflets; their petals hold
-  air, so they float, a third under, by each bloom's hull, the rose lying
-  on the water and a bouquet as a raft, its blooms up and its stems under,
-  its weight where its stems and blooms put it (a bouquet that lands on its
-  blooms may stay so). A
+  long-stemmed rose or 3, 5, 7 or 9 tied in a spiral under a satin ribbon,
+  always an odd number, as a florist ties them (30 to 45 g a rose: 31 to
+  366 g). Each
+  bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
+  heart to broad outer ones cupped and rolled back at their rims, its
+  sepals turned down under it from its hip, a smooth green urn the stem
+  swells into; each stem its own, stripped but for a few
+  thorns, down to its own cut end below the ribbon, and a leaf of serrated
+  leaflets close under each outer bloom; matte, velvety petals, drawn from one of three levels of
+  detail by how big the bouquet is on the screen. Their petals hold air, so they float, a third or so under (330 to 390 kg/m³), by
+  each bloom's hull, the rose lying on the water and a bouquet as a raft,
+  its blooms up and its stems under, its weight where its stems and blooms
+  put it (a bouquet that lands on its blooms may stay so). Its flowers are
+  not one solid thing: each stem gives, so the blooms fling out as it
+  tumbles, whip on and spring back as it strikes, droop under their weight
+  in the hand, and settle straight once it lies or floats, held up as it is
+  (`swayStep` in `src/rock.js`; only
+  what is drawn bends, the physics keeps its hulls). A bouquet sheds
+  petals (`src/petals.js`): one or two as it leaves the hand, a handful
+  when it strikes the water, the ice or the deck, the more the harder; they
+  flutter down, ride the ripples as they float off downwind, lie where they fall, and go
+  after half a minute or so. A
   long thin thing's nominal radius (a banana's, the slide's, the roses')
   is its ball's of like volume, so its splash is sized by what it
   displaces; the strip shows its length. Fish eat what is edible (an apple, a banana, a
@@ -165,7 +178,8 @@ full screen, which only a press or a key may ask for):
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
   9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
-  way up, and the roses' with `--seed=5` at 11°, on which they stand). The
+  way up, and the roses' with `--seed=5` at 10°: five, lying among their
+  shed petals). The
   water cannon's is a frame of its stream landing in the lake instead
   (`--thing=cannon --throws=0:-1.4:0 --times=0.6 --w=320 --h=180`).
 - The water cannon (`src/waterCannon.js`; `cannon` in `src/things.js`, a

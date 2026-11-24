@@ -201,9 +201,10 @@
 //     2100 kg/m³: plates that sink, each but the iPhone its home screen
 //     painted on its glass), a cast-iron frying pan (20, 25 or 30 cm, 1.5 to
 //     3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside) and red roses
-//     (one, or 3, 6, 12 or 24 tied, blooms of layered petals: about 30 g a
-//     rose, 300 to 350 kg/m³, floating by their blooms' hulls as a raft,
-//     blooms up);
+//     (one, or 3, 5, 7 or 9 tied, an odd number as a florist ties them,
+//     blooms of petals wound in a spiral: 30 to 45 g a rose, 330 to 390
+//     kg/m³, floating by their blooms' hulls as a raft, blooms up, shedding
+//     petals as they are flung and as they strike);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
 //     src/thingMeshes.js createShardGeometry): 917 kg/m³, a plate in the
 //     water as a pizza is, so it comes up and floats flat, its top a little
@@ -919,34 +920,35 @@ defineBuiltIn('pan', {
   look: { mesh: 'pan', size: 25, roughness: 0.55, reflection: 0.9, wet: { darker: 0.05, glossier: 0.35 } },
 });
 // Red roses (the header), each step its own count (a preset's `look.count`, src/thingMeshes.js ROSES): one
-// long-stemmed rose, or 3, 6, 12 or 24 tied in a spiral under a satin ribbon. Each weighs what its parts do (ROSES'
-// densities: a bloom some 12 g, its stem and leaves about as heavy as the water they displace, its ribbon a few grams):
-// about 30 g a rose. Its petals hold air between them, so the whole is 250 to 350 kg/m³ and floats, a third or less
-// under; its weight is lower than its volume's middle (`ballast`, each its own: a rose's far down its stem), so it
-// floats lying on the water, its stems under and its blooms up, not on its blooms with its stems in the air. Its
-// nominal radius is its ball's of like volume (its splash a thing's that displaces as much). One rose's buoyancy is
-// cut finer (`columns`), so its stem floats as well as its bloom, and two dozen's, so its columns hold its body. It
-// floats by its blooms' hulls, its petals drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles
-// slowly, end over end.
+// long-stemmed rose, or 3, 5, 7 or 9 tied in a spiral under a satin ribbon, an odd number as a florist ties them. Each
+// weighs what its parts do (ROSES' densities: a bloom some 12 g, its stem and leaves about as heavy as the water they
+// displace, its ribbon a few grams): 30 to 45 g a rose. Its petals hold air between them, so the whole is 330 to
+// 390 kg/m³ and floats, a third or so under; its weight is lower than its volume's middle (`ballast`, each its own: a
+// rose's far down its stem), so it floats lying on the water, its stems under and its blooms up, not on its blooms with
+// its stems in the air. Its nominal radius is its ball's of like volume (its splash a thing's that displaces as much).
+// One rose's buoyancy is cut finer (`columns`), so its stem floats as well as its bloom. It floats by its blooms'
+// hulls, its petals drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles slowly, end over end, its
+// flowers swaying on their stems as it goes, whipping on as it strikes and settling straight as it lies or floats
+// (src/rock.js swayStep), and it sheds petals as it is flung and as it strikes (src/petals.js).
 defineBuiltIn('roses', {
-  name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 24: it floats', called: 'roses',
+  name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 9: it floats', called: 'roses',
   body: {
     shape: 'mesh',
-    ballast: [0, -0.606, 0],
+    ballast: [0, -1.358, 0],
     size: {
-      by: 'preset', unit: 'roses', initial: 4, presets: [
-        { value: 1, name: '1 rose', label: '29 g', diameter: 0.0561, mass: 0.0292, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.352, 0] } },
-        { value: 2, name: '3 roses', label: '127 g', diameter: 0.0885, mass: 0.1272, look: { count: 3 }, body: { ballast: [0, -1.429, 0] } },
-        { value: 3, name: '6 roses', label: '239 g', diameter: 0.1129, mass: 0.2393, look: { count: 6 }, body: { ballast: [0, -0.926, 0] } },
-        { value: 4, name: '12 roses', label: '433 g', diameter: 0.1396, mass: 0.4332 },
-        { value: 5, name: '24 roses', label: '802 g', diameter: 0.1729, mass: 0.8022, look: { count: 24 }, water: { columns: 24 }, body: { ballast: [0, -0.327, 0] } },
+      by: 'preset', unit: 'roses', initial: 3, presets: [
+        { value: 1, name: '1 rose', label: '31 g', diameter: 0.0566, mass: 0.0314, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.426, 0] } },
+        { value: 2, name: '3 roses', label: '129 g', diameter: 0.0858, mass: 0.1290, look: { count: 3 }, body: { ballast: [0, -1.790, 0] } },
+        { value: 3, name: '5 roses', label: '222 g', diameter: 0.1069, mass: 0.2225, look: { count: 5 }, body: { ballast: [0, -1.358, 0] } },
+        { value: 4, name: '7 roses', label: '291 g', diameter: 0.1171, mass: 0.2908, look: { count: 7 }, body: { ballast: [0, -1.251, 0] } },
+        { value: 5, name: '9 roses', label: '366 g', diameter: 0.1267, mass: 0.3658, look: { count: 9 }, body: { ballast: [0, -1.147, 0] } },
       ],
     },
   },
   material: { bounce: [0.05, 0.12], friction: 0.8 },
   air: { drag: 1.0, spin: [1.5, 6] },
   water: { restingHeight: 0.5, columnsAlong: [0, 1, 0] },
-  look: { mesh: 'roses', count: 12, roughness: 0.75, reflection: 0.7, wet: { darker: 0.1, glossier: 0.4 } },
+  look: { mesh: 'roses', count: 5, roughness: 0.9, reflection: 0.85, wet: { darker: 0.05, glossier: 0.15 } },
 });
 // A water cannon (the header's `stream`; src/waterCannon.js): a fire truck's monitor nozzle held in the hand, which
 // shoots a stream of water where it is aimed for as long as the press lasts. The slider is its pressure, 0.5 to 10 bar:

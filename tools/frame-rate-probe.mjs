@@ -32,6 +32,10 @@
 //   - europa: a stone into the lead and a bowling ball down on the crust,
 //     which nothing breaks (src/ice.js setVacuum), the
 //     open water boiling every step (src/boiling.js: its bursts counted);
+//   - roses: three bouquets, the second onto the first, afloat, and two
+//     onto thick ice, shedding petals as they are flung and as they strike
+//     (src/petals.js), every petal's state and place compared too (and
+//     some shed, or there would be nothing to compare);
 //   - loch: a stone and a skipped stone at Loch Ness, then left past its
 //     first sighting (src/lochVisitor.js), whose state must match too: what
 //     it is, where, how far up, and when it comes and goes.
@@ -116,6 +120,23 @@ const SCENES = [
     ],
   },
   {
+    // Bouquets (src/things.js 'roses', at the slider's opening step: five), each shedding petals as it is flung and
+    // as it strikes (src/petals.js: shed and stepped in the physics steps), the second onto the first, afloat.
+    name: 'roses', place: 'lakeside', ice: 'none', until: 10,
+    throws: [
+      { at: 0, x: 0, z: -1.4, thing: 'roses' },
+      { at: 2.5, x: 0.05, z: -1.45, thing: 'roses' },
+      { at: 3.5, x: -0.6, z: -2.0, thing: 'roses' },
+    ],
+  },
+  {
+    name: 'roses on ice', place: 'lakeside', ice: 'thick', until: 8,
+    throws: [
+      { at: 0, x: 0, z: -1.4, thing: 'roses' },
+      { at: 1.5, x: 0.4, z: -1.8, thing: 'roses' },
+    ],
+  },
+  {
     name: 'loch', place: 'loch', ice: 'none', until: 52,
     throws: [
       { at: 0, x: 0, z: -1.4, thing: 'stone' },
@@ -192,7 +213,9 @@ async function play(scene, pattern) {
       const things = [...new Set([...thrown, ...pond.rocks])].map((rock) => [rock.thing.name, rock.state, pond.rocks.includes(rock) ? (rock.fading !== undefined ? 'fading' : 'kept') : 'gone', rock.fadedAt ?? -1, ...rock.position.toArray(), ...rock.quaternion.toArray()]);
       const fish = pond.fish.fish.map((one) => [one.x, one.y, one.z, one.heading]);
       // The loch's visitor as the world has it: not `body`, where the last frame drew it.
-      return { things, fish, holes: pond.iceSheet.holes.length, skins: pond.iceSheet.holes.map((hole) => hole.skin ? hole.skin.front : -1), boils: pond.boiling, visitor: JSON.stringify({ ...pond.visitor, body: undefined }), next: Math.random(), frames: frame };
+      // Every petal the bouquets shed (src/petals.js): its state and where it is.
+      const petals = pond.petals.map((petal) => [petal.state, ...petal.position]);
+      return { things, fish, petals, holes: pond.iceSheet.holes.length, skins: pond.iceSheet.holes.map((hole) => hole.skin ? hole.skin.front : -1), boils: pond.boiling, visitor: JSON.stringify({ ...pond.visitor, body: undefined }), next: Math.random(), frames: frame };
     } finally {
       Math.random = random;
     }
@@ -213,6 +236,7 @@ function compare(steady, uneven) {
   };
   numbers(steady.things, uneven.things, 'things');
   numbers(steady.fish, uneven.fish, 'fish');
+  numbers(steady.petals, uneven.petals, 'petals');
   if (steady.holes !== uneven.holes) unlike.push(`holes: ${steady.holes} against ${uneven.holes}`);
   if (steady.visitor !== uneven.visitor) unlike.push(`the loch's visitor: ${steady.visitor} against ${uneven.visitor}`);
   if (steady.next !== uneven.next) unlike.push(`the next Math.random: ${steady.next} against ${uneven.next}`);
@@ -227,6 +251,8 @@ for (const scene of only ? only.split(',').map((name) => SCENES.find((candidate)
   const { most, where, unlike } = compare(steady, uneven);
   const count = (kind) => steady.things.filter((thing) => thing[2] === kind).length;
   console.log(`${scene.name}: ${scene.throws.length} throws, ${scene.until} s; ${count('kept')} things kept, ${count('fading')} fading, ${count('gone')} gone; ${steady.fish.length} fish, ${steady.holes} holes; ${steady.frames} frames against ${uneven.frames} (${((Date.now() - started) / 1000).toFixed(0)} s)`);
+  // A bouquets' scene compares their petals only if they shed some (src/petals.js).
+  if (scene.throws.some((thrown) => thrown.thing === 'roses')) check(steady.petals.length > 0, `${scene.name} sheds petals to compare (${steady.petals.length})`);
   check(unlike.length === 0 && most === 0, `${scene.name} ends the same in frames of 1/60 s and of ${UNEVEN.map((seconds) => `1/${Math.round(1 / seconds)}`).join(', ')} s (most apart ${most.toExponential(1)}${most ? `, ${where}` : ''}${unlike.length ? `; ${unlike.slice(0, 4).join('; ')}` : ''})`);
 }
 check(problems.length === 0, `no page errors${problems.length ? `: ${problems.slice(0, 3).join(' | ')}` : ''}`);
