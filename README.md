@@ -146,21 +146,22 @@ full screen, which only a press or a key may ask for):
   and spinning, it slaps the water, flutters down broadside at about
   0.8 m/s and lies on the bed on its base or its rim. Roses come one
   long-stemmed rose or 3, 5, 7 or 9 tied in a spiral under a satin ribbon,
-  always an odd number, as a florist ties them (30 to 45 g a rose: 32 to
-  373 g). Each
+  always an odd number, as a florist ties them (30 to 45 g a rose: 31 to
+  366 g). Each
   bloom is a hybrid tea's, two dozen petals wound in a spiral from a tight
   heart to broad outer ones cupped and rolled back at their rims, its
   sepals turned down under it from its hip, a smooth green urn the stem
   swells into; each stem its own, stripped but for a few
   thorns, down to its own cut end below the ribbon, and a leaf of serrated
   leaflets close under each outer bloom; matte, velvety petals, drawn from one of three levels of
-  detail by how big the bouquet is on the screen. Their petals hold air, so they float, a third or so under (330 to 380 kg/m³), by
+  detail by how big the bouquet is on the screen. Their petals hold air, so they float, a third or so under (330 to 390 kg/m³), by
   each bloom's hull, the rose lying on the water and a bouquet as a raft,
   its blooms up and its stems under, its weight where its stems and blooms
   put it (a bouquet that lands on its blooms may stay so). Its flowers are
   not one solid thing: each stem gives, so the blooms fling out as it
-  tumbles, whip on and spring back as it strikes, droop as it lies on its
-  side and steady quickly in the water (`swayStep` in `src/rock.js`; only
+  tumbles, whip on and spring back as it strikes, droop under their weight
+  in the hand, and settle straight once it lies or floats, held up as it is
+  (`swayStep` in `src/rock.js`; only
   what is drawn bends, the physics keeps its hulls). A bouquet sheds
   petals (`src/petals.js`): one or two as it leaves the hand, a handful
   when it strikes the water, the ice or the deck, the more the harder; they

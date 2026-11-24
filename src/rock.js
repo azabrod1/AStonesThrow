@@ -531,7 +531,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 // A bouquet's flowers swaying on their stems (Rock.swayStep): their damping, a share of critical, in the air and in the
 // water (which stills them within a swing or two); the most a bouquet's motion is taken to press on them (m/s²: a
 // splash's first step is a jolt of thousands); the furthest a stem bends (rad).
-const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6 };
+export const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6 };
 /**
  * A swaying thing's (a bouquet's: Rock `sway`) bend into one of its materials' programs (SWAY_VERTEX,
  * src/thingMeshes.js): its corners turned about their blooms' pivots, normals with them, before anything else moves
@@ -553,7 +553,7 @@ function swayDetail(shader, sway) {
 }
 /** A program's key with a swaying thing's bend (swayDetail) in it, or as it is. */
 const swayKey = (key, sway) => (sway ? `${key}-sway` : key);
-const SWAY_SCRATCH = { felt: new THREE.Vector3(), turn: new THREE.Quaternion(), spin: new THREE.Vector3(), axis: new THREE.Vector3(), tip: new THREE.Vector3(), push: new THREE.Vector3(), inward: new THREE.Vector3(), inward2: new THREE.Vector3() };
+const SWAY_SCRATCH = { felt: new THREE.Vector3(), turn: new THREE.Quaternion(), spin: new THREE.Vector3(), axis: new THREE.Vector3(), tip: new THREE.Vector3(), push: new THREE.Vector3(), inward: new THREE.Vector3(), around: new THREE.Vector3() };
 
 // The distinct points of a physics mesh (Rock.physicsPositions: separate triangles, each point repeated in every
 // triangle it touches, about six times), in first-seen order, made once per array and kept beside it. The walks for
@@ -1581,6 +1581,7 @@ export class Rock {
     this.soaked = 0;
     this.thawed = this.thing.water.thaws ? 0 : 1;   // a frozen thing's share thawed (soak): it soaks and gives only as it thaws
     this.heard = [];   // its knocks on the ground since src/main.js last took them (src/sound.js)
+    this.petalsFlung = false;   // a bouquet has shed its petals for leaving the hand (src/main.js shedPetals)
     this.rideHeight = 0;           // the water's height under its middle as drawn (src/floaterRide.js reads it back), afloat
     this.centre = new THREE.Vector3();   // where things meet it (src/collide.js): where it is drawn, riding the water (syncMeshes)
     this.stepEnd = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };   // where it is drawn after its last step (syncMeshes)
@@ -2773,7 +2774,7 @@ export class Rock {
       axis.set(axes[at], axes[at + 1], axes[at + 2]);
       // What its bloom feels: the bouquet's, and its tumble's pull in toward its axis (the bloom's place in metres).
       tip.set(tips[at], tips[at + 1], tips[at + 2]).multiplyScalar(this.radius);
-      push.copy(felt).add(SWAY_SCRATCH.inward.copy(tumbling).cross(SWAY_SCRATCH.inward2.copy(tumbling).cross(tip)));   // Ω×(Ω×r), in toward its axis
+      push.copy(felt).add(SWAY_SCRATCH.inward.copy(tumbling).cross(SWAY_SCRATCH.around.copy(tumbling).cross(tip)));   // Ω×(Ω×r), in toward its axis
       // Where that bends it to (a rotation, rad): the bloom carried away from the push, across its stem, by its give.
       const give = gives[bloom] / EARTH_GRAVITY;
       const targetX = give * (push.y * axis.z - push.z * axis.y), targetY = give * (push.z * axis.x - push.x * axis.z), targetZ = give * (push.x * axis.y - push.y * axis.x);   // push × axis

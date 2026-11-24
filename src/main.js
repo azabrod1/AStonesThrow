@@ -751,8 +751,17 @@ const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed:
 
 // The petals a bouquet sheds (shedPetals, src/petals.js), each for a rose and scaled by the root of how many it holds:
 // flung from the hand, a petal or so; struck on the water at the hardest, `struck`; knocked on the ground, `knocked`;
-// from `softest` m/s, all of them from `hardest` m/s more; no more than `most` at once, flung up to `kick` m/s.
-const PETALS_SHED = { flung: 0.7, struck: 5, knocked: 3, softest: 1, hardest: 6, most: 40, kick: 1.6 };
+// from `softest` m/s, all of them from `hardest` m/s more; each count times a draw over `spread` (least, span); no more
+// than `most` at once. Flung up to `kick` m/s (flung from the hand `flungKick`, knocked `knockedKick` of `kick`), with
+// `carried` of the bouquet's own speed (flung, else), from `above` m over its middle, over its reach (at most
+// `reach` radii).
+const PETALS_SHED = {
+  flung: 0.7, struck: 5, knocked: 3, softest: 1, hardest: 6, spread: { flung: [0.5, 1], struck: [0.6, 0.8] }, most: 40,
+  kick: 1.6, flungKick: 0.3, knockedKick: 0.5, carried: { flung: 0.85, struck: 0.15 }, above: 0.02, reach: 3,
+};
+/** Whether a thing sheds petals as it is flung and struck (src/petals.js): a bouquet of roses. */
+const shedsPetals = (rock) => rock.thing.look.mesh === 'roses';
+const MALL_GROUND = poolGround(MALL_BASIN);   // the Reflecting Pool's coping as ground, for the petals (petalGround)
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -2979,25 +2988,33 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function shedPetals(rock, how, speed = 0) {
     const roses = rock.thing.look.count ?? 1;
     const hard = THREE.MathUtils.clamp((speed - PETALS_SHED.softest) / PETALS_SHED.hardest, 0, 1);
-    const count = how === 'flung' ? Math.round(PETALS_SHED.flung * Math.sqrt(roses) * (0.5 + petals.random()))
-      : Math.min(Math.round(PETALS_SHED[how] * hard * Math.sqrt(roses) * (0.6 + 0.8 * petals.random())), PETALS_SHED.most);
+    const flung = how === 'flung';
+    const [least, span] = flung ? PETALS_SHED.spread.flung : PETALS_SHED.spread.struck;
+    const drawn = least + span * petals.random();
+    const count = flung ? Math.round(PETALS_SHED.flung * Math.sqrt(roses) * drawn) : Math.min(Math.round(PETALS_SHED[how] * hard * Math.sqrt(roses) * drawn), PETALS_SHED.most);
     if (count === 0) return;
     const { position, velocity } = rock;
-    const kick = how === 'flung' ? 0.3 : how === 'struck' ? PETALS_SHED.kick * hard : 0.5 * PETALS_SHED.kick * hard;
-    const carried = how === 'flung' ? 0.85 : 0.15;   // the share of the bouquet's own speed a petal leaves with
-    petals.shed({ at: { x: position.x, y: Math.max(position.y, 0) + 0.02, z: position.z }, spread: rock.radius * Math.min(rock.reach, 3), velocity: { x: velocity.x * carried, y: Math.max(velocity.y * carried, 0), z: velocity.z * carried }, kick, count });
+    const kick = flung ? PETALS_SHED.flungKick : PETALS_SHED.kick * hard * (how === 'struck' ? 1 : PETALS_SHED.knockedKick);
+    const carried = flung ? PETALS_SHED.carried.flung : PETALS_SHED.carried.struck;   // the share of the bouquet's own speed a petal leaves with
+    petals.shed({ at: { x: position.x, y: Math.max(position.y, 0) + PETALS_SHED.above, z: position.z }, spread: rock.radius * Math.min(rock.reach, PETALS_SHED.reach), velocity: { x: velocity.x * carried, y: Math.max(velocity.y * carried, 0), z: velocity.z * carried }, kick, count });
   }
   /**
    * The ground's height at (x, z) for a petal (src/petals.js): the ice's top (the sheet's: a shard afloat is no ground to
    * a petal, which would be left in the air as the shard drifts off), the deck's or the land's; null over open water.
    */
   function petalGround(x, z) {
-    const ground = ice.on ? ice : pooled ? poolGround(pool.square) : mallHere ? poolGround(MALL_BASIN) : koiPond ? koiGround : null;
+    const ground = ice.on ? ice : pooled ? petalPoolGround() : mallHere ? MALL_GROUND : koiPond ? koiGround : null;
     const height = ground?.at(x, z);
     if (height !== null && height !== undefined) return height;
     const depth = bedDepthAt(x, z);
     return depth <= 0 ? -depth : null;
   }
+  /** The Pool's deck as ground (src/pool.js poolGround), made once for its walls as they are (petalGround asks for every petal). */
+  function petalPoolGround() {
+    if (petalPool.square !== pool.square) Object.assign(petalPool, { square: pool.square, ground: poolGround(pool.square) });
+    return petalPool.ground;
+  }
+  const petalPool = { square: null, ground: null };
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
@@ -3027,7 +3044,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
         // A bouquet flung from the hand loses a petal or two at its first step (src/petals.js).
-        if (rock.thing.look.mesh === 'roses' && !rock.petalsFlung && rock.state === 'air') { rock.petalsFlung = true; shedPetals(rock, 'flung'); }
+        if (shedsPetals(rock) && !rock.petalsFlung && rock.state === 'air') { rock.petalsFlung = true; shedPetals(rock, 'flung'); }
         const impact = rock.update(PHYSICS_STEP, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
         if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
         if (impact?.skim) { splash.skim(impact, water); sound.skip(impact, seenAfter()); }
@@ -3039,11 +3056,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
           sound.splash(impact, seenAfter());
         }
         // A bouquet striking the water sheds a handful of petals, the more the harder it struck (src/petals.js).
-        if (impact && !impact.ripple && !impact.skim && rock.thing.look.mesh === 'roses') shedPetals(rock, 'struck', impact.speed);
+        if (impact && !impact.ripple && !impact.skim && shedsPetals(rock)) shedPetals(rock, 'struck', impact.speed);
         if (impact && readyForInput) dropRings.load();   // their table, at the first impact after the warm-up (src/dropRings.js)
         // On ice its knock chirps (src/sound.js), the longer the farther from the ear (the eye).
         for (const knock of rock.heard.splice(0)) {
-          if (knock.ground && rock.thing.look.mesh === 'roses') shedPetals(rock, 'knocked', knock.speed);   // and on the ice, the deck or the land
+          if (knock.ground && shedsPetals(rock)) shedPetals(rock, 'knocked', knock.speed);   // and on the ice, the deck or the land
           sound.knock(knock.surface === 'ice' ? { ...knock, thickness: ice.thickness, distance: camera.position.distanceTo(rock.position) } : knock, seenAfter());
         }
         if (impact && !impact.ripple) lastImpact = { x: impact.x, z: impact.z };
@@ -3062,7 +3079,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // their sides, src/pool.js), a hole in the ice holding a floater in (src/ice.js contain): src/collide.js; the
       // knocked floater rings and throws off spray.
       for (const { ripple, knock } of collideThings(stepping, containThings)) {
-        if (ripple.rock.thing.look.mesh === 'roses') shedPetals(ripple.rock, 'knocked', knock.closing);   // a bouquet knocked by something thrown
+        if (shedsPetals(ripple.rock)) shedPetals(ripple.rock, 'knocked', knock.closing);   // a bouquet knocked by something thrown
         splash.ripple(ripple, water);
         splash.knock(knock);
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());

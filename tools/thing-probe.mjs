@@ -85,8 +85,13 @@
 //     offering Skip, the TV not), as does each step of the iPad (an
 //     iPhone, the iPhone's own mesh, an iPad mini, an iPad, an iPad Pro),
 //     which offers no Skip at any step; each frying pan is its
-//     preset's length and cast iron's density; each count of roses weighs
-//     what its parts do, its ballast where their weight is, and floats; each
+//     preset's length and cast iron's density; each count of roses (odd)
+//     weighs what its parts do, its ballast where their weight is, and
+//     floats, its three levels of detail aligned (the same pivots, every
+//     corner its bloom and share, the coarser fewer triangles); a bouquet's
+//     sway stays within its limit and holds straight afloat; its petals
+//     (src/petals.js) are capped, gone within their life, stop at a wall's
+//     foot, float when the ice opens under them and fall freely in vacuum; each
 //     step of these three is thrown into the lake as below; a toy slide is built 99 × 70 × 46 cm and a slice of bread
 //     12 × 1.3 × 12 cm, and the strip gives the slide's, the slice's and a
 //     banana's length (their meshes', src/thingMeshes.js unitLength);
@@ -141,7 +146,8 @@
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
-import { Rock, setAir, aimThrow, aimSkip, prepareThing, skipLowest, skipSpeed, SKIP_THROW, throwFlightTime } from '../src/rock.js';
+import { Rock, setAir, aimThrow, aimSkip, prepareThing, skipLowest, skipSpeed, SKIP_THROW, throwFlightTime, SWAY } from '../src/rock.js';
+import { Petals } from '../src/petals.js';
 import { THINGS, THING_NAMES, WATER_DENSITY, defineThing, validateThing } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
@@ -151,7 +157,7 @@ import { WaterCannon, CANNON, nozzle } from '../src/waterCannon.js';
 import { EARTH_GRAVITY, setGravity } from '../src/gravity.js';
 import { EARTH_AIR, setAirDensity } from '../src/air.js';
 import { PLACES } from '../src/places.js';
-import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
+import { meshKind, meshVolume, createRosesGeometry, SWAY_BLOOMS } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
 import { costClock, costSince } from './cost-clock.mjs';
 
@@ -378,6 +384,67 @@ for (const preset of THINGS.roses.body.size.presets) {
   check(thing.look.count === Number.parseInt(preset.name, 10) && thing.look.count % 2 === 1 && near(built.userData.mass, preset.mass, 0.0005) && near(radius, preset.diameter / 2, 0.0002) && near(weight[1], ballast[1], 0.002) && floats && text === `${preset.name} · ${preset.label}`,
     `${preset.name}: ${(1000 * built.userData.mass).toFixed(1)} g (${1000 * preset.mass}), its ball ${centimetres(2 * radius)} cm (${centimetres(preset.diameter)}), its weight ${weight[1].toFixed(3)} radii up (${ballast[1]}), ${floats ? 'floats' : 'sinks'}, "${text}"`);
   built.dispose();
+}
+
+// ---- the roses' levels of detail, their sway and their petals ----
+// Each count's three levels (src/thingMeshes.js rosesWithDetail) lie on one another: the same blooms, pivots and frame,
+// every corner given its bloom and share (aSwayBloom, aSwayShare: SWAY_VERTEX), the coarser fewer triangles.
+for (const preset of THINGS.roses.body.size.presets) {
+  const thing = THINGS.roses.variantAt(preset.value);
+  const fine = meshKind('roses').build(thing, {});
+  const levels = [...fine.userData.detail.coarser.map(({ geometry }) => geometry), fine];
+  const triangles = levels.map((geometry) => geometry.attributes.position.count / 3);
+  const pivots = (geometry) => geometry.userData.sway.pivots.map((pivot) => pivot.toArray().map((value) => value.toFixed(9)).join()).join(';');
+  const aligned = levels.every((geometry) => pivots(geometry) === pivots(fine) && geometry.attributes.aSwayBloom?.count === geometry.attributes.position.count && geometry.attributes.aSwayShare?.count === geometry.attributes.position.count);
+  check(aligned && triangles[0] < triangles[1] && triangles[1] < triangles[2] && fine.userData.sway.count === thing.look.count && thing.look.count <= SWAY_BLOOMS,
+    `${preset.name}: its levels of detail ${triangles.join(' / ')} triangles, ${aligned ? 'aligned' : 'NOT aligned (pivots or sway attributes differ)'}`);
+}
+console.log('\nThe roses\' levels of detail: each count\'s three aligned, the coarser fewer triangles');
+{
+  // A bouquet's sway (src/rock.js swayStep): never past its limit, and once it floats, held up straight.
+  const { rock } = throwThing('roses', { value: 3 });
+  let most = 0, afloatMost = 0;
+  for (let time = 0; time < 15; time += STEP) {
+    rock.update(STEP, floorDepthAt);
+    const bend = Math.max(...Array.from({ length: rock.sway.count }, (unused, bloom) => Math.hypot(...rock.sway.bend.slice(bloom * 3, bloom * 3 + 3))));
+    most = Math.max(most, bend);
+    if (time > 12) afloatMost = Math.max(afloatMost, bend);
+  }
+  check(most <= SWAY.furthest + 1e-9 && most > 0.05 && afloatMost < 0.01 && (rock.afloat || rock.state === 'float'),
+    `roses' sway: at most ${most.toFixed(3)} rad (limit ${SWAY.furthest}), afloat after 12 s at most ${afloatMost.toFixed(4)} rad (want under 0.01), ${rock.state}`);
+  console.log(`A bouquet's sway: at most ${most.toFixed(2)} rad as it strikes (limit ${SWAY.furthest}), ${afloatMost.toFixed(4)} rad afloat after 12 s`);
+}
+{
+  // The petals (src/petals.js): no more than its cap at once, all gone within their longest life and fade, a petal
+  // afloat stopped at a wall's foot, one lying on the ice afloat once a hole opens under it, and in vacuum a free fall.
+  const petals = new Petals();
+  const still = { x: 0, y: 0, z: 0 };
+  petals.shed({ at: { x: 0, y: 0.5, z: 0 }, spread: 0.1, velocity: still, kick: 1, count: 400 });
+  const capped = petals.petals.length;
+  for (let time = 0; time < 70; time += STEP) petals.step(STEP, () => null);
+  const left = petals.petals.length;
+  petals.clear();
+  petals.shed({ at: { x: 0.95, y: 0.02, z: 0 }, spread: 0, velocity: { x: 0.5, y: 0, z: 0 }, kick: 0, count: 1 });
+  for (let time = 0; time < 5; time += STEP) petals.step(STEP, (x) => (x > 1 ? 0.1 : null));   // a wall at x = 1, its deck 10 cm up
+  const atWall = petals.petals[0];
+  petals.clear();
+  petals.shed({ at: { x: 0, y: 0.02, z: 0 }, spread: 0, velocity: still, kick: 0, count: 1 });
+  for (let time = 0; time < 1; time += STEP) petals.step(STEP, () => 0.003);   // the ice's top
+  const lay = petals.petals[0].state;
+  petals.step(STEP, () => null, true);   // a hole opened under it
+  const floated = petals.petals[0].state;
+  petals.clear();
+  setAirDensity(0);
+  petals.shed({ at: { x: 0, y: 5, z: 0 }, spread: 0, velocity: still, kick: 0, count: 1 });
+  for (let time = 0; time < 0.5 - 1e-9; time += STEP) petals.step(STEP, () => null);
+  const falling = -petals.petals[0].velocity.y;
+  setAirDensity(EARTH_AIR);
+  petals.clear();
+  check(capped === 320 && left === 0, `petals: ${capped} at once (cap 320), ${left} left after 70 s (all gone by their longest life and fade)`);
+  check(atWall.position.x <= 1 && atWall.position.y === 0 && atWall.state === 1, `a petal afloat at a wall: x ${atWall.position.x.toFixed(3)}, y ${atWall.position.y}, state ${atWall.state} (want at its foot, afloat)`);
+  check(lay === 2 && floated === 1, `a petal on the ice: state ${lay} lying (2), then ${floated} afloat (1) once a hole opens`);
+  check(Math.abs(falling - EARTH_GRAVITY * 0.5) < 0.05, `a petal in vacuum falls at ${falling.toFixed(3)} m/s after 0.5 s (free fall ${(EARTH_GRAVITY * 0.5).toFixed(3)})`);
+  console.log(`Petals: capped at ${capped}, ${left} left after 70 s; one stays at a wall's foot, floats when the ice opens, falls freely in vacuum`);
 }
 
 // ---- each thing in the lake ----

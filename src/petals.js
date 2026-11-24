@@ -35,6 +35,7 @@ import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
 import { AIR_DENSITY, EARTH_AIR } from './air.js';
 import { seededRandom } from './spray.js';
 import { FLOATER_WATER } from './shaders/scene.js';
+import { ROSE_PETAL_COLOURS, petalOutline } from './thingMeshes.js';
 
 const CAPACITY = 320;
 const PETAL = { length: [0.02, 0.034], width: 0.8, cup: 0.25, rows: 9, columns: 7 };   // m long; its width a share of its length, its cup a share of its width
@@ -45,6 +46,7 @@ const TUMBLE = [4, 14];             // rad/s it turns over as it falls
 const WATER_DRAG_SECONDS = 1.5;     // how soon the water stops a floating petal
 const WIND_SHARE = { air: 0.8, water: 0.04 };   // the share of the wind's drift it falls with, and floats with
 const SETTLE_SECONDS = 0.25;        // how soon it lies flat, come down
+const SETTLED = 8;                  // after this many SETTLE_SECONDS it lies flat, turning no more
 const LIFE = [25, 45];              // s it lies or floats before it goes
 const FADE_SECONDS = 2.5;
 const AIR = 0, FLOAT = 1, LYING = 2;
@@ -57,6 +59,8 @@ const WALL = 0.02;   // m: ground higher than this over the water is a wall's to
 const UP = new THREE.Vector3(0, 1, 0);
 const SEED = 0x9e7a15;
 const turning = new THREE.Quaternion();   // a step's turn of a falling petal
+/** A draw from `[least, most]` by `random` (0 to 1). */
+const within = ([least, most], random) => least + (most - least) * random();
 
 export class Petals {
   /**
@@ -115,6 +119,7 @@ export class Petals {
    */
   shed({ at, spread, velocity, kick, count }) {
     const random = this.random;
+    this.shuffled = true;
     for (let index = 0; index < count; index++) {
       if (this.petals.length >= CAPACITY) this.petals.shift();
       const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(random() * 6.3, random() * 6.3, random() * 6.3));
@@ -126,15 +131,15 @@ export class Petals {
       this.petals.push({
         state: AIR, position, previous: position.clone(), turn, previousTurn: turn.clone(),
         velocity: new THREE.Vector3(velocity.x + out.x * flung, velocity.y + out.y * flung, velocity.z + out.z * flung),
-        size: PETAL.length[0] + (PETAL.length[1] - PETAL.length[0]) * random(),
-        terminal: TERMINAL[0] + (TERMINAL[1] - TERMINAL[0]) * random(),
-        sway: SWAY.speed[0] + (SWAY.speed[1] - SWAY.speed[0]) * random(), swayRate: SWAY.rate[0] + (SWAY.rate[1] - SWAY.rate[0]) * random(), swayPhase: random() * 6.3, swayHeading: random() * 6.3,
-        tumbleAxis, tumble: TUMBLE[0] + (TUMBLE[1] - TUMBLE[0]) * random(),
+        size: within(PETAL.length, random),
+        terminal: within(TERMINAL, random),
+        sway: within(SWAY.speed, random), swayRate: within(SWAY.rate, random), swayPhase: random() * 6.3, swayHeading: random() * 6.3,
+        tumbleAxis, tumble: within(TUMBLE, random),
         // Come down, it lies its cup up or (a third of them) over, turned as it fell.
         overGround: null,   // whether the ground was under it at its last step (null before its first)
         rest: new THREE.Quaternion().setFromAxisAngle(UP, random() * 6.3).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), random() < 0.33 ? Math.PI : 0)),
         color: [shade, shade * (0.9 + 0.2 * random()), shade],
-        age: 0, still: 0, life: LIFE[0] + (LIFE[1] - LIFE[0]) * random(), gone: 0,
+        age: 0, still: 0, life: within(LIFE, random), gone: 0,
       });
     }
   }
@@ -188,7 +193,9 @@ export class Petals {
         }
         continue;
       }
-      petal.turn.slerp(petal.rest, settle);
+      // Turned to lie flat over SETTLE_SECONDS or so, then simply lying so.
+      if (petal.still < SETTLE_SECONDS * SETTLED) petal.turn.slerp(petal.rest, settle);
+      else if (petal.still - seconds < SETTLE_SECONDS * SETTLED) petal.turn.copy(petal.rest);
       petal.still += seconds;
       if (petal.state === FLOAT) {
         const share = 1 - Math.exp(-seconds / WATER_DRAG_SECONDS);
@@ -214,7 +221,10 @@ export class Petals {
       }
       if (petal.still > petal.life) petal.gone += seconds;
     }
-    if (this.petals.some((petal) => petal.gone >= FADE_SECONDS)) this.petals = this.petals.filter((petal) => petal.gone < FADE_SECONDS);
+    if (this.petals.some((petal) => petal.gone >= FADE_SECONDS)) {
+      this.petals = this.petals.filter((petal) => petal.gone < FADE_SECONDS);
+      this.shuffled = true;
+    }
   }
 
   /** Each petal drawn `share` of the way from its step before to its last (src/main.js simulate, once a frame). */
@@ -227,12 +237,15 @@ export class Petals {
       turn.slerpQuaternions(petal.previousTurn, petal.turn, share);
       scale.setScalar(petal.size * (1 - THREE.MathUtils.smoothstep(petal.gone, 0, FADE_SECONDS)));
       mesh.setMatrixAt(index, matrix.compose(position, turn, scale));
-      mesh.setColorAt(index, color.setRGB(...petal.color));
+      if (this.shuffled) mesh.setColorAt(index, color.setRGB(...petal.color));
       this.lift.array[index] = petal.state === FLOAT ? 1 : petal.state === LYING || petal.overGround ? 0 : THREE.MathUtils.clamp(1 - position.y / LIFT_FROM, 0, 1);
     });
     mesh.count = this.petals.length;
     mesh.visible = mesh.count > 0;
-    if (mesh.count > 0) { mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; this.lift.needsUpdate = true; }
+    if (mesh.count > 0) { mesh.instanceMatrix.needsUpdate = true; this.lift.needsUpdate = true; }
+    // Each petal's shade only when the list has changed (shed, gone): its slots move then.
+    if (this.shuffled && mesh.count > 0) mesh.instanceColor.needsUpdate = true;
+    this.shuffled = false;
   }
 
   /**
@@ -252,11 +265,10 @@ export class Petals {
   clear() {
     this.random = seededRandom(SEED);
     this.petals = [];
+    this.shuffled = true;
     this.mesh.count = 0;
     this.mesh.visible = false;
   }
-
-  get count() { return this.petals.length; }
 
   /** Whether any petal is still falling (src/main.js keeps the frame rate up while one is: its idle cap). */
   get falling() { return this.petals.some((petal) => petal.state === AIR); }
@@ -270,17 +282,15 @@ export class Petals {
 function petalGeometry() {
   const { width, cup, rows, columns } = PETAL;
   const positions = [], colors = [], indices = [];
-  const claw = new THREE.Color().setRGB(84 / 255, 6 / 255, 16 / 255, THREE.SRGBColorSpace);
-  const red = new THREE.Color().setRGB(186 / 255, 16 / 255, 34 / 255, THREE.SRGBColorSpace);
-  const rim = new THREE.Color().setRGB(130 / 255, 8 / 255, 22 / 255, THREE.SRGBColorSpace);
+  const { claw, red, rim } = ROSE_PETAL_COLOURS;   // the bloom's own (src/thingMeshes.js rosePetals)
   const color = new THREE.Color();
   for (let row = 0; row <= rows; row++) {
     const along = row / rows;
-    const half = (width / 2) * (along <= 0.65 ? 0.25 + 0.75 * Math.sin((Math.PI / 2) * (along / 0.65)) : Math.sqrt(Math.max(1 - 0.85 * ((along - 0.65) / 0.35) ** 2, 0.02)));
+    const half = (width / 2) * petalOutline(along);   // an outer petal's outline, as on the bloom
     for (let column = 0; column <= columns; column++) {
       const across = -1 + (2 * column) / columns;
       positions.push(along, cup * width * across * across * Math.sin(Math.PI * Math.min(along * 1.2, 1)) - 0.08 * along * along, across * half);
-      color.copy(claw).lerp(red, Math.min(along / 0.4, 1)).lerp(rim, 0.5 * Math.max(0, (along - 0.8) / 0.2));
+      color.copy(claw).lerp(red, Math.min(along / 0.3, 1)).lerp(rim, 0.3 * Math.max(0, (along - 0.8) / 0.2));
       colors.push(color.r, color.g, color.b);
     }
   }

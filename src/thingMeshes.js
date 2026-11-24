@@ -3158,9 +3158,9 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // (rosePetals) is a hybrid tea's: its petals wound in a spiral, each the
 // golden angle round from the last (ROSES.petals), the innermost narrow and
 // tall, wrapped about its heart, the outer ones broad, cupped about it and
-// rolled back at their rims, each a thin shell (shellMesh) leaning across
-// its width so that it overlaps the next, deep crimson, darker at its claw
-// and its rolled rim, its outer face a little lighter, the inner petals
+// rolled back at their rims, each a thin shell (shellMesh) outside the one
+// within it, so none cuts into another, deep crimson, darker at its claw and
+// lighter at its rim, its outer face a little lighter, the inner petals
 // darker the deeper in (the bloom's own shade); each bloom its own size and
 // openness; its five sepals green lances turned down under it, and its hip,
 // an urn swelling out of its stem, narrowing to a neck and flaring at its rim.
@@ -3188,7 +3188,7 @@ export function createPanGeometry(definition, { metres = false } = {}) {
 // bend, each stem's pivot, rate and give), and src/rock.js swayStep bends
 // what is drawn by how the bouquet moves.
 // Set about its body's middle and scaled to a unit ball's volume of it: its
-// nominal radius is its ball's of like volume, its length roseLength().
+// nominal radius is its ball's of like volume, its length roseMeasures's.
 const ROSES = {
   counts: [1, 3, 5, 7, 9],   // always odd, as a florist ties them
   // A bloom's hull (roseHull): its cup's profile, (radius, height) in centimetres from its hip at the stem up and out to
@@ -3205,12 +3205,12 @@ const ROSES = {
   // and rolled back at the rim, so the bloom reads as a rose's and not a cup's). Each petal's shape is drawn between
   // its inner and outer ends by how far out it is (rosePetals): its claw's radius and height, its tip's, its half-width
   // at its widest, how fast it opens (a power: inner ones rise straight, outer ones bowl out), how far its top is rolled
-  // back (`reflex`, out and down, cm) and its edges rolled out (`roll`, cm), each a pair (innermost, outermost); its
-  // cells along and across, likewise. `open` is how open a bloom is drawn, each its own (a bud to full).
+  // back (`reflex`, out and down, cm) and how far its edges cup in (`cup`, cm: little, so each stays outside the one
+  // within), each a pair (innermost, outermost). `open` is how open a bloom is drawn, each its own (a bud to full).
   petals: {
     count: 24,
     claw: [[0.18, -1.3], [0.85, -1.5]], tip: [[0.42, 2.0], [3.15, 1.0]], width: [0.62, 1.95], rise: [3.2, 2.1],
-    reflex: [[0, 0], [0.8, 0.75]], roll: [0, 0], cup: [0.05, 0.1], ruffle: 0, lean: 0,
+    reflex: [[0, 0], [0.8, 0.75]], cup: [0.05, 0.1],
     // Its cells along and across at each level of detail, finest first (the coarser shown as it is smaller on the
     // screen: rosesWithDetail).
     levels: [{ rows: [6, 12], columns: [5, 6] }, { rows: [3, 6], columns: [3, 4] }, { rows: [2, 4], columns: [2, 2] }],
@@ -3238,7 +3238,7 @@ const ROSES = {
   sway: { rate: [16, 25], give: [0.1, 0.2], single: 0.35, singleGive: 1.3 },
   dome: { radius: 0.17, perRose: 0.003, spacing: 1.72, packing: 1.05, jitter: 0.06 },   // m from the tie to its blooms, and more for each rose; blooms this many reaches apart; a sunflower's cap this much roomier than its blooms; each bloom's distance this share nearer or farther
   bunch: { spacing: 2.15, flare: 0.7, band: 0.035, ribbonOut: 0.004, twist: 0.6 },   // stems this many radii apart at the tie, how much farther out each stem's cut end is than its place at the tie, the ribbon's height and stand, the spiral's turn (rad)
-  claw: linear(84, 6, 16), red: linear(176, 12, 30), tipRed: linear(196, 24, 40), velvet: linear(120, 6, 20), pinker: linear(204, 38, 58), dark: linear(92, 4, 18), light: linear(222, 54, 72),
+  claw: linear(84, 6, 16), red: linear(176, 12, 30), tipRed: linear(196, 24, 40), velvet: linear(120, 6, 20), pinker: linear(204, 38, 58),
   green: linear(64, 116, 44), hipGreen: linear(104, 140, 64), sepal: linear(70, 112, 46), leafGreen: linear(34, 80, 30), midrib: linear(100, 142, 70), leafEdge: linear(96, 62, 34), cut: linear(168, 196, 120),
   thornBase: linear(96, 104, 46), thornTip: linear(122, 52, 32),
   ribbon: linear(246, 238, 222), ribbonShade: linear(214, 202, 182),
@@ -3249,6 +3249,16 @@ const ROSES = {
   densities: { bloom: 200, stem: 900, leaf: 800, ribbon: 500 },
 };
 export const ROSE_COUNTS = ROSES.counts;
+/** A rose petal's colours, claw to rim (rosePetals; a shed petal's too, src/petals.js). */
+export const ROSE_PETAL_COLOURS = { claw: ROSES.claw, red: ROSES.red, rim: ROSES.tipRed };
+/**
+ * A rose petal's half-width, as a share of its widest, `along` its length (0 its claw, 1 its tip): a narrow claw,
+ * widest some three fifths up, its top a round arch (its sides close in as an ellipse does), `arch` of it (less, a
+ * broader top: a bud's petal). A shed petal's outline too (src/petals.js).
+ */
+export function petalOutline(along, arch = 1) {
+  return along <= 0.6 ? 0.22 + 0.78 * Math.sin((Math.PI / 2) * (along / 0.6)) : Math.sqrt(Math.max(1 - arch * ((along - 0.6) / 0.4) ** 2, 0.004));
+}
 const WATER_KG_M3 = 1000;   // the water between a bunch's stems
 const DETAIL_PIXELS = 1.5;   // src/rock.js DETAIL.pixels: a level is shown while its spacing times the radius in pixels is within it
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -3376,7 +3386,7 @@ function rosePetals(scale, phase, open, random, level = 0) {
   const metres = scale / 100;   // a centimetre of it
   const parts = [];
   const radial = new THREE.Vector3();
-  const { count, claw, tip, width, rise, reflex, roll, cup, ruffle, lean } = ROSES.petals;
+  const { count, claw, tip, width, rise, reflex, cup } = ROSES.petals;
   const { rows, columns } = ROSES.petals.levels[level];
   const between = ([inner, outer], out) => inner + (outer - inner) * out;
   for (let petal = 0; petal < count; petal++) {
@@ -3389,21 +3399,19 @@ function rosePetals(scale, phase, open, random, level = 0) {
     const tipRadius = between([tip[0][0], tip[1][0]], out ** 1.1) * opened, tipHeight = between([tip[0][1], tip[1][1]], out ** 1.6) - 0.3 * (opened - 1);
     const halfWidth = between(width, out ** 0.8), power = between(rise, out);
     const [reflexOut, reflexDown] = [between([reflex[0][0], reflex[1][0]], out ** 2) * opened, between([reflex[0][1], reflex[1][1]], out ** 2) * opened];
-    const rolled = between(roll, out ** 2), cupped = between(cup, out), wave = ruffle * out * out;
-    const wobble = random() * Math.PI * 2;
+    const cupped = between(cup, out);
     // Its outline: a narrow claw, widest some three fifths up, its top a round arch (its sides close in to its tip as an
     // ellipse does, so its rim is a curve, not a cut with corners); a bud's petal, wrapped round the heart, keeps a
     // broad top (`arch` the less), so the heart's petals are not stacked spikes.
     const arch = 0.35 + 0.65 * smoothstep(0.1, 0.6, out);
-    const outline = (along) => (along <= 0.6 ? 0.22 + 0.78 * Math.sin((Math.PI / 2) * (along / 0.6)) : Math.sqrt(Math.max(1 - arch * ((along - 0.6) / 0.4) ** 2, 0.004)));
+    const outline = (along) => petalOutline(along, arch);
     // Its rows closer together toward its rim, where its outline curves.
     const rowAt = (row) => 1 - (1 - row) ** 1.5;
     const shape = (along, across) => {
       const top = Math.max(0, (along - 0.55) / 0.45) ** 2;   // how far into its rolled-back top
       let radius = clawRadius + (tipRadius - clawRadius) * (1 - (1 - along) ** power);
       let height = clawHeight + (tipHeight - clawHeight) * along;
-      radius += reflexOut * top - cupped * across * across * Math.sin(Math.PI * along) + rolled * across ** 4 * top + lean * across;
-      radius += wave * Math.sin(5 * across + wobble) * along * along;
+      radius += reflexOut * top - cupped * across * across * Math.sin(Math.PI * along);
       height -= reflexDown * top + 0.12 * across * across * along ** 3 * (0.5 + out);
       const angle = middle + (across * halfWidth * outline(along)) / Math.max(radius, 0.3);
       return [radius * Math.cos(angle) * metres, height * metres, radius * Math.sin(angle) * metres];
@@ -3453,7 +3461,10 @@ function rosePetals(scale, phase, open, random, level = 0) {
   return parts;
 }
 
-/** A closed tube of radius `radius` (ROSES.stem) from `from` to `to` (Vector3s, metres), green, a little mottled by `random`. */
+/**
+ * A closed tube of radius `radius` (ROSES.stem) from `from` to `to` (Vector3s, metres), green, a little mottled by
+ * `random`, round in `sides` (a leaf's stalk fewer); with `cut`, its foot a florist's pale cut end.
+ */
 function roseStem(from, to, radius, random, { cut = false, sides = ROSES.stem.sides } = {}) {
   const length = from.distanceTo(to);
   const color = new THREE.Color(), shade = 0.85 + 0.25 * random();
@@ -3515,14 +3526,14 @@ function roseLeaflet(base, along, facing, curl, length, width, level = 0) {
   });
 }
 
-/** A rose leaf (the header) from `base` (metres) along `along`, its face toward `facing`: its stalk and its leaflets, the terminal and `pairs` pairs below it, a list of parts. */
-function roseLeaf(base, along, facing, random, pairs = 1, level = 0) {
+/** A rose leaf (the header) from `base` (metres) along `along`, its face toward `facing`: its stalk and its leaflets, the terminal and each of ROSES.leaf.pairs below it, cut to the level of detail `level`; a list of parts. */
+function roseLeaf(base, along, facing, random, level = 0) {
   const { stalk: [stalkLength, stalkRadius], length, width, pairs: pairing, splay } = ROSES.leaf;
   const tip = base.clone().addScaledVector(along, stalkLength);
   const grown = 0.9 + 0.2 * random();
   const parts = [roseStem(base, tip, stalkRadius, random, { sides: 5 }), roseLeaflet(tip.clone().addScaledVector(along, -0.002), along, facing, 0.15, length * grown, width * grown, level)];
   const side = new THREE.Vector3().crossVectors(along, facing).normalize();
-  for (const [size, at] of pairing.slice(0, pairs)) {
+  for (const [size, at] of pairing) {
     for (const sign of [-1, 1]) {
       const spring = base.clone().addScaledVector(along, stalkLength * at);
       const out = along.clone().multiplyScalar(Math.cos(splay)).addScaledVector(side, sign * Math.sin(splay)).normalize();
@@ -3582,7 +3593,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
     draw(rosePetals(scale, phase, open, random, level).map((part) => placed(part, centre, axis)));
     return centre.clone().addScaledVector(axis, -hipDepth(scale) + 0.002);   // its stem runs 2 mm up into it, its end hidden
   };
-  const leaf = (base, along, facing, pairs = 1) => { for (const part of roseLeaf(base, along, facing, random, pairs, level)) add(part, ROSES.densities.leaf); };
+  const leaf = (base, along, facing) => { for (const part of roseLeaf(base, along, facing, random, level)) add(part, ROSES.densities.leaf); };
   const stem = (from, to) => { add(roseStem(from, to, stemRadius, random), ROSES.densities.stem); draw(roseThorns(from, to, stemRadius, random)); };
   if (count === 1) {
     // One long-stemmed rose, standing: its bloom, its stem, two leaves up it, each round from the last.
@@ -3593,7 +3604,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
     swaying.push({ pivot: hip.clone().addScaledVector(up, -ROSES.sway.single * stemLength), tip: new THREE.Vector3(0, 0, 0), hip: hip.clone(), foot: hip.clone().addScaledVector(up, -stemLength) });
     [0.2, 0.42].forEach((share, index) => {
       const turn = index * 2.6 + 0.3, out = new THREE.Vector3(Math.cos(turn), 0, Math.sin(turn));
-      leaf(hip.clone().addScaledVector(up, -stemLength * share).addScaledVector(out, stemRadius * 0.9), out.clone().multiplyScalar(0.8).addScaledVector(up, 0.5).normalize(), up, 2);
+      leaf(hip.clone().addScaledVector(up, -stemLength * share).addScaledVector(out, stemRadius * 0.9), out.clone().multiplyScalar(0.8).addScaledVector(up, 0.5).normalize(), up);
     });
   } else {
     // The bunch at the tie (y 0): its stems' places, a sunflower's spiral over a disc, each turned round from under its
@@ -3625,7 +3636,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
         owner = index;
         const out = new THREE.Vector3(Math.cos(azimuth + 0.3), 0, Math.sin(azimuth + 0.3)).projectOnPlane(axis).normalize();
         const along = hip.distanceTo(spot);
-        leaf(hip.clone().addScaledVector(axis, -along * 0.07).addScaledVector(out, stemRadius * 0.9), out.clone().addScaledVector(axis, -0.15).normalize(), axis, 2);
+        leaf(hip.clone().addScaledVector(axis, -along * 0.07).addScaledVector(out, stemRadius * 0.9), out.clone().addScaledVector(axis, -0.15).normalize(), axis);
         owner = -1;
       }
     });
@@ -3730,13 +3741,13 @@ function roseSway(geometry, partCorners, owners, swaying, count, place) {
   };
 }
 
+export const SWAY_BLOOMS = Math.max(...ROSES.counts);   // the most blooms a bouquet sways (SWAY_VERTEX's arrays)
 /**
  * A bouquet's sway as drawn (roseSway; src/rock.js gives a swaying thing's materials it): each corner of a bloom's stem,
  * leaves and head turned about the stem's pivot by its share (aSwayShare) of the bloom's bend (uSwayBend, a rotation
  * vector, rad, that src/rock.js swayStep steps), exactly (Rodrigues), its normal with it; corners of no bloom
  * (aSwayBloom −1: the bunch below the tie, the ribbon) as they are. In the thing's own unit frame, before its scale.
  */
-export const SWAY_BLOOMS = 9;   // the most blooms a bouquet sways (ROSES.counts' largest)
 export const SWAY_VERTEX = /* glsl */`
 attribute float aSwayBloom;
 attribute float aSwayShare;
@@ -3785,6 +3796,7 @@ function ribbonPiece(base, along, facing, length, width, thickness) {
  */
 function rosesWithDetail(definition) {
   const fine = createRosesGeometry(definition);
+  roseMeasures(definition, fine);
   const coarser = [2, 1].map((level) => createRosesGeometry(definition, { level, frame: fine.userData.frame }));
   const spacingUnder = (pixels) => DETAIL_PIXELS / pixels;
   const [coarsest, middle] = ROSES.detail;
@@ -3792,12 +3804,20 @@ function rosesWithDetail(definition) {
   return fine;
 }
 
-/** A bouquet's length (registerMesh `length`), in its nominal radii: its unit mesh's longest side, as drawn. */
-function roseLength(definition) {
-  const geometry = createRosesGeometry(definition);
-  const length = longestSide(geometry);
-  geometry.dispose();
-  return length;
+/**
+ * A bouquet's measures, each count's once (registerMesh `volume` and `length`): its unit body's volume (its petals are
+ * drawn open) and its length in its nominal radii (its unit mesh's longest side, as drawn), from `built` if given (the
+ * mesh just built to be thrown, rosesWithDetail), else from a mesh built and let go.
+ */
+const ROSE_MEASURES = new Map();
+function roseMeasures(definition, built = null) {
+  const count = definition.look.count;
+  if (!ROSE_MEASURES.has(count)) {
+    const geometry = built ?? createRosesGeometry(definition);
+    ROSE_MEASURES.set(count, { volume: meshVolume(geometry.userData.physics), length: longestSide(geometry) });
+    if (!built) geometry.dispose();
+  }
+  return ROSE_MEASURES.get(count);
 }
 
 // ---- the kinds -------------------------------------------------------------
@@ -3864,8 +3884,8 @@ registerMesh('cake', {
 registerMesh('snowball', { build: () => createSnowballGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 // Each count its own (src/things.js 'roses': each preset's `look.count`).
 registerMesh('roses', {
-  build: (definition) => rosesWithDetail(definition), color: () => new THREE.Color(1, 1, 1), fixed: true, length: (definition) => roseLength(definition),
-  volume: (definition) => meshVolume(createRosesGeometry(definition).userData.physics),   // its body's: its petals are drawn open
+  build: (definition) => rosesWithDetail(definition), color: () => new THREE.Color(1, 1, 1), fixed: true,
+  length: (definition) => roseMeasures(definition).length, volume: (definition) => roseMeasures(definition).volume,
   check: (look) => (ROSE_COUNTS.includes(look.count) ? [] : [`look.count must be one of ${ROSE_COUNTS.join(', ')}`]),
 });
 // Each size its own (src/things.js 'pan': each preset's `look.size`).

@@ -34,7 +34,8 @@
 //     open water boiling every step (src/boiling.js: its bursts counted);
 //   - roses: three bouquets, the second onto the first, afloat, and two
 //     onto thick ice, shedding petals as they are flung and as they strike
-//     (src/petals.js), every petal's state and place compared too;
+//     (src/petals.js), every petal's state and place compared too (and
+//     some shed, or there would be nothing to compare);
 //   - loch: a stone and a skipped stone at Loch Ness, then left past its
 //     first sighting (src/lochVisitor.js), whose state must match too: what
 //     it is, where, how far up, and when it comes and goes.
@@ -250,6 +251,8 @@ for (const scene of only ? only.split(',').map((name) => SCENES.find((candidate)
   const { most, where, unlike } = compare(steady, uneven);
   const count = (kind) => steady.things.filter((thing) => thing[2] === kind).length;
   console.log(`${scene.name}: ${scene.throws.length} throws, ${scene.until} s; ${count('kept')} things kept, ${count('fading')} fading, ${count('gone')} gone; ${steady.fish.length} fish, ${steady.holes} holes; ${steady.frames} frames against ${uneven.frames} (${((Date.now() - started) / 1000).toFixed(0)} s)`);
+  // A bouquets' scene compares their petals only if they shed some (src/petals.js).
+  if (scene.throws.some((thrown) => thrown.thing === 'roses')) check(steady.petals.length > 0, `${scene.name} sheds petals to compare (${steady.petals.length})`);
   check(unlike.length === 0 && most === 0, `${scene.name} ends the same in frames of 1/60 s and of ${UNEVEN.map((seconds) => `1/${Math.round(1 / seconds)}`).join(', ')} s (most apart ${most.toExponential(1)}${most ? `, ${where}` : ''}${unlike.length ? `; ${unlike.slice(0, 4).join('; ')}` : ''})`);
 }
 check(problems.length === 0, `no page errors${problems.length ? `: ${problems.slice(0, 3).join(' | ')}` : ''}`);

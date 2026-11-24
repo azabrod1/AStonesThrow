@@ -202,7 +202,7 @@
 //     painted on its glass), a cast-iron frying pan (20, 25 or 30 cm, 1.5 to
 //     3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside) and red roses
 //     (one, or 3, 5, 7 or 9 tied, an odd number as a florist ties them,
-//     blooms of petals wound in a spiral: 30 to 45 g a rose, 330 to 380
+//     blooms of petals wound in a spiral: 30 to 45 g a rose, 330 to 390
 //     kg/m³, floating by their blooms' hulls as a raft, blooms up, shedding
 //     petals as they are flung and as they strike);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
@@ -923,25 +923,25 @@ defineBuiltIn('pan', {
 // long-stemmed rose, or 3, 5, 7 or 9 tied in a spiral under a satin ribbon, an odd number as a florist ties them. Each
 // weighs what its parts do (ROSES' densities: a bloom some 12 g, its stem and leaves about as heavy as the water they
 // displace, its ribbon a few grams): 30 to 45 g a rose. Its petals hold air between them, so the whole is 330 to
-// 380 kg/m³ and floats, a third or so under; its weight is lower than its volume's middle (`ballast`, each its own: a
+// 390 kg/m³ and floats, a third or so under; its weight is lower than its volume's middle (`ballast`, each its own: a
 // rose's far down its stem), so it floats lying on the water, its stems under and its blooms up, not on its blooms with
 // its stems in the air. Its nominal radius is its ball's of like volume (its splash a thing's that displaces as much).
 // One rose's buoyancy is cut finer (`columns`), so its stem floats as well as its bloom. It floats by its blooms'
 // hulls, its petals drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles slowly, end over end, its
-// flowers swaying on their stems as it goes, whipping on as it strikes and drooping as it lies (src/rock.js
-// swayStep), and it sheds petals as it is flung and as it strikes (src/petals.js).
+// flowers swaying on their stems as it goes, whipping on as it strikes and settling straight as it lies or floats
+// (src/rock.js swayStep), and it sheds petals as it is flung and as it strikes (src/petals.js).
 defineBuiltIn('roses', {
   name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 9: it floats', called: 'roses',
   body: {
     shape: 'mesh',
-    ballast: [0, -1.350, 0],
+    ballast: [0, -1.358, 0],
     size: {
       by: 'preset', unit: 'roses', initial: 3, presets: [
-        { value: 1, name: '1 rose', label: '32 g', diameter: 0.0567, mass: 0.0316, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.431, 0] } },
-        { value: 2, name: '3 roses', label: '135 g', diameter: 0.0880, mass: 0.1352, look: { count: 3 }, body: { ballast: [0, -1.719, 0] } },
-        { value: 3, name: '5 roses', label: '223 g', diameter: 0.1071, mass: 0.2226, look: { count: 5 }, body: { ballast: [0, -1.350, 0] } },
-        { value: 4, name: '7 roses', label: '309 g', diameter: 0.1212, mass: 0.3092, look: { count: 7 }, body: { ballast: [0, -1.162, 0] } },
-        { value: 5, name: '9 roses', label: '373 g', diameter: 0.1283, mass: 0.3734, look: { count: 9 }, body: { ballast: [0, -1.122, 0] } },
+        { value: 1, name: '1 rose', label: '31 g', diameter: 0.0566, mass: 0.0314, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.426, 0] } },
+        { value: 2, name: '3 roses', label: '129 g', diameter: 0.0858, mass: 0.1290, look: { count: 3 }, body: { ballast: [0, -1.790, 0] } },
+        { value: 3, name: '5 roses', label: '222 g', diameter: 0.1069, mass: 0.2225, look: { count: 5 }, body: { ballast: [0, -1.358, 0] } },
+        { value: 4, name: '7 roses', label: '291 g', diameter: 0.1171, mass: 0.2908, look: { count: 7 }, body: { ballast: [0, -1.251, 0] } },
+        { value: 5, name: '9 roses', label: '366 g', diameter: 0.1267, mass: 0.3658, look: { count: 9 }, body: { ballast: [0, -1.147, 0] } },
       ],
     },
   },
