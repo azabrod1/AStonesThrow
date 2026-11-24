@@ -256,8 +256,10 @@
 //
 // A bouquet's flowers sway on their stems (swayStep, each physics step: each
 // bloom a damped spring bent across its stem by what the bouquet's motion
-// makes it feel, its weight lying, a blow, its tumble; flex bends its own
-// copy of the drawn mesh once a frame; the physics walks its hulls as ever).
+// makes it feel, its weight lying, a blow, its tumble), bent as drawn by
+// its materials (SWAY_VERTEX, src/thingMeshes.js: each corner its bloom and
+// share, their bends uniforms flex sets once a frame), so its geometry stays
+// the one every bouquet of its count shares; the physics walks its hulls.
 //
 // Its own parts (registerMesh `dress`: a pizza's toppings, a pie's filling)
 // are drawn as it is made, from a stream of their own seeded from its own
@@ -362,7 +364,7 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, DRAWN_DEPTH, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
-import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
+import { cornersOf, meshKind, meshVolume, withParts, SWAY_BLOOMS, SWAY_VERTEX } from './thingMeshes.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 import { receiveIceShadows } from './iceShadow.js';
@@ -529,7 +531,28 @@ const UP = new THREE.Vector3(0, 1, 0);
 // A bouquet's flowers swaying on their stems (Rock.swayStep): their damping, a share of critical, in the air and in the
 // water (which stills them within a swing or two); the most a bouquet's motion is taken to press on them (m/s²: a
 // splash's first step is a jolt of thousands); the furthest a stem bends (rad).
-const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6, settled: 2e-3 };   // `settled`: rad and rad/s within which it hangs still (swayDrawn redraws nothing)
+const SWAY = { airDamping: 0.12, waterDamping: 0.6, most: 600, furthest: 0.6 };
+/**
+ * A swaying thing's (a bouquet's: Rock `sway`) bend into one of its materials' programs (SWAY_VERTEX,
+ * src/thingMeshes.js): its corners turned about their blooms' pivots, normals with them, before anything else moves
+ * them. Nothing for anything else, whose programs stay the ones every thing shares.
+ */
+function swayDetail(shader, sway) {
+  if (!sway) return;
+  Object.assign(shader.uniforms, sway.uniforms);
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `#include <common>\n${SWAY_VERTEX}`)
+    .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+  vec3 swayBy = swayTurn();
+  objectNormal = swayTurned(objectNormal, swayBy);`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+  if (aSwayBloom >= 0.0) {
+    vec3 swayPivot = uSwayPivot[int(aSwayBloom + 0.5)];
+    transformed = swayPivot + swayTurned(transformed - swayPivot, swayBy);
+  }`);
+}
+/** A program's key with a swaying thing's bend (swayDetail) in it, or as it is. */
+const swayKey = (key, sway) => (sway ? `${key}-sway` : key);
 const SWAY_SCRATCH = { felt: new THREE.Vector3(), turn: new THREE.Quaternion(), spin: new THREE.Vector3(), axis: new THREE.Vector3(), tip: new THREE.Vector3(), push: new THREE.Vector3(), inward: new THREE.Vector3(), inward2: new THREE.Vector3() };
 
 // The distinct points of a physics mesh (Rock.physicsPositions: separate triangles, each point repeated in every
@@ -1488,8 +1511,7 @@ export class Rock {
     this.dressing = dressedWith === null ? null : dressThing(this.thing, dressedWith);
     if (this.dressing && this.ownMass !== null) this.ownMass *= 1 + this.dressing.share;
     // (Its own copy, though a pie's parts are its filling's, kept: a mesh shared would stay on the GPU once drawn.)
-    // (A bouquet's too: its flowers sway, swayStep, so it bends a copy of its own.)
-    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing && !prepared.geometry.userData.sway;
+    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing;
     this.piece = piece;   // a shard's outline (src/ice.js), as it was broken
     this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip), ...(piece ? { piece } : {}) });
     // Only what its parts are, what they weigh and their seed are kept: their triangles are its geometry's now.
@@ -1544,7 +1566,15 @@ export class Rock {
     // A bouquet's flowers on their stems (src/thingMeshes.js roseSway): each bloom's bend, a rotation (rad) about its
     // pivot in its own frame, and how fast it bends; the drawn mesh's rest shape it is bent from (flex).
     const sway = this.geometry.userData.sway ?? null;
-    this.sway = sway ? { count: sway.count, axes: sway.axes, tips: sway.tips, rates: sway.rates, gives: sway.gives, bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), fresh: true, moving: false, drawn: new Map() } : null;
+    this.sway = sway ? {
+      count: sway.count, axes: sway.axes, tips: sway.tips, rates: sway.rates, gives: sway.gives,
+      bend: new Float64Array(sway.count * 3), rate: new Float64Array(sway.count * 3), lastVelocity: this.velocity.clone(), fresh: true,
+      // Its materials' (SWAY_VERTEX, src/thingMeshes.js): each bloom's bend as drawn (flex copies it in) and its pivot.
+      uniforms: {
+        uSwayBend: { value: Array.from({ length: SWAY_BLOOMS }, () => new THREE.Vector3()) },
+        uSwayPivot: { value: Array.from({ length: SWAY_BLOOMS }, (unused, bloom) => (sway.pivots[bloom] ?? new THREE.Vector3()).clone()) },
+      },
+    } : null;
     this.physicsShape = physics ? physics.array : prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
@@ -1577,8 +1607,9 @@ export class Rock {
     // Its slot in the ice's shadows (src/ice.js shade), or −1: what is drawn above the water takes the others' shadows
     // on the ice, never its own (src/iceShadow.js receiveIceShadows).
     const iceShadowSelf = this.iceShadowSelf = { value: -1 };
-    this.meshAbove.material.onBeforeCompile = (shader) => { stoneDetail(shader, stone); receiveIceShadows(shader, iceShadowSelf); };
-    this.meshAbove.material.customProgramCacheKey = () => 'above';
+    const swaying = this.sway;
+    this.meshAbove.material.onBeforeCompile = (shader) => { stoneDetail(shader, stone); swayDetail(shader, swaying); receiveIceShadows(shader, iceShadowSelf); };
+    this.meshAbove.material.customProgramCacheKey = () => swayKey('above', swaying);
     // The part above the water in the water's mirror image, afloat or on the ice (the header): its distance in alpha.
     // A floater has one from the start; anything else is given one the first time it comes down on the ice
     // (prepareMirror), its ids drawn then from MIRROR_IDS (a mesh and a material draw random ids, which drawn from
@@ -1587,10 +1618,11 @@ export class Rock {
       const mirror = new THREE.Mesh(this.geometry, makeMaterial(1));
       mirror.material.onBeforeCompile = (shader) => {
         stoneDetail(shader, stone);
+        swayDetail(shader, swaying);
         shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
   gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
       };
-      mirror.material.customProgramCacheKey = () => 'mirror-nearness';
+      mirror.material.customProgramCacheKey = () => swayKey('mirror-nearness', swaying);
       if (mirrorLayer !== null) mirror.layers.set(mirrorLayer);
       mirror.visible = false;
       return mirror;
@@ -1609,6 +1641,7 @@ export class Rock {
     const fogColor = { value: waterFog?.color ?? new THREE.Vector3() };
     this.meshBelow.material.onBeforeCompile = (shader) => {
       stoneDetail(shader, stone);
+      swayDetail(shader, swaying);
       shader.uniforms.uSeenThroughWater = seenThroughWater;
       shader.uniforms.uWaterLevel = waterLevel;
       shader.uniforms.uFogExtinction = fogExtinction;
@@ -1624,7 +1657,7 @@ export class Rock {
         .replace('#include <fog_fragment>', `#include <fog_fragment>
   if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
     };
-    this.meshBelow.material.customProgramCacheKey = () => 'seen-through-water';
+    this.meshBelow.material.customProgramCacheKey = () => swayKey('seen-through-water', swaying);
     if (this.floats && water) this.rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor, rideValues });
     for (const mesh of this.meshes) {
       mesh.scale.setScalar(radius);
@@ -1634,9 +1667,6 @@ export class Rock {
     // anything without coarser ones.
     const detail = this.geometry.userData.detail ?? null;
     this.detail = detail ? [...detail.coarser, { geometry: this.geometry, spacing: detail.spacing }] : null;
-    // A bouquet bends each level it draws (swayDrawn), so it has its own copy of each, made as it is first shown
-    // (showDetail): a throw costs no more for levels it never draws.
-    if (this.detail && this.sway) this.detail = this.detail.map((level) => (level.geometry === this.geometry ? level : { geometry: level.geometry, spacing: level.spacing, copyOnShow: true }));
     if (detail) detail.users = (detail.users ?? 0) + 1;   // the coarser meshes leave the GPU with the last that draws them (disposeGeometry)
     this.detailShown = detail ? { above: this.detail.length - 1, below: this.detail.length - 1, mirror: this.detail.length - 1 } : null;
     this.syncMeshes();
@@ -1694,6 +1724,7 @@ export class Rock {
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
       stoneDetail(shader, this.stone);
+      swayDetail(shader, this.sway);
       if (side === 'above') receiveIceShadows(shader, this.iceShadowSelf);   // on the ice, the others' shadows (src/iceShadow.js)
       Object.assign(shader.uniforms, water);
       shader.uniforms.uRide = rideShare;
@@ -1787,7 +1818,7 @@ export class Rock {
       if (!mesh) continue;
       mesh.material.clippingPlanes = [];
       mesh.material.onBeforeCompile = ride(side);
-      mesh.material.customProgramCacheKey = () => `ride-${side}${seenThrough && side !== 'mirror' ? '-clear' : ''}`;
+      mesh.material.customProgramCacheKey = () => swayKey(`ride-${side}${seenThrough && side !== 'mirror' ? '-clear' : ''}`, this.sway);
     }
   }
 
@@ -1878,7 +1909,6 @@ export class Rock {
    */
   showDetail(pixelRadii) {
     if (!this.detail) return;
-    let switched = false;
     const meshes = { above: this.meshAbove, below: this.meshBelow, mirror: this.meshMirror };
     for (const [part, mesh] of Object.entries(meshes)) {
       if (!mesh) continue;
@@ -1893,13 +1923,8 @@ export class Rock {
       const chosen = needed > shown ? needed : Math.min(shown, coarsestWithin(DETAIL.hold * DETAIL.pixels));
       if (chosen === shown) continue;
       this.detailShown[part] = chosen;
-      const level = this.detail[chosen];
-      if (level.copyOnShow) Object.assign(level, { geometry: level.geometry.clone(), copyOnShow: false, own: true });
-      mesh.geometry = level.geometry;
-      // A bouquet's level, shown again, bent as its flowers hang now, not as they did when it was last shown (swayDrawn).
-      if (this.sway) { const drawn = this.sway.drawn.get(level.geometry); if (drawn) drawn.still = false; switched = true; }
+      mesh.geometry = this.detail[chosen].geometry;
     }
-    if (switched) this.swayDrawn();   // this frame's flex ran before the switch (src/main.js render)
   }
 
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
@@ -2688,7 +2713,8 @@ export class Rock {
    * of a desktop's frame.
    */
   flex() {
-    if (this.sway) this.swayDrawn();
+    // A bouquet's flowers as they hang now (swayStep), into its materials (SWAY_VERTEX bends them as drawn).
+    if (this.sway) for (let bloom = 0; bloom < this.sway.count; bloom++) this.sway.uniforms.uSwayBend.value[bloom].fromArray(this.sway.bend, bloom * 3);
     const soft = this.thing.body.soft;
     if (!soft) return;
     const positions = this.geometry.attributes.position;
@@ -2720,8 +2746,8 @@ export class Rock {
    * A bouquet's flowers in a physics step (the header's sway; src/thingMeshes.js roseSway): each bloom's stem a damped
    * spring, bent across itself by what the bouquet's motion makes its bloom feel, the force a support or the air or the
    * water gives it less its weight, as its stem holds it: lying, the blooms droop; as it strikes, they whip on and
-   * spring back; tumbling, they fling outward; in free flight they straighten. The drawn mesh alone is bent (flex): the
-   * physics walks its hulls as ever.
+   * spring back; tumbling, they fling outward; in free flight they straighten. Only what is drawn is bent (its
+   * materials, SWAY_VERTEX, from the bends flex hands them): the physics walks its hulls as ever.
    */
   swayStep(dt) {
     const sway = this.sway;
@@ -2741,7 +2767,6 @@ export class Rock {
     const damping = this.state === 'water' || this.state === 'float' || this.afloat ? SWAY.waterDamping : SWAY.airDamping;
     const { bend, rate, axes, tips, rates, gives } = sway;
     const axis = SWAY_SCRATCH.axis, tip = SWAY_SCRATCH.tip, push = SWAY_SCRATCH.push;
-    let moving = false;
     for (let bloom = 0, at = 0; bloom < sway.count; bloom++, at += 3) {
       axis.set(axes[at], axes[at + 1], axes[at + 2]);
       // What its bloom feels: the bouquet's, and its tumble's pull in toward its axis (the bloom's place in metres).
@@ -2761,48 +2786,6 @@ export class Rock {
       bend[at] -= along * axis.x; bend[at + 1] -= along * axis.y; bend[at + 2] -= along * axis.z;
       const size = Math.hypot(bend[at], bend[at + 1], bend[at + 2]);
       if (size > SWAY.furthest) for (let component = 0; component < 3; component++) { bend[at + component] *= SWAY.furthest / size; rate[at + component] *= 0.5; }
-      // Still moving while it swings or has yet to reach where it hangs (a steady droop, lying, is settled).
-      if (Math.hypot(rate[at], rate[at + 1], rate[at + 2]) > SWAY.settled || Math.hypot(targetX - bend[at], targetY - bend[at + 1], targetZ - bend[at + 2]) > SWAY.settled) moving = true;
-    }
-    sway.moving = moving;
-  }
-
-  /**
-   * Its drawn mesh bent as its flowers sway (swayStep; flex, once a frame): each level of detail a pass draws now, each
-   * corner of a bloom's stem, petals and leaves turned about the stem's pivot by its share of the bloom's bend (a
-   * rotation to second order), its normal by as much; nothing redrawn while they hang still as last drawn.
-   */
-  swayDrawn() {
-    const sway = this.sway;
-    // Each level of detail a pass draws now (showDetail), bent from its own rest shape (src/thingMeshes.js roseSway).
-    for (const geometry of new Set([this.meshAbove?.geometry, this.meshBelow?.geometry, this.meshMirror?.geometry])) {
-      if (!geometry?.userData.sway) continue;
-      const positions = geometry.attributes.position, normals = geometry.attributes.normal;
-      let drawn = sway.drawn.get(geometry);
-      if (!drawn) sway.drawn.set(geometry, drawn = { rest: positions.array.slice(), restNormals: normals.array.slice(), still: false });
-      // Hanging still as it was last drawn (swayStep `moving`: a steady droop is still): nothing to redraw or upload.
-      if (drawn.still && !sway.moving) continue;
-      const { rest, restNormals } = drawn, { bloom: bloomOf, share, pivots } = geometry.userData.sway, bend = sway.bend;
-      const array = positions.array, normal = normals.array;
-      for (let corner = 0, index = 0; corner < bloomOf.length; corner++, index += 3) {
-        const which = bloomOf[corner];
-        if (which < 0) continue;
-        const weight = share[corner], at = which * 3;
-        const ax = bend[at] * weight, ay = bend[at + 1] * weight, az = bend[at + 2] * weight;
-        const rx = rest[index] - pivots[at], ry = rest[index + 1] - pivots[at + 1], rz = rest[index + 2] - pivots[at + 2];
-        // φ×r, then half of φ×(φ×r): a rotation by φ to second order.
-        const cx = ay * rz - az * ry, cy = az * rx - ax * rz, cz = ax * ry - ay * rx;
-        array[index] = rest[index] + cx + 0.5 * (ay * cz - az * cy);
-        array[index + 1] = rest[index + 1] + cy + 0.5 * (az * cx - ax * cz);
-        array[index + 2] = rest[index + 2] + cz + 0.5 * (ax * cy - ay * cx);
-        const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
-        const tx = nx + (ay * nz - az * ny), ty = ny + (az * nx - ax * nz), tz = nz + (ax * ny - ay * nx);
-        const length = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
-        normal[index] = tx / length; normal[index + 1] = ty / length; normal[index + 2] = tz / length;
-      }
-      positions.needsUpdate = true;
-      normals.needsUpdate = true;
-      drawn.still = !sway.moving;
     }
   }
 
@@ -3806,7 +3789,6 @@ export class Rock {
   disposeGeometry() {
     if (!this.sharedGeometry) this.geometry.dispose();
     if (!this.detail) return;
-    for (const level of this.detail) if (level.own) level.geometry.dispose();
     const detail = this.geometry.userData.detail;
     if (--detail.users === 0) for (const { geometry } of detail.coarser) geometry.dispose();
     this.detail = null;

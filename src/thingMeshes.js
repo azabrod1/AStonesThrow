@@ -3590,7 +3590,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
     const hip = placeBloom(new THREE.Vector3(0, 0, 0), up);
     stem(hip.clone().addScaledVector(up, -stemLength), hip);
     // It bends about a point a third of the way up its stem, its bloom one way and its foot the other.
-    swaying.push({ pivot: hip.clone().addScaledVector(up, -ROSES.sway.single * stemLength), tip: new THREE.Vector3(0, 0, 0) });
+    swaying.push({ pivot: hip.clone().addScaledVector(up, -ROSES.sway.single * stemLength), tip: new THREE.Vector3(0, 0, 0), hip: hip.clone() });
     [0.2, 0.42].forEach((share, index) => {
       const turn = index * 2.6 + 0.3, out = new THREE.Vector3(Math.cos(turn), 0, Math.sin(turn));
       leaf(hip.clone().addScaledVector(up, -stemLength * share).addScaledVector(out, stemRadius * 0.9), out.clone().multiplyScalar(0.8).addScaledVector(up, 0.5).normalize(), up, 2);
@@ -3609,8 +3609,8 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
       const centre = at.clone().multiplyScalar(1 + ROSES.dome.jitter * (random() - 0.5));
       const axis = centre.clone().sub(spot).normalize();
       owner = index;
-      swaying.push({ pivot: spot.clone(), tip: centre.clone() });
       const hip = placeBloom(centre, axis);
+      swaying.push({ pivot: spot.clone(), tip: centre.clone(), hip: hip.clone() });
       stem(spot, hip);
       owner = -1;
       // Below the tie it goes on, its own stem to its own cut end, fanning out a little as a spiral's stems do, all cut
@@ -3682,44 +3682,75 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
 
 /**
  * How a bouquet's drawn mesh sways (src/rock.js swayStep, its flowers'
- * stems giving as real ones do): each bloom's stem a spring about its
- * `pivot` (its place at the tie, or a single rose's a third of the way up
- * its stem), its `axis` toward its bloom's middle `length` away, its own
- * `rate` (rad/s) and `give` (how far it bends, rad, under Earth's gravity
- * across it), both drawn from a stream of their own; and for each corner
- * the bloom it sways with (−1, none: below the tie) and its `share` of the
- * bend, s·|s| of s its way along the stem from the pivot (the stem bends
- * as a beam does, most at its far end). `place` takes a point as built to
- * where the geometry has it (about its middle, scaled).
+ * stems giving as real ones do; bent as drawn, SWAY_VERTEX): each bloom's
+ * stem a spring about its `pivot` (its place at the tie, or a single
+ * rose's a third of the way up its stem), its `axis` toward its bloom's
+ * middle `length` away, its own `rate` (rad/s) and `give` (how far it
+ * bends, rad, under Earth's gravity across it), both drawn from a stream
+ * of their own; and on the geometry, for each corner, the bloom it sways
+ * with (`aSwayBloom`, −1 for none: below the tie) and its share of the
+ * bend (`aSwayShare`): s·|s| of s its way along the stem from the pivot,
+ * the stem bending as a beam does, most at its far end, up to its hip;
+ * from the hip on, the bloom (its petals, sepals, hip) turns as one piece,
+ * with the share at its hip, so it never stretches. `place` takes a point
+ * as built to where the geometry has it (about its middle, scaled).
  */
 function roseSway(geometry, partCorners, owners, swaying, count, place) {
   const random = seeded(777 + count);
-  const blooms = swaying.map(({ pivot, tip }) => {
-    const from = place(pivot), to = place(tip);
+  const blooms = swaying.map(({ pivot, tip, hip }) => {
+    const from = place(pivot), to = place(tip), axis = to.clone().sub(from).normalize(), length = from.distanceTo(to);
     const [least, most] = ROSES.sway.rate, [softest, stiffest] = ROSES.sway.give;
-    return { pivot: from, axis: to.clone().sub(from).normalize(), length: from.distanceTo(to), rate: least + (most - least) * random(), give: (count === 1 ? ROSES.sway.singleGive : 1) * (softest + (stiffest - softest) * random()) };
+    return { pivot: from, axis, length, hipAlong: place(hip).sub(from).dot(axis) / length, rate: least + (most - least) * random(), give: (count === 1 ? ROSES.sway.singleGive : 1) * (softest + (stiffest - softest) * random()) };
   });
+  if (blooms.length > SWAY_BLOOMS) throw new Error(`a bouquet sways at most ${SWAY_BLOOMS} blooms (SWAY_VERTEX), not ${blooms.length}`);
   const corners = geometry.attributes.position.count, positions = geometry.attributes.position.array;
-  const bloom = new Int16Array(corners).fill(-1), share = new Float32Array(corners);
+  const bloom = new Float32Array(corners).fill(-1), share = new Float32Array(corners);
   let corner = 0;
   partCorners.forEach((partCount, part) => {
     const which = owners[part];
     for (let index = 0; index < partCount; index++, corner++) {
       if (which < 0) continue;
-      const { pivot, axis, length } = blooms[which];
+      const { pivot, axis, length, hipAlong } = blooms[which];
       const along = ((positions[corner * 3] - pivot.x) * axis.x + (positions[corner * 3 + 1] - pivot.y) * axis.y + (positions[corner * 3 + 2] - pivot.z) * axis.z) / length;
-      const clamped = Math.min(Math.max(along, -1), 1.25);
+      const clamped = Math.min(Math.max(along, -1), hipAlong);
       bloom[corner] = which;
       share[corner] = clamped * Math.abs(clamped);
     }
   });
+  geometry.setAttribute('aSwayBloom', new THREE.BufferAttribute(bloom, 1));
+  geometry.setAttribute('aSwayShare', new THREE.BufferAttribute(share, 1));
   return {
-    count: blooms.length, bloom, share,
-    pivots: Float32Array.from(blooms.flatMap(({ pivot }) => pivot.toArray())), axes: Float32Array.from(blooms.flatMap(({ axis }) => axis.toArray())),
+    count: blooms.length,
+    pivots: blooms.map(({ pivot }) => pivot), axes: Float32Array.from(blooms.flatMap(({ axis }) => axis.toArray())),
     tips: Float32Array.from(blooms.flatMap(({ pivot, axis, length }) => pivot.clone().addScaledVector(axis, length).toArray())),
     rates: Float32Array.from(blooms.map(({ rate }) => rate)), gives: Float32Array.from(blooms.map(({ give }) => give)),
   };
 }
+
+/**
+ * A bouquet's sway as drawn (roseSway; src/rock.js gives a swaying thing's materials it): each corner of a bloom's stem,
+ * leaves and head turned about the stem's pivot by its share (aSwayShare) of the bloom's bend (uSwayBend, a rotation
+ * vector, rad, that src/rock.js swayStep steps), exactly (Rodrigues), its normal with it; corners of no bloom
+ * (aSwayBloom −1: the bunch below the tie, the ribbon) as they are. In the thing's own unit frame, before its scale.
+ */
+export const SWAY_BLOOMS = 9;   // the most blooms a bouquet sways (ROSES.counts' largest)
+export const SWAY_VERTEX = /* glsl */`
+attribute float aSwayBloom;
+attribute float aSwayShare;
+uniform vec3 uSwayBend[${SWAY_BLOOMS}];
+uniform vec3 uSwayPivot[${SWAY_BLOOMS}];
+vec3 swayTurned(vec3 vector, vec3 turn) {
+  float angle = length(turn);
+  if (angle < 1e-6) return vector;
+  vec3 axis = turn / angle;
+  float cosine = cos(angle);
+  return vector * cosine + cross(axis, vector) * sin(angle) + axis * dot(axis, vector) * (1.0 - cosine);
+}
+vec3 swayTurn() {
+  if (aSwayBloom < 0.0) return vec3(0.0);
+  return uSwayBend[int(aSwayBloom + 0.5)] * aSwayShare;
+}
+`;
 
 /** A piece of satin ribbon (the bow's): a slab from `base` out along `along`, `length` long and `width` across either side, `thickness` thick, its face toward `facing`. */
 function ribbonPiece(base, along, facing, length, width, thickness) {

@@ -202,7 +202,7 @@
 //     painted on its glass), a cast-iron frying pan (20, 25 or 30 cm, 1.5 to
 //     3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside) and red roses
 //     (one, or 3, 5, 7 or 9 tied, an odd number as a florist ties them,
-//     blooms of petals wound in a spiral: 30 to 45 g a rose, 250 to 350
+//     blooms of petals wound in a spiral: 30 to 45 g a rose, 330 to 380
 //     kg/m³, floating by their blooms' hulls as a raft, blooms up, shedding
 //     petals as they are flung and as they strike);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
@@ -922,8 +922,8 @@ defineBuiltIn('pan', {
 // Red roses (the header), each step its own count (a preset's `look.count`, src/thingMeshes.js ROSES): one
 // long-stemmed rose, or 3, 5, 7 or 9 tied in a spiral under a satin ribbon, an odd number as a florist ties them. Each
 // weighs what its parts do (ROSES' densities: a bloom some 12 g, its stem and leaves about as heavy as the water they
-// displace, its ribbon a few grams): 30 to 45 g a rose. Its petals hold air between them, so the whole is 250 to
-// 350 kg/m³ and floats, a third or less under; its weight is lower than its volume's middle (`ballast`, each its own: a
+// displace, its ribbon a few grams): 30 to 45 g a rose. Its petals hold air between them, so the whole is 330 to
+// 380 kg/m³ and floats, a third or so under; its weight is lower than its volume's middle (`ballast`, each its own: a
 // rose's far down its stem), so it floats lying on the water, its stems under and its blooms up, not on its blooms with
 // its stems in the air. Its nominal radius is its ball's of like volume (its splash a thing's that displaces as much).
 // One rose's buoyancy is cut finer (`columns`), so its stem floats as well as its bloom. It floats by its blooms'

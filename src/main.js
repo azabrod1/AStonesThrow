@@ -745,9 +745,9 @@ function migrateStoredSettings() {
 // iceSeconds past its impact, its shards let go by then; the ice as chosen
 // comes back after.
 // A floater of each program (pumice the stones', a pizza its textured one, a shard of ice its clear one: src/rock.js
-// seenThrough), and a sinker of each besides the stone's (an iPad its textured one: a floater's rides the water, so a
-// textured sinker's is a program of its own).
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6, cannonSeconds: 1.2 };
+// seenThrough; roses theirs, which bend their flowers as drawn: SWAY_VERTEX), and a sinker of each besides the stone's
+// (an iPad its textured one: a floater's rides the water, so a textured sinker's is a program of its own).
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard', 'roses'], sinkers: ['ipad'], iceSeconds: 0.6, cannonSeconds: 1.2 };
 
 // The petals a bouquet sheds (shedPetals, src/petals.js), each for a rose and scaled by the root of how many it holds:
 // flung from the hand, a petal or so; struck on the water at the hardest, `struck`; knocked on the ground, `knocked`;
