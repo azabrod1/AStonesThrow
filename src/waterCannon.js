@@ -58,7 +58,8 @@
 // drops widening by u/V (1.5° at 3 bar), the same water over a wider way:
 // thinner the farther it flies (skin), and lands as wide, its push on the
 // water spread over the cone (land). What it sheds freezes as it flies
-// (src/splash.js `airless`), and lands as grains of ice.
+// (src/splash.js `airless`), and lands as grains of ice; so does the fan
+// it throws up where it lands (below).
 //
 // The landing, each step for each parcel that lands in it (so a seeded game
 // goes alike at any frame rate, and 240 of them a second sum to the flow):
@@ -124,6 +125,21 @@
 // On ice it glances the same, and leaves nothing where it lands, each drop
 // tested where it comes down (iceAt): a fan thrown by a hole's edge rains on
 // the water whichever side of the edge it was thrown from.
+// In vacuum (src/splash.js `airless`: Europa) there is no sheet: the stream
+// comes down already flashed into a cone of drops (FLASH), so what it throws
+// up is drops too, flashing on as they fly, and the fan is thrown as grains
+// (FAN.frozen: src/spray.js sprites, which freeze as they fly, uDropFrost)
+// along the same launches as its parts', each step at a few places across
+// it; with no drag they fly the arcs the sheet would have, and its shape is
+// still the fan's, but a spray of ice and never a sheet of water. They are
+// few (FAN.frozen.share, fewer sprites than the tongue drops they replace), since
+// they share the spray's budget with everything else in the air: denser,
+// they crowded it into puffs of mist and took sprites still in flight from
+// its ring (tools/thing-probe.mjs measures both on Low's budget). Their draws
+// are a stream of their own (grainRandom); but in vacuum the fan's tongue
+// drops (stepFan) are no longer drawn, so the stream's own draws after the
+// first landing, and so its craters and rings, differ from before; in air
+// nothing does.
 //
 // Its boil (whiten, WHITE; src/whiteWater.js draws it): at the stream's foot
 // the water it drives air into heaps up white. Its scale is set by the
@@ -149,13 +165,13 @@
 // sets across it) and seen through as much more as a sweep has stretched it
 // (writePiece); a free end (a slug's tail after the nozzle shuts, a new
 // stream's head) thins to nothing over ROUGH.taper. The fan is a grid of its own (drawFan,
-// src/sprayFan.js) on the same program, shaded as a sheet of spray. The stream's randomness is its own (seededRandom
+// src/sprayFan.js) on the same program, shaded as a sheet of spray (none in vacuum: its grains are the spray's). The stream's randomness is its own (seededRandom
 // of the nozzle's place, its start and its pressure), never Math.random.
 //
 // Pure bookkeeping (the sheath and the fan are the caller's, or none), so tools can drive
 // it in Node with a stand-in water and splash (tools/thing-probe.mjs).
 import * as THREE from 'three';
-import { seededRandom, sprayDrops } from './spray.js';
+import { seededRandom, sprayDrops, SPRAY_MOST_RADIUS } from './spray.js';
 import { SHEATH } from './streamSheath.js';
 import { FAN_GRID } from './sprayFan.js';
 import { GRAVITY, EARTH_GRAVITY } from './gravity.js';
@@ -276,7 +292,17 @@ export const FAN = {
   dropShare: 0.1,       // this share of the flow in all...
   dropRadius: 0.0013,   // ...in drops of this mean radius (m)...
   kick: 0.06,           // ...kicked by this share of the sheet's speed there: they stream on off the tongue, a little apart
+  // In vacuum (the header) the fan is grains: `samples` places across it a step (the stronger of two parts drawn, so
+  // more of them off its fingers), each carrying an equal part of `share` of the flow (a hundredth: the spray's
+  // budget, the header), in grains of mean radius `radius` (m: the spray's most, SPRAY_MOST_RADIUS, the larger of
+  // its spread held to it and counted so: GRAIN_DROPS; a grain that large is a sprite of its own on every preset, so
+  // crowding alone makes them heavier, and the heaviest stays well short of a puff: tools/thing-probe.mjs), kicked by
+  // `kick` of the part's speed (the drops' own flashing scatters them) and scattered over `spread` of the fan's width
+  // at its foot.
+  frozen: { samples: 3, share: 0.01, radius: 0.001, kick: 0.05, spread: 0.5 },
 };
+// The grains' drops in a cubic metre of their water, as burst draws them (held to the spray's most): worked out once.
+const GRAIN_DROPS = sprayDrops(1, FAN.frozen.radius, SPRAY_MOST_RADIUS);
 // The white water where it lands (the header; src/whiteWater.js): its scale is the length L = (QU/g)^(1/3) at which
 // the stream's momentum flux ρQU heaps water up against its weight (9 cm for the weakest jet, 27 at 3 bar, 74 for the
 // deck gun), its speeds go as sqrt(gL) and its times as sqrt(L/g) (T), so a bigger stream's churn is the same churn
@@ -413,6 +439,7 @@ export class WaterCannon {
     this.burst = null;        // the nozzle while it is on or just shut: { tOn, tOff, hand, aim, nozzle, radius, share, phase, handle }
     this.random = () => 0.5;  // the stream's own draws (seededRandom), from its start
     this.whiteRandom = () => 0.5;   // and its white water's (whiten), a stream of their own
+    this.grainRandom = () => 0.5;   // and its fan's grains' in vacuum (throwFan, FAN.frozen)
     this.whitePhases = [0, 0];      // its pulse's (WHITE.pulseRates)
     this.lastTime = 0;
     this.landings = 0;        // parcels landed since the last reset
@@ -439,6 +466,7 @@ export class WaterCannon {
     // each moment the launch of each part across it (the fan's columns).
     this.tail = this.makeTail(fanCapacity());
     this.thrown = { vx: 0, vy: 0, vz: 0 };   // the fan's middle's launch at the last landing (the spray goes with it)
+    this.thrownParts = { velocity: new Float32Array(FAN_GRID.columns * 3), strength: new Float32Array(FAN_GRID.columns) };   // the line the last landing threw (throwFan), kept in the ring or not
     this.stepSeconds = 1 / 240;
   }
 
@@ -495,6 +523,7 @@ export class WaterCannon {
     if (this.burst) this.burst.handle.state = 'done';
     this.random = seededRandom(hand.x, hand.z, time, pressure);
     this.whiteRandom = seededRandom(hand.x, hand.z, time, pressure, 1);
+    this.grainRandom = seededRandom(hand.x, hand.z, time, pressure, 2);
     this.whitePhases = [this.whiteRandom() * Math.PI * 2, this.whiteRandom() * Math.PI * 2];
     this.tail.drift.fill(0);
     for (let part = 0; part < this.tail.comb.length; part++) this.tail.comb[part] = 2 * (this.whiteRandom() + this.whiteRandom() + this.whiteRandom() - 1.5);
@@ -653,7 +682,7 @@ export class WaterCannon {
     const random = this.random;
     const footprint = IMPACT.footprint * radius;
     const sheath = skin(records.radius[index], records.onset[index], breakup, along, this.skinScratch, records.flash[index]).radius;
-    this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce);
+    this.throwFan(x, z, speed, Math.atan2(-vy, Math.max(across, 1e-9)), directionX, directionZ, sheath, water / dt, records.time[index], time, onIce, splashTime);
     {
       // Only the stream's centre is tested above (onIce), but near a hole's edge its footprint straddles it, on
       // either side: each thing laid off the centre is tested where it is laid, and over ice does nothing, its draws
@@ -741,8 +770,9 @@ export class WaterCannon {
    * from the water) and more, about the stream's way (the direction given),
    * as the fan wanders there; `sheath` the stream's sheath's radius there,
    * `flow` the stream's (m³/s), `emitted` when the water left the nozzle.
+   * In vacuum its water leaves as grains (FAN.frozen), born at `splashTime`.
    */
-  throwFan(x, z, speed, incidence, directionX, directionZ, sheath, flow, emitted, time, onIce) {
+  throwFan(x, z, speed, incidence, directionX, directionZ, sheath, flow, emitted, time, onIce, splashTime) {
     const tail = this.tail, parts = FAN_GRID.columns, controls = FAN.controls;
     const scale = Math.cbrt((flow * speed) / GRAVITY), period = Math.sqrt(scale / GRAVITY);
     const memory = FAN.sway.time * period, smoothing = FAN.sway.smooth * memory, dt = this.stepSeconds;
@@ -780,13 +810,20 @@ export class WaterCannon {
       const heading = onward + place * FAN.spread + FAN.sway.yaw * wander(2, place);
       const vx = pace * Math.cos(elevation) * Math.cos(heading), vy = pace * Math.sin(elevation), vz = pace * Math.cos(elevation) * Math.sin(heading);
       if (part === (parts - 1) / 2) { this.thrown.vx = vx; this.thrown.vy = vy; this.thrown.vz = vz; }
+      // This landing's line (thrownParts), whether or not the ring has room to keep it: its grains in vacuum need it.
+      const line = this.thrownParts, at = part * 3;
+      line.velocity[at] = vx; line.velocity[at + 1] = vy; line.velocity[at + 2] = vz;
+      line.strength[part] = Math.min(Math.max(1 + FAN.sway.strength * wander(3, place) + FAN.fingers.strength * finger, 0.1), 1.7);
       if (!room) continue;
-      const at = (slot * parts + part) * 3;
-      tail.velocity[at] = vx; tail.velocity[at + 1] = vy; tail.velocity[at + 2] = vz;
-      tail.strength[slot * parts + part] = Math.min(Math.max(1 + FAN.sway.strength * wander(3, place) + FAN.fingers.strength * finger, 0.1), 1.7);
+      const kept = (slot * parts + part) * 3;
+      tail.velocity[kept] = line.velocity[at]; tail.velocity[kept + 1] = line.velocity[at + 1]; tail.velocity[kept + 2] = line.velocity[at + 2];
+      tail.strength[slot * parts + part] = line.strength[part];
       tail.reach[slot * parts + part] = FAN.reach[0] + (FAN.reach[1] - FAN.reach[0]) * smoothstep(FAN.tongue[0], FAN.tongue[1], finger);
       longest = Math.max(longest, (2 * vy) / GRAVITY);
     }
+    // In vacuum its water leaves as grains from this line, kept or not (a long steep burst under a weak pull can fill
+    // the ring: its sheet is not drawn there anyway, and the ring only times the rain where it comes down).
+    if (this.splash.airless) this.throwGrains(x, z, -directionZ, directionX, 2 * FAN.width * sheath, flow, splashTime);
     if (!room) return;
     const before = (tail.count + tail.capacity - 1) % tail.capacity;
     tail.lead[slot] = tail.count === 0 || time - tail.time[before] > 1.5 * dt ? 1 : 0;
@@ -799,6 +836,40 @@ export class WaterCannon {
     tail.grain[slot] = Math.min(Math.max((FAN.speed[0] * speed) ** 2 / GRAVITY / FAN.grain, 0.35), 4);
     tail.ice[slot] = onIce ? 1 : 0;
     tail.count++;
+  }
+
+  /**
+   * In vacuum (the header) the line a landing at (x, z) threw (thrownParts),
+   * `width` wide at its foot across (sideX, sideZ), as grains of ice: at
+   * FAN.frozen.samples places across it, the stronger of two parts drawn,
+   * each part's launch with a kick, from its place across the foot; the
+   * stronger part drawn is what weights them, so each carries an equal part
+   * of FAN.frozen.share of the step's water, counted as the spray draws it
+   * (sprayDrops within SPRAY_MOST_RADIUS: the larger grains of the spread are
+   * held to it, and so carry less). Its sprites are a 3 cm stone's
+   * (the spray's sizeFactor 1), not the landing stream's as the glancing
+   * sheet's are (land): in vacuum the stream lands as wide as its flashed
+   * cone, always wider than that (2 to 10 times), and a bigger size factor
+   * writes fewer, heavier sprites, drawn as puffs of mist (src/spray.js); a
+   * grain of ice must stay a grain (so scaled, the fan read as grey smoke).
+   */
+  throwGrains(x, z, sideX, sideZ, width, flow, splashTime) {
+    const spray = this.splash.spray;
+    if (!spray) return;
+    const line = this.thrownParts, parts = FAN_GRID.columns, frozen = FAN.frozen, random = this.grainRandom;
+    const drops = (flow * this.stepSeconds * frozen.share * GRAIN_DROPS) / frozen.samples;
+    for (let sample = 0; sample < frozen.samples; sample++) {
+      const one = Math.floor(random() * parts), other = Math.floor(random() * parts);
+      const part = line.strength[one] >= line.strength[other] ? one : other;
+      const place = -1 + (2 * part) / (parts - 1), at = part * 3;
+      const vx = line.velocity[at], vy = line.velocity[at + 1], vz = line.velocity[at + 2];
+      spray.burst({
+        x: x + sideX * place * 0.5 * width, y: 0.01, z: z + sideZ * place * 0.5 * width,
+        vx, vy, vz,
+        drops, radius: frozen.radius, most: SPRAY_MOST_RADIUS,
+        kick: frozen.kick * Math.hypot(vx, vy, vz), spread: frozen.spread * width, time: splashTime, random,
+      });
+    }
   }
 
   /**
@@ -851,8 +922,9 @@ export class WaterCannon {
         if (onWater) this.water.addFoam?.(froth);
       }
     }
-    // The drops that leave it, where the sheet comes apart: they fly on with its velocity there, and land.
-    if (!this.splash.spray) return;
+    // The drops that leave it, where the sheet comes apart: they fly on with its velocity there, and land. In vacuum
+    // there is no sheet to come apart: it was thrown as grains (throwGrains).
+    if (!this.splash.spray || this.splash.airless) return;
     for (let sample = 0; sample < FAN.drops; sample++) {
       // The thicker of two parts drawn, where its sheet is coming apart.
       const one = Math.floor(random() * parts), other = Math.floor(random() * parts);
@@ -1068,7 +1140,7 @@ export class WaterCannon {
   drawFan(time) {
     const fan = this.fan, tail = this.tail, capacity = tail.capacity, parts = FAN_GRID.columns;
     const inAir = tail.count - tail.head;
-    if (inAir === 0) { fan.hide(); return; }
+    if (inAir === 0 || this.splash.airless) { fan.hide(); return; }   // in vacuum it is grains, drawn as spray (throwGrains)
     const slotAt = (back) => (tail.count - 1 - back) % capacity;
     fan.begin(tail.emitted[slotAt(0)]);
     let first = 0;   // the piece's newest moment, counted back from the newest of all

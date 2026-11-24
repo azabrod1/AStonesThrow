@@ -223,7 +223,8 @@ full screen, which only a press or a key may ask for):
   that come and go, and coming apart into fine streaks and then drops,
   which stream off the tongues, fly on and within half a second
   rain into the water: a chop of small ripples there, and froth that
-  gathers in a second or so and goes as slowly),
+  gathers in a second or so and goes as slowly; in vacuum no sheet, but
+  grains of ice flown along the same arcs: Europa, below),
   rings the water about with stray drops, frightens the fish (they flee the
   water it churns, `CHURN` of its boil's scale, keep out of twice that and
   go deep near it while it plays: `src/fish.js`) and shoves a
@@ -1369,7 +1370,9 @@ The curated locations include:
     611 Pa and nothing outside holds it in, so bubbles of vapour grow in it
     at about 0.64 m/s and burst it into a widening cone of drops that freeze
     as they fly (`FLASH` in `src/waterCannon.js`). With no drag and a
-    seventh of the gravity, its rooster tail climbs about 7.5 times as high.
+    seventh of the gravity, its rooster tail climbs about 7.5 times as high,
+    and it is no sheet of water but grains of ice thrown along the sheet's
+    arcs (`FAN.frozen`).
   - No air tears a big drop apart, and none is dragged under, so a splash
     leaves no foam and no bubbles.
   - A drop boils as it flies, and that freezes it in a few hundredths of a
