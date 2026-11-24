@@ -747,11 +747,12 @@ function migrateStoredSettings() {
 // A floater of each program (pumice the stones', a pizza its textured one, a shard of ice its clear one: src/rock.js
 // seenThrough), and a sinker of each besides the stone's (an iPad its textured one: a floater's rides the water, so a
 // textured sinker's is a program of its own).
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6, cannonSeconds: 1.2 };
+
 // The petals a bouquet sheds (shedPetals, src/petals.js), each for a rose and scaled by the root of how many it holds:
 // flung from the hand, a petal or so; struck on the water at the hardest, `struck`; knocked on the ground, `knocked`;
 // from `softest` m/s, all of them from `hardest` m/s more; no more than `most` at once, flung up to `kick` m/s.
 const PETALS_SHED = { flung: 0.7, struck: 5, knocked: 3, softest: 1, hardest: 6, most: 40, kick: 1.6 };
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6, cannonSeconds: 1.2 };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -935,7 +936,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The petals a bouquet sheds (src/petals.js): scenery, stepped in the physics steps (simulate), drawn once a frame.
-  const petals = new Petals({ envTexture: environment.envTexture });
+  const petals = new Petals({ envTexture: environment.envTexture, gale: galeWaves.uniforms() });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
   splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
@@ -2986,9 +2987,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const carried = how === 'flung' ? 0.85 : 0.15;   // the share of the bouquet's own speed a petal leaves with
     petals.shed({ at: { x: position.x, y: Math.max(position.y, 0) + 0.02, z: position.z }, spread: rock.radius * Math.min(rock.reach, 3), velocity: { x: velocity.x * carried, y: Math.max(velocity.y * carried, 0), z: velocity.z * carried }, kick, count });
   }
-  /** The ground's height at (x, z) for a petal (src/petals.js): the ice's top, the deck's or the land's; null over open water. */
+  /**
+   * The ground's height at (x, z) for a petal (src/petals.js): the ice's top (the sheet's: a shard afloat is no ground to
+   * a petal, which would be left in the air as the shard drifts off), the deck's or the land's; null over open water.
+   */
   function petalGround(x, z) {
-    const ground = ice.on ? ice.ground : pooled ? poolGround(pool.square) : mallHere ? poolGround(MALL_BASIN) : koiPond ? koiGround : null;
+    const ground = ice.on ? ice : pooled ? poolGround(pool.square) : mallHere ? poolGround(MALL_BASIN) : koiPond ? koiGround : null;
     const height = ground?.at(x, z);
     if (height !== null && height !== undefined) return height;
     const depth = bedDepthAt(x, z);
@@ -3081,7 +3085,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // The birds (src/birds.js): a heron sees what is thrown coming down near it and goes, and comes back later.
       birds.step(stepsTime, rocks);
       // The petals shed (src/petals.js): falling, floating, lying, going.
-      petals.step(PHYSICS_STEP, petalGround, galeWaves.on && !pooled ? galeSurfaceAt : null, ice.opened !== petalHoles);
+      petals.step(PHYSICS_STEP, petalGround, ice.opened !== petalHoles);
       petalHoles = ice.opened;
       endStep(stepping);
     }

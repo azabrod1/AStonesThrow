@@ -1878,6 +1878,7 @@ export class Rock {
    */
   showDetail(pixelRadii) {
     if (!this.detail) return;
+    let switched = false;
     const meshes = { above: this.meshAbove, below: this.meshBelow, mirror: this.meshMirror };
     for (const [part, mesh] of Object.entries(meshes)) {
       if (!mesh) continue;
@@ -1895,7 +1896,10 @@ export class Rock {
       const level = this.detail[chosen];
       if (level.copyOnShow) Object.assign(level, { geometry: level.geometry.clone(), copyOnShow: false, own: true });
       mesh.geometry = level.geometry;
+      // A bouquet's level, shown again, bent as its flowers hang now, not as they did when it was last shown (swayDrawn).
+      if (this.sway) { const drawn = this.sway.drawn.get(level.geometry); if (drawn) drawn.still = false; switched = true; }
     }
+    if (switched) this.swayDrawn();   // this frame's flex ran before the switch (src/main.js render)
   }
 
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
@@ -3620,11 +3624,13 @@ export class Rock {
    */
   update(dt, pondDepth, surfaceAt = null) {
     if (this.state === 'held') {
-      if (this.sway) this.sway.fresh = true;   // its velocity is the hand's to set: let go, its first step feels no jolt (swayStep)
       const surface = surfaceAt?.(this.position.x, this.position.z) ?? 0;
       const bedDepth = typeof pondDepth === 'function' ? pondDepth(this.position.x, this.position.z) : pondDepth;
       if (this.position.y + this.lowestOffset() < surface) this.wet = 1;
       this.moveHeld(this.position, surface, bedDepth);
+      // A bouquet's flowers in the hand settle to their droop (swayStep); its velocity is the hand's to set, so each step,
+      // and the first once it is let go, feels no jolt from it.
+      if (this.sway) { this.swayStep(dt); this.sway.fresh = true; }
       return null;
     }
     // On the bed with nothing left to change, and no gale to lift it (the header): no step, its meshes where its last
