@@ -256,7 +256,7 @@
 //
 // A bouquet's flowers sway on their stems (swayStep, each physics step: each
 // bloom a damped spring bent across its stem by what the bouquet's motion
-// makes it feel, its weight lying, a blow, its tumble), bent as drawn by
+// makes it feel: its weight held, a blow, its tumble), bent as drawn by
 // its materials (SWAY_VERTEX, src/thingMeshes.js: each corner its bloom and
 // share, their bends uniforms flex sets once a frame), so its geometry stays
 // the one every bouquet of its count shares; the physics walks its hulls.
@@ -2744,9 +2744,9 @@ export class Rock {
 
   /**
    * A bouquet's flowers in a physics step (the header's sway; src/thingMeshes.js roseSway): each bloom's stem a damped
-   * spring, bent across itself by what the bouquet's motion makes its bloom feel, the force a support or the air or the
-   * water gives it less its weight, as its stem holds it: lying, the blooms droop; as it strikes, they whip on and
-   * spring back; tumbling, they fling outward; in free flight they straighten. Only what is drawn is bent (its
+   * spring, bent across itself by what the bouquet's motion makes its bloom feel: held, the blooms droop under their
+   * weight; as it strikes, they whip on and spring back; tumbling, they fling outward; in free flight they straighten;
+   * lying or afloat, what holds it up holds them up too, and they settle straight. Only what is drawn is bent (its
    * materials, SWAY_VERTEX, from the bends flex hands them): the physics walks its hulls as ever.
    */
   swayStep(dt) {
@@ -2758,7 +2758,9 @@ export class Rock {
     const felt = sway.fresh ? SWAY_SCRATCH.felt.set(0, 0, 0) : SWAY_SCRATCH.felt.copy(this.velocity).sub(sway.lastVelocity).divideScalar(dt);
     sway.lastVelocity.copy(this.velocity);
     sway.fresh = false;
-    felt.y += GRAVITY;
+    // Its weight bends a bloom only while the bouquet hangs (in the air, in the hand): lying, afloat or under the water,
+    // what holds the bouquet up (the ground, the water) holds each bloom up as well, so none droops into it.
+    if (this.state === 'air' || this.state === 'held') felt.y += GRAVITY;
     if (felt.length() > SWAY.most) felt.setLength(SWAY.most);
     const inverse = SWAY_SCRATCH.turn.copy(this.quaternion).invert();
     felt.applyQuaternion(inverse);

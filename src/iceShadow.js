@@ -3,8 +3,11 @@
 // them) has a tile of a depth atlas: an orthographic view down the sun's rays
 // fitted to the thing's bounding sphere, its mesh drawn into it as it is
 // drawn (a brick's shadow is square, a stone's has its lumps). A tile is
-// drawn again only when its thing has moved, turned or bent, or the sun has
-// moved: a thing at rest costs no draw a frame. The ice's shader (ICE_THINGS
+// drawn again only when its thing has moved, turned or bent (a soft thing's
+// give; not a bouquet's flowers swaying, bent only by its own materials,
+// src/rock.js swayStep: its shadow is the bouquet's at rest, and a bouquet
+// lying on the ice holds its flowers straight), or the sun has moved: a
+// thing at rest costs no draw a frame. The ice's shader (ICE_THINGS
 // in src/shaders/scene.js) and the things' own (ICE_SHADOW_RECEIVER, on what
 // of each is drawn above the water: src/rock.js) look a point up in each tile
 // whose shade may reach it (ICE_SHADOW_LOOKUP): lit where the tile holds

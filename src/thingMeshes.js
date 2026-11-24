@@ -3590,7 +3590,7 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
     const hip = placeBloom(new THREE.Vector3(0, 0, 0), up);
     stem(hip.clone().addScaledVector(up, -stemLength), hip);
     // It bends about a point a third of the way up its stem, its bloom one way and its foot the other.
-    swaying.push({ pivot: hip.clone().addScaledVector(up, -ROSES.sway.single * stemLength), tip: new THREE.Vector3(0, 0, 0), hip: hip.clone() });
+    swaying.push({ pivot: hip.clone().addScaledVector(up, -ROSES.sway.single * stemLength), tip: new THREE.Vector3(0, 0, 0), hip: hip.clone(), foot: hip.clone().addScaledVector(up, -stemLength) });
     [0.2, 0.42].forEach((share, index) => {
       const turn = index * 2.6 + 0.3, out = new THREE.Vector3(Math.cos(turn), 0, Math.sin(turn));
       leaf(hip.clone().addScaledVector(up, -stemLength * share).addScaledVector(out, stemRadius * 0.9), out.clone().multiplyScalar(0.8).addScaledVector(up, 0.5).normalize(), up, 2);
@@ -3689,18 +3689,21 @@ export function createRosesGeometry(definition, { metres = false, level = 0, fra
  * bends, rad, under Earth's gravity across it), both drawn from a stream
  * of their own; and on the geometry, for each corner, the bloom it sways
  * with (`aSwayBloom`, −1 for none: below the tie) and its share of the
- * bend (`aSwayShare`): s·|s| of s its way along the stem from the pivot,
- * the stem bending as a beam does, most at its far end, up to its hip;
+ * bend (`aSwayShare`): s·|s| of s its way along the stem from the pivot
+ * (below it, its way to the foot, −1 there), the stem bending as a beam
+ * does, smoothly through the pivot and most at its ends, up to its hip;
  * from the hip on, the bloom (its petals, sepals, hip) turns as one piece,
  * with the share at its hip, so it never stretches. `place` takes a point
  * as built to where the geometry has it (about its middle, scaled).
  */
 function roseSway(geometry, partCorners, owners, swaying, count, place) {
   const random = seeded(777 + count);
-  const blooms = swaying.map(({ pivot, tip, hip }) => {
+  const blooms = swaying.map(({ pivot, tip, hip, foot = null }) => {
     const from = place(pivot), to = place(tip), axis = to.clone().sub(from).normalize(), length = from.distanceTo(to);
     const [least, most] = ROSES.sway.rate, [softest, stiffest] = ROSES.sway.give;
-    return { pivot: from, axis, length, hipAlong: place(hip).sub(from).dot(axis) / length, rate: least + (most - least) * random(), give: (count === 1 ? ROSES.sway.singleGive : 1) * (softest + (stiffest - softest) * random()) };
+    // Below the pivot (a single rose's foot; a bouquet's stems there are the bunch's, unbent) s runs to −1 at the foot.
+    const footAlong = foot ? Math.min(place(foot).sub(from).dot(axis) / length, -1e-3) : -1;
+    return { pivot: from, axis, length, footAlong, hipAlong: place(hip).sub(from).dot(axis) / length, rate: least + (most - least) * random(), give: (count === 1 ? ROSES.sway.singleGive : 1) * (softest + (stiffest - softest) * random()) };
   });
   if (blooms.length > SWAY_BLOOMS) throw new Error(`a bouquet sways at most ${SWAY_BLOOMS} blooms (SWAY_VERTEX), not ${blooms.length}`);
   const corners = geometry.attributes.position.count, positions = geometry.attributes.position.array;
@@ -3710,9 +3713,9 @@ function roseSway(geometry, partCorners, owners, swaying, count, place) {
     const which = owners[part];
     for (let index = 0; index < partCount; index++, corner++) {
       if (which < 0) continue;
-      const { pivot, axis, length, hipAlong } = blooms[which];
+      const { pivot, axis, length, hipAlong, footAlong } = blooms[which];
       const along = ((positions[corner * 3] - pivot.x) * axis.x + (positions[corner * 3 + 1] - pivot.y) * axis.y + (positions[corner * 3 + 2] - pivot.z) * axis.z) / length;
-      const clamped = Math.min(Math.max(along, -1), hipAlong);
+      const clamped = along >= 0 ? Math.min(along, hipAlong) : -Math.min(along / footAlong, 1);
       bloom[corner] = which;
       share[corner] = clamped * Math.abs(clamped);
     }

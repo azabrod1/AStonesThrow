@@ -8,7 +8,9 @@
 // still water (the CPU twin of SEEN_THROUGH_WATER in shaders/scene.js).
 // Carrying in that apparent plane and undoing refraction keeps a submerged
 // thing under the pointer too. The GPU's fine ripple distortion and tilt
-// are not read back; its latest centre lift is. No picking runs per frame.
+// are not read back; its latest centre lift is, but not a bouquet's
+// flowers swaying on their stems (bent only as drawn, src/rock.js swayStep:
+// a few centimetres at most, within the hold's reach). No picking runs per frame.
 // A submerged thing is picked only where it can be seen (seenShare at least
 // SEEN_LEAST): one lost in the reflections or the water's colour is not
 // there to the eye, and a hold there dips a finger in instead.
